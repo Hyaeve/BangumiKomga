@@ -95,6 +95,8 @@ services:
       - ./archivedata:/app/archivedata
 ```
 
+GitHub Actions Docker 构建已固定为 `linux/amd64`（x86_64）平台，不发布 ARM 镜像。
+
 Web 页面保存后会生成原版兼容的 `config/config.py`。默认服务模式为轮询增量；也可以在页面手动触发增量或全量刮削。详细的新增文件和解耦边界见 [`docs/WEB_BACKEND.md`](docs/WEB_BACKEND.md)。
 
 > [!WARNING]
