@@ -1,0 +1,10 @@
+config.py
+recordsRefreshed.db
+refreshMetadata.log
+__pycache__/
+.vscode
+*.json*
+*.jsonlines*
+.coverage
+test_results/
+*.generated.py

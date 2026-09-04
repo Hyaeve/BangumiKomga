@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BangumiKomga 控制台</title><link rel="stylesheet" href="style.css">
+</head>
+<body><main class="shell">
+  <header class="topbar"><div><p class="eyebrow">BANGUMI KOMGA</p><h1>刮削控制台</h1></div><div class="status" id="status">正在连接</div></header>
+  <section class="panel credentials"><div class="panel-heading"><div><h2>连接设置</h2><p>保存后会同步生成原版兼容的 <code>config/config.py</code>。</p></div></div>
+    <div class="grid two"><label>Komga 地址<input id="base" type="url" placeholder="http://komga:25600"></label><label>登录邮箱<input id="email" type="email"></label><label>登录密码<input id="password" type="password"></label><label>运行模式<select id="service"><option value="poll">轮询增量</option><option value="sse">SSE 实时</option><option value="once">手动运行</option></select></label></div>
+    <div class="actions"><button class="secondary" id="load-libraries">刷新 Komga 媒体库</button><button id="save">保存设置</button></div>
+  </section>
+  <section class="panel"><div class="panel-heading"><div><h2>媒体库规则</h2><p>已匹配记录会跳过，勾选字段缺失时才会重新匹配。</p></div><button class="secondary" id="add-card">＋ 添加媒体库</button></div><div id="cards" class="cards"></div><p class="empty" id="empty">还没有媒体库卡片。未添加卡片时将按原版逻辑处理全部媒体库。</p></section>
+  <section class="panel actions-panel"><div><h2>执行刮削</h2><p id="last-run">尚未执行</p></div><div class="actions"><button id="incremental">▶ 增量刮削</button><button class="secondary" id="full">全量刮削</button></div></section><pre id="message" class="message" hidden></pre>
+</main>
+<template id="card-template"><article class="media-card"><div class="card-head"><strong>媒体库</strong><button class="icon danger" title="删除">×</button></div><label>选择媒体库<select class="library"></select></label><label class="novel"><input type="checkbox" class="novel-check"> 仅匹配小说</label><fieldset><legend>缺少这些字段时重新刮削</legend><label><input type="checkbox" value="summary"> 简介</label><label><input type="checkbox" value="publisher"> 出版商</label><label><input type="checkbox" value="genres"> 流派</label><label><input type="checkbox" value="tags"> 标签</label><label><input type="checkbox" value="links"> Bangumi 链接</label><label><input type="checkbox" value="thumbnail"> 封面</label></fieldset></article></template><script src="config.js"></script>
+</body></html>
