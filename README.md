@@ -85,7 +85,9 @@
 ```yaml
 services:
   bangumikomga:
-    build: .
+    image: ghcr.io/hyaeve/bangumikomga:latest
+    container_name: bangumikomga
+    restart: always
     ports:
       - "15600:15600"
     volumes:
@@ -116,10 +118,13 @@ Web 页面保存后会生成原版兼容的 `config/config.py`。默认服务模
     ```yaml
     services:
       bangumikomga:
-        image: chu1shen/bangumikomga:main
+        image: ghcr.io/hyaeve/bangumikomga:latest
         container_name: bangumikomga
+        restart: always
+        ports:
+          - "15600:15600"
         volumes:
-          - /path/BangumiKomga/config.py:/app/config/config.py   # 内容更改见 step.2
+          - /path/BangumiKomga/config:/app/config
           - /path/BangumiKomga/recordsRefreshed.db:/app/recordsRefreshed.db
           - /path/BangumiKomga/logs:/app/logs
           - /path/BangumiKomga/archivedata:/app/archivedata # 离线元数据（可选），详见`ARCHIVE_FILES_DIR`
