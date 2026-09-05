@@ -27,6 +27,9 @@ Web 层只通过保存动作生成原版可导入的 `config/config.py`，刮削
 - `GET /api/komga/collections`
 - `GET /api/status`
 - `GET /api/scrape-records?limit=100&offset=0`
+- `GET /api/scrape-records/stats`：返回总记录数、今日刮削、成功数和错误数
+- `GET /api/komga/previews?server_id=...&library_id=...`：读取指定库的最新系列封面，服务端缓存 24 小时
+- `GET /api/komga/cover?...`：鉴权代理 Komga 封面图片
 - `POST /api/refresh`，请求体 `{ "full": false }` 为增量，`true` 为全量
 
 运行日志不再通过 Web 页面或日志文件读取，统一输出到容器 stdout/stderr，使用 `docker logs bangumikomga` 查看。

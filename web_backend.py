@@ -14,7 +14,7 @@ import sqlite3
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -70,6 +70,8 @@ STATE_LOCK = threading.RLock()
 REFRESH_LOCK = threading.Lock()
 REFRESH_STATE = {"running": False, "last_result": None, "last_error": None}
 SESSIONS = set()
+PREVIEW_CACHE = {}
+PREVIEW_CACHE_TTL = 24 * 60 * 60
 
 
 def _password_hash(password):
@@ -248,6 +250,55 @@ def _read_scrape_records(limit=100, offset=0):
     if not db_file.exists():
         return []
     try:
+        configured_ids = [str(item.get("LIBRARY")) for item in (_read_state().get("KOMGA_LIBRARY_LIST") or []) if item.get("LIBRARY")]
+        if not configured_ids:
+            return []
+        with sqlite3.connect(db_file) as conn:
+            placeholders = ",".join("?" for _ in configured_ids)
+            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC LIMIT ? OFFSET ?", (*configured_ids, limit, offset)).fetchall()
+        return [{"id": row[0], "item_type": row[1], "item_title": row[2], "library_id": row[3], "library_name": row[4], "metadata_fields": [field for field in row[5].split(",") if field], "status": row[6], "recorded_at": row[7]} for row in rows]
+    except (OSError, sqlite3.Error):
+        return []
+
+
+def _read_scrape_stats():
+    db_file = ROOT / "recordsRefreshed.db"
+    if not db_file.exists():
+        return {"total": 0, "today": 0, "success": 0, "error": 0}
+    try:
+        configured_ids = [str(item.get("LIBRARY")) for item in (_read_state().get("KOMGA_LIBRARY_LIST") or []) if item.get("LIBRARY")]
+        if not configured_ids:
+            return {"total": 0, "today": 0, "success": 0, "error": 0}
+        placeholders = ",".join("?" for _ in configured_ids)
+        with sqlite3.connect(db_file) as conn:
+            total, today, success, error = conn.execute(
+                """SELECT COUNT(*), SUM(recorded_at >= date('now','localtime')), SUM(status='success'), SUM(status!='success')
+                   FROM scrape_records WHERE library_id IN (""" + placeholders + ")", configured_ids
+            ).fetchone()
+        return {"total": total or 0, "today": today or 0, "success": success or 0, "error": error or 0}
+    except (OSError, sqlite3.Error):
+        return {"total": 0, "today": 0, "success": 0, "error": 0}
+
+
+def _preview_items(server_id, library_id):
+    key = (server_id or "", library_id or "")
+    cached = PREVIEW_CACHE.get(key)
+    now = __import__("time").time()
+    if cached and now - cached["created"] < PREVIEW_CACHE_TTL:
+        return cached["items"]
+    komga = _load_komga(server_id)
+    payload = komga.get_latest_series(library_id=library_id, page=0)
+    items = payload.get("content", []) if isinstance(payload, dict) else payload
+    result = []
+    for series in (items or [])[:8]:
+        series_id = series.get("id")
+        if series_id:
+            result.append({"id": series_id, "title": series.get("name") or (series.get("metadata") or {}).get("title", ""), "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}"})
+    PREVIEW_CACHE[key] = {"created": now, "items": result}
+    return result
+    """legacy unreachable block removed"""
+    return result
+    try:
         configured_ids = [
             str(item.get("LIBRARY"))
             for item in (_read_state().get("KOMGA_LIBRARY_LIST") or [])
@@ -332,6 +383,34 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 limit, offset = 100, 0
             self._json(200, {"items": _read_scrape_records(limit, offset)})
+        elif path == "/api/scrape-records/stats":
+            self._json(200, _read_scrape_stats())
+        elif path == "/api/komga/previews":
+            query = parse_qs(urlparse(self.path).query)
+            server_id = query.get("server_id", [""])[0]
+            library_id = query.get("library_id", [""])[0]
+            if not library_id:
+                self._json(400, {"error": "缺少媒体库 ID"})
+            else:
+                try:
+                    self._json(200, {"items": _preview_items(server_id, library_id)})
+                except Exception as exc:
+                    self._json(400, {"error": str(exc)})
+        elif path == "/api/komga/cover":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                komga = _load_komga(query.get("server_id", [""])[0])
+                series_id = query.get("series_id", [""])[0]
+                response = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnail", timeout=30)
+                response.raise_for_status()
+                self.send_response(200)
+                self.send_header("Content-Type", response.headers.get("Content-Type", "image/jpeg"))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("Content-Length", str(len(response.content)))
+                self.end_headers()
+                self.wfile.write(response.content)
+            except Exception as exc:
+                self._json(404, {"error": f"封面读取失败：{exc}"})
         elif path == "/api/komga/libraries":
             try:
                 query = dict(item.split("=", 1) for item in urlparse(self.path).query.split("&") if "=" in item)
