@@ -50,8 +50,7 @@
         </section>
 
         <section v-else-if="view==='records'" class="view-stack">
-          <div class="toolbar"><div><h2>刮削记录</h2><p>记录每次成功更新的漫画、小说和元数据字段</p></div><button class="secondary" @click="loadRecords">刷新记录</button></div>
-          <div class="record-list"><article v-for="record in records" :key="record.id" class="record-item"><div class="record-type" :class="record.item_type==='小说'?'novel':''">{{record.item_type}}</div><div class="record-main"><h3>{{record.item_title}}</h3><p>{{record.library_name || '未指定媒体库'}}<span v-if="record.library_id"> · {{record.library_id}}</span></p><small>{{record.recorded_at}}</small></div><div class="record-fields"><span v-for="field in record.metadata_fields" :key="field">{{metadataText({metadata_fields:[field]})}}</span></div><div class="record-status">{{record.status==='success'?'已完成':'失败'}}</div></article><div v-if="!records.length" class="record-empty">暂无刮削记录</div></div>
+          <div class="records-board"><div class="records-head"><span>时间</span><span>条目</span><span>媒体库</span><span>更新字段</span><span>状态</span></div><div class="record-list"><article v-for="record in records" :key="record.id" class="record-item"><div class="record-time">{{record.recorded_at}}</div><div class="record-main"><div class="record-title-row"><span class="record-type" :class="record.item_type==='小说'?'novel':''">{{record.item_type}}</span><h3>{{record.item_title}}</h3></div></div><div class="record-library"><strong>{{record.library_name || '未指定媒体库'}}</strong><small v-if="record.library_id">{{record.library_id}}</small></div><div class="record-fields"><span v-for="field in record.metadata_fields" :key="field">{{metadataText({metadata_fields:[field]})}}</span></div><div class="record-status">{{record.status==='success'?'已完成':'失败'}}</div></article><div v-if="!records.length" class="record-empty">暂无刮削记录</div></div></div>
         </section>
 
         <section v-else class="view-stack">
