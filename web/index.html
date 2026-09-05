@@ -35,13 +35,10 @@
         <section v-if="view==='scrape'" class="view-stack">
           <div class="toolbar"><div><h2>媒体库</h2><p>拖拽卡片排序，右键卡片删除</p></div><div class="toolbar-actions"><button class="secondary" @click="save">保存卡片</button><button class="primary" @click="addCard">＋ 添加媒体库</button></div></div>
           <div class="library-grid" @click="closeContextMenu">
-            <article v-for="(card,index) in cards" :key="card.uid" class="library-card" :class="{dragging:dragIndex===index}" draggable="true" :style="{'--card-hue':card.hue}" @dragstart="dragStart(index,$event)" @dragend="dragIndex=null" @dragover.prevent @drop="dropCard(index)" @contextmenu.prevent="openCardMenu(index,$event)">
+            <article v-for="(card,index) in cards" :key="card.uid" class="library-card" :class="{dragging:dragIndex===index}" draggable="true" :style="{'--card-hue':card.hue}" @click="openCardSettings(card)" @dragstart="dragStart(index,$event)" @dragend="dragIndex=null" @dragover.prevent @drop="dropCard(index)" @contextmenu.prevent="openCardMenu(index,$event)">
               <div class="card-top"><span class="folder-icon">↓</span></div>
               <div class="card-content"><p class="card-label">MEDIA LIBRARY {{String(index+1).padStart(2,'0')}}</p><h3>{{card.name||'选择媒体库'}}</h3><p class="card-path">{{card.path||'从 Komga 载入媒体库'}}</p><span v-if="card.id" class="tag">{{card.isNovel?'小说':'漫画'}}</span></div>
-              <select v-model="card.id" @change="syncCardName(card)"><option value="">选择媒体库</option><option v-for="lib in libraries" :key="lib.id" :value="lib.id">{{lib.name}} · {{lib.id}}</option></select>
-              <label class="novel-toggle"><input type="checkbox" v-model="card.isNovel"><span>仅匹配小说</span></label>
-              <div class="rule-row"><span>缺失字段重刷</span><button class="rule-button" @click.stop="card.showRules=!card.showRules">{{card.rules.length}} 项 <span>{{card.showRules?'⌃':'⌄'}}</span></button></div>
-              <div v-if="card.showRules" class="rules"><label v-for="field in fieldOptions" :key="field.value"><input type="checkbox" :value="field.value" v-model="card.rules"><span>{{field.label}}</span></label></div>
+              <div class="card-hint">点击设置媒体库与匹配字段</div>
             </article>
             <button v-if="!cards.length" class="empty-card" @click="addCard"><span>＋</span><strong>添加第一个媒体库</strong><small>从 Komga 读取可用库</small></button>
           </div>
@@ -72,6 +69,7 @@
     </template>
 
     <div v-if="showCredentialModal" class="modal-backdrop" @click.self="showCredentialModal=false"><form class="modal" @submit.prevent="requestCredentialSave"><button type="button" class="modal-close" @click="showCredentialModal=false">×</button><p class="kicker">ACCOUNT SECURITY</p><h2>修改后台账号</h2><p>新的账号密码会立即生效。</p><label>新账号<input v-model.trim="credentialForm.username" autocomplete="username"></label><label>新密码<input v-model="credentialForm.password" type="password" autocomplete="new-password"></label><div class="modal-actions"><button type="button" class="secondary" @click="showCredentialModal=false">取消</button><button class="primary" type="submit">继续</button></div></form></div>
+    <div v-if="editingCard" class="modal-backdrop" @click.self="closeCardSettings"><form class="modal card-settings-modal" @submit.prevent="closeCardSettings"><button type="button" class="modal-close" @click="closeCardSettings">×</button><p class="kicker">SCRAPE CARD</p><h2>配置媒体库</h2><p>选择该卡片对应的媒体库，并指定需要补齐的元数据。</p><label>Komga 媒体库<select v-model="editingCard.id" @change="syncCardName(editingCard)"><option value="">选择媒体库</option><option v-for="lib in libraries" :key="lib.id" :value="lib.id">{{lib.name}} · {{lib.id}}</option></select></label><label class="modal-check"><input type="checkbox" v-model="editingCard.isNovel"><span>仅匹配小说</span></label><div class="modal-section-title">缺失字段重新刮削</div><div class="modal-rules"><label v-for="field in fieldOptions" :key="field.value"><input type="checkbox" :value="field.value" v-model="editingCard.rules"><span>{{field.label}}</span></label></div><div class="modal-actions"><button type="button" class="secondary" @click="closeCardSettings">取消</button><button class="primary" type="submit">确定</button></div></form></div>
     <div v-if="showCredentialConfirm" class="modal-backdrop" @click.self="showCredentialConfirm=false"><div class="modal confirm-modal"><p class="kicker">CONFIRM CHANGE</p><h2>确认保存新账号密码？</h2><p>保存后当前登录会话仍保持有效，但下次登录需要使用新凭据。</p><div class="modal-actions"><button class="secondary" @click="showCredentialConfirm=false">返回修改</button><button class="primary" @click="confirmCredentialSave">确定保存</button></div></div></div>
   </div>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script><script src="config.js"></script>

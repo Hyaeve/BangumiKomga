@@ -35,6 +35,13 @@ def _library_name(library_id):
     return library_id
 
 
+def _is_scrape_card_library(library_id):
+    """Only libraries explicitly configured by Web scraping cards create history."""
+    return bool(library_id) and any(
+        item.get("LIBRARY") == library_id for item in KOMGA_LIBRARY_LIST
+    )
+
+
 def _required_fields_for_series(series):
     library_id = series.get("libraryId")
     for item in KOMGA_LIBRARY_LIST:
@@ -245,14 +252,15 @@ def refresh_metadata(series_list=None):
                 # 所有尺寸都失败时
                 else:
                     logger.warning("替换系列: %s 的海报失败", series_name)
-            record_scrape_event(
-                conn,
-                "小说" if is_novel_series else "漫画",
-                komga_metadata.title or series_name,
-                series.get("libraryId"),
-                _library_name(series.get("libraryId")),
-                list(series_data.keys()),
-            )
+            if _is_scrape_card_library(series.get("libraryId")):
+                record_scrape_event(
+                    conn,
+                    "小说" if is_novel_series else "漫画",
+                    komga_metadata.title or series_name,
+                    series.get("libraryId"),
+                    _library_name(series.get("libraryId")),
+                    list(series_data.keys()),
+                )
         else:
             failed_count, failed_comic = record_series_status(
                 conn,
@@ -478,14 +486,15 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
     if is_success:
         record_book_status(
             conn, book_id, related_subject["id"], 1, book_name, "")
-        record_scrape_event(
-            conn,
-            "小说" if is_novel else "漫画",
-            book_metadata.title or book_name,
-            library_id,
-            _library_name(library_id),
-            list(book_data.keys()),
-        )
+        if _is_scrape_card_library(library_id):
+            record_scrape_event(
+                conn,
+                "小说" if is_novel else "漫画",
+                book_metadata.title or book_name,
+                library_id,
+                _library_name(library_id),
+                list(book_data.keys()),
+            )
 
         # 使用 Bangumi 图片替换原封面
         # 确保没有上传过海报，避免重复上传，排除 komga 生成的封面
@@ -621,7 +630,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
             record_book_status(
                 conn, book_id, None, 0, book_name, "Only update book number"
             )
-            if number_updated:
+            if number_updated and _is_scrape_card_library(library_id):
                 record_scrape_event(
                     conn,
                     "小说" if is_novel else "漫画",

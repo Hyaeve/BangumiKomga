@@ -15,6 +15,7 @@ createApp({
       showBangumiToken: false,
       dragIndex: null,
       contextMenu: { visible: false, x: 0, y: 0, index: null },
+      editingCard: null,
       view: 'scrape',
       message: '',
       messageError: false,
@@ -76,6 +77,8 @@ createApp({
     openCardMenu(index, event) { const menuWidth = 150, menuHeight = 44; this.contextMenu = { visible: true, index, x: Math.min(event.clientX, window.innerWidth - menuWidth - 12), y: Math.min(event.clientY, window.innerHeight - menuHeight - 12) }; },
     closeContextMenu() { if (this.contextMenu.visible) this.contextMenu = { visible: false, x: 0, y: 0, index: null }; },
     deleteCard(index) { this.removeCard(index); this.closeContextMenu(); this.notify('媒体库卡片已删除'); },
+    openCardSettings(card) { this.editingCard = card; this.closeContextMenu(); },
+    closeCardSettings() { this.editingCard = null; },
     syncCardName(card) { const library = this.libraries.find(item => item.id === card.id); if (library) { card.name = library.name; card.path = library.root || library.path || ''; } },
     async loadLibraries(showMessage = true) {
       const hasCredentials = this.komgaAuthMode === 'key' ? !!this.config.KOMGA_API_KEY : !!(this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD);

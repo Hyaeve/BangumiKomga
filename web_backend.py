@@ -192,12 +192,21 @@ def _read_scrape_records(limit=100, offset=0):
     if not db_file.exists():
         return []
     try:
+        configured_ids = [
+            str(item.get("LIBRARY"))
+            for item in (_read_state().get("KOMGA_LIBRARY_LIST") or [])
+            if item.get("LIBRARY")
+        ]
+        if not configured_ids:
+            return []
         with sqlite3.connect(db_file) as conn:
+            placeholders = ",".join("?" for _ in configured_ids)
             rows = conn.execute(
                 """SELECT id,item_type,item_title,library_id,library_name,
                    metadata_fields,status,recorded_at
-                   FROM scrape_records ORDER BY id DESC LIMIT ? OFFSET ?""",
-                (limit, offset),
+                   FROM scrape_records WHERE library_id IN (""" + placeholders + """)
+                   ORDER BY id DESC LIMIT ? OFFSET ?""",
+                (*configured_ids, limit, offset),
             ).fetchall()
         return [
             {
