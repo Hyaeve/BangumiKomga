@@ -3,7 +3,8 @@
 ## 新增文件
 
 - `web_backend.py`：标准库 HTTP 服务，监听 `15600`，提供配置、Komga 媒体库读取、刷新任务和状态 API。
-- `config/web_config.json`：Web 卡片配置的持久化文件。它与原版 `config/config.py` 解耦，删除该文件不会影响原版配置文件。
+- `config/config.py`：Web 保存的权威配置文件，包含 `KOMGA_SERVERS`、`KOMGA_LIBRARY_LIST` 和后台账号哈希，原版核心可直接导入。
+- `config/web_config.json`：旧版本兼容状态文件，保存时与 `config/config.py` 同步。
 - `web/index.html`、`web/config.js`、`web/style.css`：后台控制台页面和刮削记录列表。
 
 ## 修改文件
@@ -21,6 +22,7 @@ Web 层只通过保存动作生成原版可导入的 `config/config.py`，刮削
 ## API
 
 - `GET /api/config`、`POST /api/config`
+- `GET /api/config/backup`、`POST /api/config/restore`
 - `GET /api/komga/libraries`
 - `GET /api/komga/collections`
 - `GET /api/status`

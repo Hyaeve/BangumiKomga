@@ -45,6 +45,9 @@ KOMGA_EMAIL_PASSWORD = ""
 # @@info: 可在 Komga 用户设置中创建 API 密钥
 # @@version: 0.20.0
 KOMGA_API_KEY = ""
+# Web UI managed Komga connections. Each item contains id/name/base_url and
+# either email/password or api_key. The first entry is used by legacy workers.
+KOMGA_SERVERS = []
 
 
 # @@name: KOMGA_LIBRARY_LIST

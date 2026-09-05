@@ -36,6 +36,7 @@ DEFAULTS = {
     "KOMGA_EMAIL": "",
     "KOMGA_EMAIL_PASSWORD": "",
     "KOMGA_API_KEY": "",
+    "KOMGA_SERVERS": [],
     "KOMGA_LIBRARY_LIST": [],
     "KOMGA_COLLECTION_LIST": [],
     "USE_BANGUMI_ARCHIVE": False,
@@ -155,6 +156,31 @@ def _write_config(data: dict):
 
 def save_state(data: dict) -> dict:
     merged = {**DEFAULTS, **data}
+    servers = []
+    for item in merged.get("KOMGA_SERVERS", []) or []:
+        if not item.get("base_url") or not item.get("name"):
+            continue
+        servers.append({
+            "id": str(item.get("id") or secrets.token_hex(8)),
+            "name": str(item["name"]).strip(),
+            "base_url": str(item["base_url"]).strip().rstrip("/"),
+            "email": str(item.get("email", "")).strip(),
+            "password": str(item.get("password", "")),
+            "api_key": str(item.get("api_key", "")),
+            "auth_mode": "key" if item.get("auth_mode") == "key" or item.get("api_key") else "password",
+        })
+        if servers[-1]["auth_mode"] == "key":
+            servers[-1]["email"] = ""
+            servers[-1]["password"] = ""
+        else:
+            servers[-1]["api_key"] = ""
+    merged["KOMGA_SERVERS"] = servers
+    if servers:
+        primary = servers[0]
+        merged["KOMGA_BASE_URL"] = primary["base_url"]
+        merged["KOMGA_EMAIL"] = primary["email"]
+        merged["KOMGA_EMAIL_PASSWORD"] = primary["password"]
+        merged["KOMGA_API_KEY"] = primary["api_key"]
     # Normalize card values and keep the config file safe to import.
     libraries = []
     for item in merged.get("KOMGA_LIBRARY_LIST", []) or []:
@@ -162,6 +188,7 @@ def save_state(data: dict) -> dict:
             continue
         libraries.append({
             "LIBRARY": str(item["LIBRARY"]),
+            "SERVER_ID": str(item.get("SERVER_ID", "")),
             "IS_NOVEL_ONLY": bool(item.get("IS_NOVEL_ONLY", False)),
             "REQUIRED_FIELDS": list(item.get("REQUIRED_FIELDS", []) or []),
         })
@@ -177,8 +204,15 @@ def save_state(data: dict) -> dict:
     return merged
 
 
-def _load_komga():
+def _load_komga(server_id=None):
     state = _read_state()
+    if server_id:
+        for server in state.get("KOMGA_SERVERS", []) or []:
+            if server.get("id") == server_id:
+                from api.komga_api import KomgaApi
+                if not server.get("api_key") and (not server.get("email") or not server.get("password")):
+                    raise ValueError("请填写 Komga 账号密码或 API 密钥")
+                return KomgaApi(server["base_url"], server.get("email", ""), server.get("password", ""), server.get("api_key") or None)
     if not state.get("KOMGA_BASE_URL"):
         raise ValueError("请先保存 Komga 地址")
     if not state.get("KOMGA_API_KEY") and (not state.get("KOMGA_EMAIL") or not state.get("KOMGA_EMAIL_PASSWORD")):
@@ -286,6 +320,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(401, {"error": "请先登录"})
         elif path == "/api/config":
             self._json(200, _read_state())
+        elif path == "/api/config/backup":
+            self._json(200, {"config": _read_state(), "format": "bangumikomga-config-v1"})
         elif path == "/api/status":
             self._json(200, REFRESH_STATE)
         elif path == "/api/scrape-records":
@@ -298,7 +334,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"items": _read_scrape_records(limit, offset)})
         elif path == "/api/komga/libraries":
             try:
-                self._json(200, {"items": _load_komga().list_libraries()})
+                query = dict(item.split("=", 1) for item in urlparse(self.path).query.split("&") if "=" in item)
+                self._json(200, {"items": _load_komga(query.get("server_id")).list_libraries()})
             except Exception as exc:
                 self._json(400, {"error": str(exc)})
         elif path == "/api/komga/collections" and self._require_auth():
@@ -342,6 +379,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, _save_auth(username, password))
             elif path == "/api/config" and self._require_auth():
                 self._json(200, save_state(self._body()))
+            elif path == "/api/config/restore" and self._require_auth():
+                body = self._body()
+                payload = body.get("config", body) if isinstance(body, dict) else {}
+                if not isinstance(payload, dict):
+                    self._json(400, {"error": "备份文件格式无效"})
+                    return
+                self._json(200, save_state(payload))
             elif path == "/api/refresh" and self._require_auth():
                 body = self._body()
                 if _start_refresh(bool(body.get("full", False))):
