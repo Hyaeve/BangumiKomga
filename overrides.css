@@ -7,6 +7,8 @@
 .sidebar:not(.collapsed) .collapse-btn:hover:before{transform:translateY(-50%) rotate(38deg)!important;transform-origin:center bottom!important}
 .sidebar:not(.collapsed) .collapse-btn:hover:after{transform:translateY(-50%) rotate(-38deg)!important;transform-origin:center top!important}
 .login-card h1{font-size:32px!important;letter-spacing:0;margin-bottom:8px}
+.label-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.label-row a{margin-left:auto!important;white-space:nowrap}
+.secret-input{position:relative;display:flex;align-items:center}.secret-input input{width:100%;padding-right:42px!important}.eye-button{position:absolute;right:5px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:16px;line-height:1}.eye-button:hover{background:var(--accent-soft);color:var(--accent)}
 .record-list{display:grid;gap:10px;max-height:620px;overflow:auto;padding-right:4px}
 .record-item{display:grid;grid-template-columns:58px minmax(0,1fr) minmax(180px,260px) auto;align-items:center;gap:16px;padding:16px 18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 22px rgba(55,69,78,.06)}
 .record-type{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:#e7edf5;color:#5f7898;font-size:13px;font-weight:700}.record-type.novel{background:#eee8fa;color:#7768aa}
