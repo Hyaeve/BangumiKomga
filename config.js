@@ -16,7 +16,7 @@ createApp({
       message: '',
       messageError: false,
       libraries: [],
-      logs: [],
+      records: [],
       cards: [],
       cardHues: [105, 270, 195, 35, 320, 155],
       status: { running: false, last_result: null, last_error: null },
@@ -27,7 +27,7 @@ createApp({
       },
       navItems: [
         { id: 'scrape', label: '刮削卡片', title: '刮削卡片', subtitle: '为不同媒体库配置独立的增量匹配规则', icon: '▦' },
-        { id: 'logs', label: '运行日志', title: '运行日志', subtitle: '查看服务状态与最近的刮削记录', icon: '≡' },
+        { id: 'records', label: '刮削记录', title: '刮削记录', subtitle: '查看已完成的漫画与小说元数据更新', icon: '◷' },
         { id: 'settings', label: '系统设置', title: '系统设置', subtitle: '连接服务、Bangumi 密钥与账号安全', icon: '⚙' }
       ],
       fieldOptions: [
@@ -42,6 +42,7 @@ createApp({
     lastRunText() { return this.status.last_result ? `最近完成：${this.status.last_result === 'full' ? '全量刮削' : '增量刮削'}` : '尚未执行刮削'; },
     credentialHint() { return this.loginForm.username || '已登录'; }
   },
+  watch: { view(value) { if (value === 'records') this.loadRecords(); } },
   async mounted() { await this.checkSession(); },
   methods: {
     async api(path, options = {}) {
@@ -82,9 +83,9 @@ createApp({
     collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, IS_NOVEL_ONLY: card.isNovel, REQUIRED_FIELDS: card.rules })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); } catch (error) { this.notify(error.message, true); } },
     async refresh(full) { try { await this.api('/api/refresh', { method: 'POST', body: JSON.stringify({ full }) }); this.notify(full ? '全量刮削已开始' : '增量刮削已开始'); } catch (error) { this.notify(error.message, true); } },
-    async loadLogs() { try { this.logs = (await this.api('/api/logs')).lines || []; } catch (error) { this.notify(error.message, true); } },
-    logClass(line) { return /ERROR|CRITICAL/i.test(line) ? 'error' : /WARN/i.test(line) ? 'warn' : ''; },
-    async pollStatus() { if (!this.authenticated) return; try { this.status = await this.api('/api/status'); if (this.view === 'logs') await this.loadLogs(); } catch (_) {} setTimeout(() => this.pollStatus(), 3000); },
+    async loadRecords() { try { this.records = (await this.api('/api/scrape-records?limit=100')).items || []; } catch (error) { this.notify(error.message, true); } },
+    metadataText(record) { const labels = { status: '状态', summary: '简介', publisher: '出版商', genres: '流派', tags: '标签', title: '标题', alternateTitles: '别名', ageRating: '年龄分级', links: 'Bangumi 链接', totalBookCount: '册数', language: '语言', titleSort: '标题排序', authors: '作者', isbn: 'ISBN', number: '卷号', releaseDate: '发行日期', numberSort: '卷号排序', thumbnail: '封面' }; return (record.metadata_fields || []).map(field => labels[field] || field).join('、'); },
+    async pollStatus() { if (!this.authenticated) return; try { this.status = await this.api('/api/status'); } catch (_) {} setTimeout(() => this.pollStatus(), 3000); },
     openCredentialModal() { this.credentialForm = { username: '', password: '' }; this.showCredentialModal = true; },
     requestCredentialSave() { if (!this.credentialForm.username || !this.credentialForm.password) { this.notify('账号和密码不能为空', true); return; } this.showCredentialConfirm = true; },
     async confirmCredentialSave() { try { await this.api('/api/auth/credentials', { method: 'POST', body: JSON.stringify(this.credentialForm) }); this.showCredentialConfirm = false; this.showCredentialModal = false; this.loginForm.username = this.credentialForm.username; this.notify('后台账号密码已更新，请牢记新密码'); } catch (error) { this.notify(error.message, true); } }
