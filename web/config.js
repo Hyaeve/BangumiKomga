@@ -29,7 +29,7 @@ createApp({
         BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL: 10000
       },
       navItems: [
-        { id: 'scrape', label: '刮削卡片', title: '刮削卡片', subtitle: '为不同媒体库配置独立的增量匹配规则', icon: '▦' },
+        { id: 'scrape', label: '刮削卡片', title: '刮削卡片', subtitle: '为不同媒体库配置独立的增量匹配规则', icon: '▭' },
         { id: 'records', label: '刮削记录', title: '刮削记录', subtitle: '查看已完成的漫画与小说元数据更新', icon: '◷' },
         { id: 'settings', label: '系统设置', title: '系统设置', subtitle: '连接服务、Bangumi 密钥与账号安全', icon: '⚙' }
       ],

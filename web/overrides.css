@@ -9,6 +9,21 @@
 .login-card h1{font-size:32px!important;letter-spacing:0;margin-bottom:8px}
 .label-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.label-row a{margin-left:auto!important;white-space:nowrap}
 .secret-input{position:relative;display:flex;align-items:center}.secret-input input{width:100%;padding-right:42px!important}.eye-button{position:absolute;right:5px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:16px;line-height:1}.eye-button:hover{background:var(--accent-soft);color:var(--accent)}
+.nav-icon{font-size:18px;font-weight:500}
+.records-board{border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.48);box-shadow:var(--shadow);overflow:hidden}
+.records-head,.record-item{display:grid;grid-template-columns:150px minmax(220px,1.25fr) minmax(150px,.9fr) minmax(220px,1.5fr) 64px;gap:16px;align-items:center}
+.records-head{padding:11px 18px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.58);color:#929ba1;font-size:11px;letter-spacing:.4px}
+.record-list{display:grid;gap:0;max-height:620px;overflow:auto;padding:0}
+.record-item{padding:15px 18px;border-bottom:1px solid rgba(55,69,78,.08);background:transparent;box-shadow:none;border-radius:0;transition:background .18s}
+.record-item:last-child{border-bottom:0}.record-item:hover{background:rgba(126,114,198,.055)}
+.record-time{color:#7d878e;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.record-title-row{display:flex;align-items:center;gap:9px;min-width:0}.record-main h3{font-size:14px;font-weight:600}.record-type{flex:none;width:auto;height:auto;padding:4px 7px;border-radius:7px;background:#e7edf5;color:#5f7898;font-size:10px;font-weight:700}.record-type.novel{background:#eee8fa;color:#7768aa}
+.record-library{display:grid;gap:3px;min-width:0}.record-library strong{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.record-library small{color:#a0a8ad;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.record-fields{display:flex;flex-wrap:wrap;gap:5px}.record-fields span{padding:4px 7px;border-radius:6px;background:#f0eefb;color:#6c62a2;font-size:10px}
+.record-status{justify-self:end;padding:5px 7px;border-radius:7px;background:#e2eee9;color:#5d8d82;font-size:10px;white-space:nowrap}
+.record-empty{grid-column:1/-1;padding:60px;text-align:center;color:var(--muted);border:0;background:transparent}
+@media(max-width:1000px){.records-head{display:none}.record-item{grid-template-columns:120px minmax(0,1fr) auto;gap:10px;padding:14px}.record-library{grid-column:2}.record-fields{grid-column:2/-1}.record-status{grid-column:3;grid-row:1}}
+@media(max-width:560px){.record-item{grid-template-columns:1fr auto}.record-time{grid-column:1/-1}.record-main{grid-column:1/-1}.record-library,.record-fields{grid-column:1/-1}.record-status{grid-column:2;grid-row:2}}
 .record-list{display:grid;gap:10px;max-height:620px;overflow:auto;padding-right:4px}
 .record-item{display:grid;grid-template-columns:58px minmax(0,1fr) minmax(180px,260px) auto;align-items:center;gap:16px;padding:16px 18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 22px rgba(55,69,78,.06)}
 .record-type{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:#e7edf5;color:#5f7898;font-size:13px;font-weight:700}.record-type.novel{background:#eee8fa;color:#7768aa}
