@@ -8,16 +8,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css"><link rel="stylesheet" href="overrides.css">
-  <style>.login-kicker{margin:0 0 9px;color:#7e72c6;font-size:11px;font-weight:700;letter-spacing:1.4px}</style>
 </head>
 <body>
   <div id="app" v-cloak>
     <section v-if="!authenticated" class="login-screen">
       <div class="login-orbit orbit-a"></div><div class="login-orbit orbit-b"></div>
       <form class="login-card" @submit.prevent="login">
-        <div class="brand login-brand"><span class="brand-mark">BK</span><div><strong>BangumiKomga</strong><small>Metadata workspace</small></div></div>
-        <p class="login-kicker">CONTROL CONSOLE</p>
-        <h1>登录后台</h1><p>管理媒体库刮削与运行策略</p>
+        <h1>BangumiKomga</h1><p>管理媒体库刮削与运行策略</p>
         <label>账号<input v-model.trim="loginForm.username" autocomplete="username" autofocus></label>
         <label>密码<input v-model="loginForm.password" type="password" autocomplete="current-password"></label>
         <button class="primary login-button" type="submit">进入后台 <span>→</span></button>

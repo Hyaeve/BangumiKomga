@@ -6,3 +6,4 @@
 .sidebar.collapsed .collapse-btn:hover:after{transform:translateY(-50%) rotate(38deg)!important;transform-origin:center top!important}
 .sidebar:not(.collapsed) .collapse-btn:hover:before{transform:translateY(-50%) rotate(38deg)!important;transform-origin:center bottom!important}
 .sidebar:not(.collapsed) .collapse-btn:hover:after{transform:translateY(-50%) rotate(-38deg)!important;transform-origin:center top!important}
+.login-card h1{font-size:32px!important;letter-spacing:0;margin-bottom:8px}
