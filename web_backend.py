@@ -6,8 +6,10 @@ image remains small and the original scraper can still be used unchanged.
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
+import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,6 +20,7 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = ROOT / "config"
 WEB_DIR = ROOT / "web"
 WEB_STATE = CONFIG_DIR / "web_config.json"
+AUTH_STATE = CONFIG_DIR / "web_auth.json"
 CONFIG_FILE = CONFIG_DIR / "config.py"
 PORT = int(os.getenv("BANGUMI_KOMGA_WEB_PORT", "15600"))
 
@@ -58,6 +61,30 @@ DEFAULTS = {
 STATE_LOCK = threading.RLock()
 REFRESH_LOCK = threading.Lock()
 REFRESH_STATE = {"running": False, "last_result": None, "last_error": None}
+SESSIONS = set()
+
+
+def _password_hash(password):
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _read_auth():
+    with STATE_LOCK:
+        if AUTH_STATE.exists():
+            try:
+                data = json.loads(AUTH_STATE.read_text(encoding="utf-8"))
+                if data.get("username") and data.get("password_hash"):
+                    return data
+            except (OSError, ValueError):
+                pass
+        return {"username": "admin", "password_hash": _password_hash("password")}
+
+
+def _save_auth(username, password):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    data = {"username": username, "password_hash": _password_hash(password)}
+    AUTH_STATE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return {"username": username}
 
 
 def _read_state() -> dict:
@@ -141,6 +168,17 @@ def _start_refresh(full=False):
     return True
 
 
+def _read_logs(limit=160):
+    log_file = ROOT / "logs" / "refreshMetadata.log"
+    if not log_file.exists():
+        return []
+    try:
+        lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        return lines[-limit:]
+    except OSError:
+        return []
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "BangumiKomgaWeb/1.0"
 
@@ -159,18 +197,41 @@ class Handler(BaseHTTPRequestHandler):
         size = int(self.headers.get("Content-Length", "0"))
         return json.loads(self.rfile.read(size) or b"{}")
 
+    def _session_token(self):
+        cookies = self.headers.get("Cookie", "").split(";")
+        for cookie in cookies:
+            key, _, value = cookie.strip().partition("=")
+            if key == "bk_session":
+                return value
+        return None
+
+    def _authorized(self):
+        return self._session_token() in SESSIONS
+
+    def _require_auth(self):
+        if self._authorized():
+            return True
+        self._json(401, {"error": "请先登录"})
+        return False
+
     def do_GET(self):  # noqa: N802
         path = urlparse(self.path).path
-        if path == "/api/config":
+        if path == "/api/auth/session":
+            self._json(200, {"authenticated": self._authorized(), "username": _read_auth()["username"]})
+        elif path.startswith("/api/") and not self._authorized():
+            self._json(401, {"error": "请先登录"})
+        elif path == "/api/config":
             self._json(200, _read_state())
         elif path == "/api/status":
             self._json(200, REFRESH_STATE)
+        elif path == "/api/logs":
+            self._json(200, {"lines": _read_logs()})
         elif path == "/api/komga/libraries":
             try:
                 self._json(200, {"items": _load_komga().list_libraries()})
             except Exception as exc:
                 self._json(400, {"error": str(exc)})
-        elif path == "/api/komga/collections":
+        elif path == "/api/komga/collections" and self._require_auth():
             try:
                 self._json(200, {"items": _load_komga().list_collections()})
             except Exception as exc:
@@ -181,9 +242,37 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         try:
-            if path == "/api/config":
+            if path == "/api/auth/login":
+                body = self._body()
+                auth = _read_auth()
+                if body.get("username") != auth["username"] or _password_hash(body.get("password", "")) != auth["password_hash"]:
+                    self._json(401, {"error": "账号或密码错误"})
+                    return
+                token = secrets.token_urlsafe(32)
+                SESSIONS.add(token)
+                raw = json.dumps({"authenticated": True, "username": auth["username"]}, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Set-Cookie", f"bk_session={token}; Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+            elif path == "/api/auth/logout":
+                token = self._session_token()
+                if token:
+                    SESSIONS.discard(token)
+                self._json(200, {"authenticated": False})
+            elif path == "/api/auth/credentials" and self._require_auth():
+                body = self._body()
+                username = str(body.get("username", "")).strip()
+                password = str(body.get("password", ""))
+                if not username or not password:
+                    self._json(400, {"error": "账号和密码不能为空"})
+                    return
+                self._json(200, _save_auth(username, password))
+            elif path == "/api/config" and self._require_auth():
                 self._json(200, save_state(self._body()))
-            elif path == "/api/refresh":
+            elif path == "/api/refresh" and self._require_auth():
                 body = self._body()
                 if _start_refresh(bool(body.get("full", False))):
                     self._json(202, {"started": True})
