@@ -22,8 +22,9 @@ CONFIG_DIR = ROOT / "config"
 WEB_DIR = ROOT / "web"
 WEB_STATE = CONFIG_DIR / "web_config.json"
 DATA_DIR = Path(os.getenv("BANGUMI_KOMGA_DATA_DIR", str(ROOT / "data")))
-AUTH_STATE = DATA_DIR / "web_auth.json"
-LEGACY_AUTH_STATE = CONFIG_DIR / "web_auth.json"
+# Credentials intentionally live beside the generated config so the existing
+# /app/config volume is the single persistence boundary.
+AUTH_STATE = CONFIG_DIR / "web_auth.json"
 CONFIG_FILE = CONFIG_DIR / "config.py"
 PORT = int(os.getenv("BANGUMI_KOMGA_WEB_PORT", "15600"))
 
@@ -74,33 +75,20 @@ def _password_hash(password):
 
 def _read_auth():
     with STATE_LOCK:
-        candidates = []
-        for auth_file in (AUTH_STATE, LEGACY_AUTH_STATE):
-            if not auth_file.exists():
-                continue
+        if AUTH_STATE.exists():
             try:
-                data = json.loads(auth_file.read_text(encoding="utf-8"))
+                data = json.loads(AUTH_STATE.read_text(encoding="utf-8"))
                 if data.get("username") and data.get("password_hash"):
-                    candidates.append((auth_file.stat().st_mtime_ns, data))
+                    return data
             except (OSError, ValueError):
-                continue
-        if candidates:
-            # During upgrades both locations may exist. Always honor the most
-            # recently saved credentials instead of letting an older mounted
-            # file overwrite the current password.
-            return max(candidates, key=lambda item: item[0])[1]
+                pass
         return {"username": "admin", "password_hash": _password_hash("password")}
 
 
 def _save_auth(username, password):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     data = {"username": username, "password_hash": _password_hash(password)}
     AUTH_STATE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    # Keep the legacy location in sync so existing deployments that only
-    # mounted /app/config do not lose credentials during an upgrade.
-    if LEGACY_AUTH_STATE != AUTH_STATE:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        LEGACY_AUTH_STATE.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return {"username": username}
 
 

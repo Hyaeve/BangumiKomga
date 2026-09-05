@@ -80,7 +80,7 @@
 
 ### Web 后台（本分支新增）
 
-容器启动后访问 `http://宿主机地址:15600`，在页面中填写 Komga 凭据并添加媒体库卡片。Docker 运行时请映射端口并持久化配置、账号、刮削记录：
+容器启动后访问 `http://宿主机地址:15600`，在页面中填写 Komga 凭据并添加媒体库卡片。Docker 运行时请映射端口并持久化配置、账号哈希和刮削记录：
 
 ```yaml
 services:
@@ -92,7 +92,6 @@ services:
       - "15600:15600"
     volumes:
       - ./config:/app/config
-      - ./data:/app/data
       - ./recordsRefreshed.db:/app/recordsRefreshed.db
       - ./archivedata:/app/archivedata
 ```
@@ -125,7 +124,6 @@ Web 页面保存后会生成原版兼容的 `config/config.py`。默认服务模
           - "15600:15600"
         volumes:
           - /path/BangumiKomga/config:/app/config
-          - /path/BangumiKomga/data:/app/data
           - /path/BangumiKomga/recordsRefreshed.db:/app/recordsRefreshed.db
           - /path/BangumiKomga/archivedata:/app/archivedata # 离线元数据（可选），详见`ARCHIVE_FILES_DIR`
     ```

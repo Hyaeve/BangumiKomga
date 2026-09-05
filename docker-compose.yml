@@ -7,7 +7,6 @@ services:
       - "15600:15600"
     volumes:
       - ./config:/app/config
-      - ./data:/app/data
       - ./archivedata:/app/archivedata
       - ./recordsRefreshed.db:/app/recordsRefreshed.db
     restart: always
