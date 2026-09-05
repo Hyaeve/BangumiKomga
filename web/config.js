@@ -4,7 +4,7 @@ createApp({
   data() {
     return {
       authenticated: false,
-      loginForm: { username: 'admin', password: 'password' },
+      loginForm: { username: '', password: '' },
       credentialForm: { username: '', password: '' },
       showCredentialModal: false,
       showCredentialConfirm: false,
