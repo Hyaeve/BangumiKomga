@@ -74,15 +74,21 @@ def _password_hash(password):
 
 def _read_auth():
     with STATE_LOCK:
+        candidates = []
         for auth_file in (AUTH_STATE, LEGACY_AUTH_STATE):
             if not auth_file.exists():
                 continue
             try:
                 data = json.loads(auth_file.read_text(encoding="utf-8"))
                 if data.get("username") and data.get("password_hash"):
-                    return data
+                    candidates.append((auth_file.stat().st_mtime_ns, data))
             except (OSError, ValueError):
                 continue
+        if candidates:
+            # During upgrades both locations may exist. Always honor the most
+            # recently saved credentials instead of letting an older mounted
+            # file overwrite the current password.
+            return max(candidates, key=lambda item: item[0])[1]
         return {"username": "admin", "password_hash": _password_hash("password")}
 
 
