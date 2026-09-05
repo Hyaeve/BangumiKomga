@@ -49,9 +49,9 @@
           <div class="run-panel"><div><p class="kicker">SCRAPER CONTROL</p><h2>准备好开始刮削了吗？</h2><p>{{lastRunText}}</p></div><div class="run-actions"><button class="secondary" :disabled="status.running" @click="refresh(false)">增量刮削</button><button class="primary" :disabled="status.running" @click="refresh(true)">全量刮削 <span>→</span></button></div></div>
         </section>
 
-        <section v-else-if="view==='logs'" class="view-stack">
-          <div class="toolbar"><div><h2>运行日志</h2><p>实时查看最近的刮削和服务记录</p></div><button class="secondary" @click="loadLogs">刷新日志</button></div>
-          <div class="log-panel"><div v-for="(line,index) in logs" :key="index" class="log-line" :class="logClass(line)"><span class="log-index">{{String(index+1).padStart(3,'0')}}</span><code>{{line}}</code></div><div v-if="!logs.length" class="log-empty">暂无日志记录</div></div>
+        <section v-else-if="view==='records'" class="view-stack">
+          <div class="toolbar"><div><h2>刮削记录</h2><p>记录每次成功更新的漫画、小说和元数据字段</p></div><button class="secondary" @click="loadRecords">刷新记录</button></div>
+          <div class="record-list"><article v-for="record in records" :key="record.id" class="record-item"><div class="record-type" :class="record.item_type==='小说'?'novel':''">{{record.item_type}}</div><div class="record-main"><h3>{{record.item_title}}</h3><p>{{record.library_name || '未指定媒体库'}}<span v-if="record.library_id"> · {{record.library_id}}</span></p><small>{{record.recorded_at}}</small></div><div class="record-fields"><span v-for="field in record.metadata_fields" :key="field">{{metadataText({metadata_fields:[field]})}}</span></div><div class="record-status">{{record.status==='success'?'已完成':'失败'}}</div></article><div v-if="!records.length" class="record-empty">暂无刮削记录</div></div>
         </section>
 
         <section v-else class="view-stack">

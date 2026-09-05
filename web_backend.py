@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import secrets
+import sqlite3
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -180,27 +181,28 @@ def _start_refresh(full=False):
     return True
 
 
-def _read_logs(limit=80):
-    log_file = ROOT / "logs" / "refreshMetadata.log"
-    if not log_file.exists():
+def _read_scrape_records(limit=100, offset=0):
+    db_file = ROOT / "recordsRefreshed.db"
+    if not db_file.exists():
         return []
     try:
-        # Read backwards in bounded chunks rather than loading a growing log
-        # file into memory just to return its tail.
-        with log_file.open("rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            position = handle.tell()
-            chunks = []
-            newline_count = 0
-            while position > 0 and newline_count <= limit:
-                size = min(8192, position)
-                position -= size
-                handle.seek(position)
-                chunk = handle.read(size)
-                chunks.append(chunk)
-                newline_count += chunk.count(b"\n")
-        return b"".join(reversed(chunks)).decode("utf-8", errors="replace").splitlines()[-limit:]
-    except OSError:
+        with sqlite3.connect(db_file) as conn:
+            rows = conn.execute(
+                """SELECT id,item_type,item_title,library_id,library_name,
+                   metadata_fields,status,recorded_at
+                   FROM scrape_records ORDER BY id DESC LIMIT ? OFFSET ?""",
+                (limit, offset),
+            ).fetchall()
+        return [
+            {
+                "id": row[0], "item_type": row[1], "item_title": row[2],
+                "library_id": row[3], "library_name": row[4],
+                "metadata_fields": [field for field in row[5].split(",") if field],
+                "status": row[6], "recorded_at": row[7],
+            }
+            for row in rows
+        ]
+    except (OSError, sqlite3.Error):
         return []
 
 
@@ -249,15 +251,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, _read_state())
         elif path == "/api/status":
             self._json(200, REFRESH_STATE)
-        elif path == "/api/logs":
-            query = urlparse(self.path).query
-            limit = 80
-            if query.startswith("limit="):
-                try:
-                    limit = max(20, min(int(query.split("=", 1)[1]), 120))
-                except ValueError:
-                    pass
-            self._json(200, {"lines": _read_logs(limit)})
+        elif path == "/api/scrape-records":
+            query = dict(item.split("=", 1) for item in urlparse(self.path).query.split("&") if "=" in item)
+            try:
+                limit = max(20, min(int(query.get("limit", 100)), 200))
+                offset = max(0, int(query.get("offset", 0)))
+            except ValueError:
+                limit, offset = 100, 0
+            self._json(200, {"items": _read_scrape_records(limit, offset)})
         elif path == "/api/komga/libraries":
             try:
                 self._json(200, {"items": _load_komga().list_libraries()})

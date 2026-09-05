@@ -4,7 +4,7 @@
 
 - `web_backend.py`：标准库 HTTP 服务，监听 `15600`，提供配置、Komga 媒体库读取、刷新任务和状态 API。
 - `config/web_config.json`：Web 卡片配置的持久化文件。它与原版 `config/config.py` 解耦，删除该文件不会影响原版配置文件。
-- `web/index.html`、`web/config.js`、`web/style.css`：后台控制台页面。
+- `web/index.html`、`web/config.js`、`web/style.css`：后台控制台页面和刮削记录列表。
 
 ## 修改文件
 
@@ -24,4 +24,7 @@ Web 层只通过保存动作生成原版可导入的 `config/config.py`，刮削
 - `GET /api/komga/libraries`
 - `GET /api/komga/collections`
 - `GET /api/status`
+- `GET /api/scrape-records?limit=100&offset=0`
 - `POST /api/refresh`，请求体 `{ "full": false }` 为增量，`true` 为全量
+
+运行日志不再通过 Web 页面或日志文件读取，统一输出到容器 stdout/stderr，使用 `docker logs bangumikomga` 查看。

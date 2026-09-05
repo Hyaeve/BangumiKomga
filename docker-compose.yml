@@ -8,7 +8,6 @@ services:
     volumes:
       - ./config:/app/config
       - ./data:/app/data
-      - ./logs:/app/logs
       - ./archivedata:/app/archivedata
       - ./recordsRefreshed.db:/app/recordsRefreshed.db
     restart: always

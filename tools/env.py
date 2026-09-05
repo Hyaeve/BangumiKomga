@@ -32,10 +32,7 @@ class InitEnv:
         config_file = os.path.join(PROJECT_ROOT, "config", "config.py")
         generated_config_file = os.path.join(
             PROJECT_ROOT, "config", "config.generated.py")
-        log_directory = os.path.join(PROJECT_ROOT, "logs")
         try:
-            # 准备日志目录
-            os.makedirs(log_directory, exist_ok=True)
             # 自动创建db文件
             with sqlite3.connect(os.path.join(PROJECT_ROOT, "recordsRefreshed.db")) as conn:
                 pass

@@ -1,6 +1,9 @@
 import sqlite3
+import threading
 from time import strftime, localtime
 from tools.log import logger
+
+_record_lock = threading.Lock()
 
 
 def upsert_series_record(
@@ -66,7 +69,44 @@ def init_sqlite3():
         "CREATE INDEX IF NOT EXISTS idx_subject_id ON refreshed_series(subject_id)"
     )
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_book_id ON refreshed_books(book_id)")
+    cursor.execute(
+        """CREATE TABLE IF NOT EXISTS scrape_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_type TEXT NOT NULL,
+            item_title TEXT NOT NULL,
+            library_id TEXT,
+            library_name TEXT,
+            metadata_fields TEXT NOT NULL,
+            status TEXT NOT NULL,
+            recorded_at TEXT NOT NULL
+        )"""
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_scrape_records_time ON scrape_records(recorded_at)"
+    )
+    conn.commit()
     return cursor, conn
+
+
+def record_scrape_event(conn, item_type, item_title, library_id, library_name,
+                        metadata_fields, status="success"):
+    """Persist a compact, user-facing history entry for a metadata update."""
+    with _record_lock:
+        conn.execute(
+            """INSERT INTO scrape_records
+            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at)
+            VALUES (?,?,?,?,?,?,?)""",
+            (
+                item_type,
+                item_title,
+                library_id or "",
+                library_name or "",
+                ",".join(metadata_fields or []),
+                status,
+                strftime("%Y-%m-%d %H:%M:%S", localtime()),
+            ),
+        )
+        conn.commit()
 
 
 def record_series_status(

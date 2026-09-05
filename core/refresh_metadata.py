@@ -7,7 +7,7 @@ from tools.get_number import get_number, NumberType
 from tools.env import *
 from tools.log import logger
 from tools.notification import send_notification
-from tools.db import init_sqlite3, record_series_status, record_book_status
+from tools.db import init_sqlite3, record_series_status, record_book_status, record_scrape_event
 from tools.cache_time import TimeCacheManager
 
 
@@ -15,6 +15,24 @@ env = InitEnv()
 bgm = env.bgm
 komga = env.komga
 cursor, conn = init_sqlite3()
+_library_name_cache = {}
+
+
+def _library_name(library_id):
+    if not library_id:
+        return "未指定媒体库"
+    if library_id in _library_name_cache:
+        return _library_name_cache[library_id]
+    try:
+        for library in komga.list_libraries():
+            if library.get("id") == library_id:
+                name = library.get("name") or library_id
+                _library_name_cache[library_id] = name
+                return name
+    except Exception as exc:
+        logger.debug("读取媒体库名称失败 %s: %s", library_id, exc)
+    _library_name_cache[library_id] = library_id
+    return library_id
 
 
 def _required_fields_for_series(series):
@@ -107,7 +125,7 @@ def refresh_metadata(series_list=None):
                         (series_id,),
                     ).fetchone()[0]
                     if not _series_needs_refresh(series, _required_fields_for_series(series)):
-                        refresh_book_metadata(subject_id, series_id, force_refresh_flag, _required_fields_for_series(series))
+                        refresh_book_metadata(subject_id, series_id, force_refresh_flag, _required_fields_for_series(series), series.get("libraryId"))
                         continue
 
                 # recheck or skip failed series
@@ -227,6 +245,14 @@ def refresh_metadata(series_list=None):
                 # 所有尺寸都失败时
                 else:
                     logger.warning("替换系列: %s 的海报失败", series_name)
+            record_scrape_event(
+                conn,
+                "小说" if is_novel_series else "漫画",
+                komga_metadata.title or series_name,
+                series.get("libraryId"),
+                _library_name(series.get("libraryId")),
+                list(series_data.keys()),
+            )
         else:
             failed_count, failed_comic = record_series_status(
                 conn,
@@ -240,7 +266,7 @@ def refresh_metadata(series_list=None):
             )
             continue
 
-        refresh_book_metadata(subject_id, series_id, force_refresh_flag, _required_fields_for_series(series))
+        refresh_book_metadata(subject_id, series_id, force_refresh_flag, _required_fields_for_series(series), series.get("libraryId"))
 
     # 将匹配失败的系列加入收藏 FAILED_COLLECTION
     if CREATE_FAILED_COLLECTION:
@@ -424,7 +450,7 @@ def refresh_partial_metadata():
     return
 
 
-def update_book_metadata(book_id, related_subject, book_name, number):
+def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False):
     # Get the metadata for the book from bangumi
     book_metadata = process_metadata.set_komga_book_metadata(
         related_subject["id"], number, book_name, bgm
@@ -452,6 +478,14 @@ def update_book_metadata(book_id, related_subject, book_name, number):
     if is_success:
         record_book_status(
             conn, book_id, related_subject["id"], 1, book_name, "")
+        record_scrape_event(
+            conn,
+            "小说" if is_novel else "漫画",
+            book_metadata.title or book_name,
+            library_id,
+            _library_name(library_id),
+            list(book_data.keys()),
+        )
 
         # 使用 Bangumi 图片替换原封面
         # 确保没有上传过海报，避免重复上传，排除 komga 生成的封面
@@ -488,12 +522,13 @@ def update_book_metadata(book_id, related_subject, book_name, number):
         )
 
 
-def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fields=None):
+def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fields=None, library_id=None):
     """
     刷新书元数据
     """
     if subject_id == None:
         return
+    is_novel = _is_novel_series({"libraryId": library_id}) if library_id else False
 
     related_subjects = None
     subjects_numbers = []
@@ -525,7 +560,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     link["url"].split("/")[-1])
                 number, _ = get_number(
                     cbl_subject["name"] + cbl_subject["name_cn"])
-                update_book_metadata(book_id, cbl_subject, book_name, number)
+                update_book_metadata(book_id, cbl_subject, book_name, number, library_id, is_novel)
                 break
 
         # 找到对应的book_record
@@ -575,14 +610,23 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     ep_flag = False
 
                     update_book_metadata(
-                        book_id, related_subjects[i], book_name, number
+                        book_id, related_subjects[i], book_name, number, library_id, is_novel
                     )
 
                     break
         # 修正`话`序号
         if ep_flag:
             book_data = {"number": book_number, "numberSort": book_number}
-            komga.update_book_metadata(book_id, book_data)
+            number_updated = komga.update_book_metadata(book_id, book_data)
             record_book_status(
                 conn, book_id, None, 0, book_name, "Only update book number"
             )
+            if number_updated:
+                record_scrape_event(
+                    conn,
+                    "小说" if is_novel else "漫画",
+                    book_name,
+                    library_id,
+                    _library_name(library_id),
+                    list(book_data.keys()),
+                )
