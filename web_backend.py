@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = ROOT / "config"
 WEB_DIR = ROOT / "web"
 WEB_STATE = CONFIG_DIR / "web_config.json"
-AUTH_STATE = CONFIG_DIR / "web_auth.json"
+DATA_DIR = Path(os.getenv("BANGUMI_KOMGA_DATA_DIR", str(ROOT / "data")))
+AUTH_STATE = DATA_DIR / "web_auth.json"
+LEGACY_AUTH_STATE = CONFIG_DIR / "web_auth.json"
 CONFIG_FILE = CONFIG_DIR / "config.py"
 PORT = int(os.getenv("BANGUMI_KOMGA_WEB_PORT", "15600"))
 
@@ -71,20 +73,27 @@ def _password_hash(password):
 
 def _read_auth():
     with STATE_LOCK:
-        if AUTH_STATE.exists():
+        for auth_file in (AUTH_STATE, LEGACY_AUTH_STATE):
+            if not auth_file.exists():
+                continue
             try:
-                data = json.loads(AUTH_STATE.read_text(encoding="utf-8"))
+                data = json.loads(auth_file.read_text(encoding="utf-8"))
                 if data.get("username") and data.get("password_hash"):
                     return data
             except (OSError, ValueError):
-                pass
+                continue
         return {"username": "admin", "password_hash": _password_hash("password")}
 
 
 def _save_auth(username, password):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     data = {"username": username, "password_hash": _password_hash(password)}
     AUTH_STATE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    # Keep the legacy location in sync so existing deployments that only
+    # mounted /app/config do not lose credentials during an upgrade.
+    if LEGACY_AUTH_STATE != AUTH_STATE:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        LEGACY_AUTH_STATE.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return {"username": username}
 
 
