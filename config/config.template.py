@@ -7,6 +7,10 @@
 # @@version: 0.1
 BANGUMI_ACCESS_TOKEN = ''
 
+# Web 后台账号（密码仅保存为 SHA-256 哈希）
+WEB_ADMIN_USERNAME = "admin"
+WEB_ADMIN_PASSWORD_HASH = ""
+
 
 # @@name: KOMGA_BASE_URL
 # @@prompt: KOMGA访问地址

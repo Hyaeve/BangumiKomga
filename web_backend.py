@@ -29,6 +29,8 @@ CONFIG_FILE = CONFIG_DIR / "config.py"
 PORT = int(os.getenv("BANGUMI_KOMGA_WEB_PORT", "15600"))
 
 DEFAULTS = {
+    "WEB_ADMIN_USERNAME": "admin",
+    "WEB_ADMIN_PASSWORD_HASH": "",
     "BANGUMI_ACCESS_TOKEN": "",
     "KOMGA_BASE_URL": "",
     "KOMGA_EMAIL": "",
@@ -75,12 +77,26 @@ def _password_hash(password):
 
 def _read_auth():
     with STATE_LOCK:
-        if AUTH_STATE.exists():
+        state = _read_state()
+        if state.get("WEB_ADMIN_USERNAME") and state.get("WEB_ADMIN_PASSWORD_HASH"):
+            return {
+                "username": state["WEB_ADMIN_USERNAME"],
+                "password_hash": state["WEB_ADMIN_PASSWORD_HASH"],
+            }
+        if CONFIG_FILE.exists():
             try:
-                data = json.loads(AUTH_STATE.read_text(encoding="utf-8"))
-                if data.get("username") and data.get("password_hash"):
-                    return data
-            except (OSError, ValueError):
+                values = ast.parse(CONFIG_FILE.read_text(encoding="utf-8"))
+                found = {
+                    node.targets[0].id: ast.literal_eval(node.value)
+                    for node in values.body
+                    if isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id in {"WEB_ADMIN_USERNAME", "WEB_ADMIN_PASSWORD_HASH"}
+                }
+                if found.get("WEB_ADMIN_USERNAME") and found.get("WEB_ADMIN_PASSWORD_HASH"):
+                    return {"username": found["WEB_ADMIN_USERNAME"], "password_hash": found["WEB_ADMIN_PASSWORD_HASH"]}
+            except (OSError, ValueError, SyntaxError):
                 pass
         return {"username": "admin", "password_hash": _password_hash("password")}
 
@@ -88,19 +104,37 @@ def _read_auth():
 def _save_auth(username, password):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     data = {"username": username, "password_hash": _password_hash(password)}
-    AUTH_STATE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    state = _read_state()
+    state["WEB_ADMIN_USERNAME"] = username
+    state["WEB_ADMIN_PASSWORD_HASH"] = data["password_hash"]
+    _write_config(state)
     return {"username": username}
 
 
 def _read_state() -> dict:
     with STATE_LOCK:
+        config_values = {}
+        if CONFIG_FILE.exists():
+            try:
+                tree = ast.parse(CONFIG_FILE.read_text(encoding="utf-8"))
+                for node in tree.body:
+                    if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                            and isinstance(node.targets[0], ast.Name)
+                            and node.targets[0].id in DEFAULTS):
+                        config_values[node.targets[0].id] = ast.literal_eval(node.value)
+            except (OSError, ValueError, SyntaxError):
+                config_values = {}
         if WEB_STATE.exists():
             try:
                 data = json.loads(WEB_STATE.read_text(encoding="utf-8"))
-                return {**DEFAULTS, **data}
+                merged = {**DEFAULTS, **config_values, **data}
+                for key in ("WEB_ADMIN_USERNAME", "WEB_ADMIN_PASSWORD_HASH"):
+                    if config_values.get(key):
+                        merged[key] = config_values[key]
+                return merged
             except (OSError, ValueError):
                 pass
-        return dict(DEFAULTS)
+        return {**DEFAULTS, **config_values}
 
 
 def _python_value(value):
