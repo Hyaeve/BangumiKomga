@@ -16,7 +16,9 @@ createApp({
       dragIndex: null,
       contextMenu: { visible: false, x: 0, y: 0, index: null },
       editingCard: null,
-      view: 'scrape',
+      editingServer: null,
+      serverDraft: { id: '', name: '', base_url: '', email: '', password: '', api_key: '', auth_mode: 'password' },
+      view: window.location.hash.slice(1) || 'scrape',
       message: '',
       messageError: false,
       libraries: [],
@@ -47,8 +49,8 @@ createApp({
     lastRunText() { return this.status.last_result ? `最近完成：${this.status.last_result === 'full' ? '全量刮削' : '增量刮削'}` : '尚未执行刮削'; },
     credentialHint() { return this.loginForm.username || '已登录'; }
   },
-  watch: { view(value) { if (value === 'records') this.loadRecords(); } },
-  async mounted() { await this.checkSession(); },
+  watch: { view(value) { if (!['scrape', 'records', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(); } },
+  async mounted() { if (!['scrape', 'records', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); },
   methods: {
     async api(path, options = {}) {
       const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
@@ -73,8 +75,11 @@ createApp({
     applyConfig(config) { this.config = { ...this.config, ...config, KOMGA_SERVERS: (config.KOMGA_SERVERS || []).map(server => ({ auth_mode: server.auth_mode || (server.api_key ? 'key' : 'password'), ...server })) }; if (!this.config.KOMGA_SERVERS.length && this.config.KOMGA_BASE_URL) this.config.KOMGA_SERVERS = [{ id: 'legacy', name: '默认 Komga', base_url: this.config.KOMGA_BASE_URL, email: this.config.KOMGA_EMAIL, password: this.config.KOMGA_EMAIL_PASSWORD, api_key: this.config.KOMGA_API_KEY, auth_mode: this.config.KOMGA_API_KEY ? 'key' : 'password' }]; this.komgaAuthMode = this.config.KOMGA_API_KEY ? 'key' : 'password'; this.cards = (this.config.KOMGA_LIBRARY_LIST || []).map((item, index) => this.makeCard(item, index)); },
     makeCard(item = {}, index = 0) { return { uid: `${Date.now()}-${Math.random()}`, id: item.LIBRARY || '', serverId: item.SERVER_ID || '', name: '', path: '', isNovel: !!item.IS_NOVEL_ONLY, rules: item.REQUIRED_FIELDS || [], hue: this.cardHues[index % this.cardHues.length] }; },
     addCard() { this.cards.push(this.makeCard({}, this.cards.length)); },
-    addServer() { (this.config.KOMGA_SERVERS ||= []).push({ id: `server-${Date.now()}`, name: `Komga ${this.config.KOMGA_SERVERS.length + 1}`, base_url: '', email: '', password: '', api_key: '', auth_mode: 'password' }); },
+    resetServerDraft() { this.serverDraft = { id: '', name: '', base_url: '', email: '', password: '', api_key: '', auth_mode: 'password' }; },
+    addServer() { const draft = this.serverDraft; if (!draft.name.trim() || !draft.base_url.trim()) { this.notify('请填写 Komga 名称和地址', true); return; } if (draft.auth_mode === 'key' ? !draft.api_key : (!draft.email || !draft.password)) { this.notify('请填写完整的 Komga 认证信息', true); return; } (this.config.KOMGA_SERVERS ||= []).push({ ...draft, id: `server-${Date.now()}`, name: draft.name.trim(), base_url: draft.base_url.trim().replace(/\/$/, '') }); this.resetServerDraft(); this.notify('Komga 服务器已添加'); },
     removeServer(index) { this.config.KOMGA_SERVERS.splice(index, 1); },
+    openServerEditor(server) { this.editingServer = { ...server }; },
+    saveServerEdit() { const index = this.config.KOMGA_SERVERS.findIndex(item => item.id === this.editingServer.id); if (index >= 0) this.config.KOMGA_SERVERS.splice(index, 1, { ...this.editingServer, name: this.editingServer.name.trim(), base_url: this.editingServer.base_url.trim().replace(/\/$/, '') }); this.editingServer = null; this.notify('Komga 服务器已更新'); },
     removeCard(index) { this.cards.splice(index, 1); },
     dragStart(index, event) { this.dragIndex = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); },
     dropCard(index) { if (this.dragIndex === null || this.dragIndex === index) return; const [card] = this.cards.splice(this.dragIndex, 1); this.cards.splice(index, 0, card); this.dragIndex = null; },
@@ -84,6 +89,7 @@ createApp({
     openCardSettings(card) { this.editingCard = card; this.closeContextMenu(); if (card.serverId) this.loadCardLibraries(card); },
     closeCardSettings() { this.editingCard = null; },
     syncCardName(card) { const library = this.libraries.find(item => item.id === card.id); if (library) { card.name = library.name; card.path = library.root || library.path || ''; } },
+    changeCardServer(card) { card.id = ''; card.name = ''; card.path = ''; this.loadCardLibraries(card); },
     async loadCardLibraries(card) { if (!card.serverId) return; try { const data = await this.api(`/api/komga/libraries?server_id=${encodeURIComponent(card.serverId)}`); this.libraries = data.items || []; this.syncCardName(card); } catch (error) { this.notify(error.message, true); } },
     async loadLibraries(showMessage = true) {
       const server = this.activeServer;
