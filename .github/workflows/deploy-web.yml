@@ -7,6 +7,10 @@ on:
     paths:
       - 'config/config.template.py'
       - 'web/**'
+      - '.github/workflows/deploy-web.yml'
+
+permissions:
+  contents: write
 
 jobs:
   build-and-deploy:
@@ -35,3 +39,5 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: web
+          branch: gh-pages
+          token: ${{ secrets.GITHUB_TOKEN }}
