@@ -93,7 +93,8 @@ createApp({
     syncCardName(card) { const library = this.libraries.find(item => item.id === card.id); if (library) { card.name = library.name; card.path = library.root || library.path || ''; this.loadCardPreview(card); } },
     changeCardServer(card) { card.id = ''; card.name = ''; card.path = ''; card.covers = []; this.loadCardLibraries(card); },
     async loadCardLibraries(card) { if (!card.serverId) return; try { const data = await this.api(`/api/komga/libraries?server_id=${encodeURIComponent(card.serverId)}`); this.libraries = data.items || []; this.syncCardName(card); } catch (error) { this.notify(error.message, true); } },
-    async loadCardPreview(card) { if (!card.serverId || !card.id) return; try { const data = await this.api(`/api/komga/previews?server_id=${encodeURIComponent(card.serverId)}&library_id=${encodeURIComponent(card.id)}`); card.covers = data.items || []; } catch (_) { card.covers = []; } },
+    async loadCardPreview(card, force = false) { if (!card.serverId || !card.id) { card.covers = []; return; } try { const data = await this.api(`/api/komga/previews?server_id=${encodeURIComponent(card.serverId)}&library_id=${encodeURIComponent(card.id)}${force ? '&refresh=1' : ''}`); card.covers = data.items || []; } catch (_) { card.covers = []; } },
+    async refreshCardPreview(index) { const card = this.cards[index]; this.closeContextMenu(); await this.loadCardPreview(card, true); this.notify('封面拼贴已刷新'); },
     async loadLibraries(showMessage = true) {
       const server = this.activeServer;
       const hasCredentials = server ? (server.auth_mode === 'key' ? !!server.api_key : !!(server.email && server.password)) : (this.komgaAuthMode === 'key' ? !!this.config.KOMGA_API_KEY : !!(this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD));

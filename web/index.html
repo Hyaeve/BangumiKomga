@@ -40,7 +40,7 @@
             </article>
             <button v-if="!cards.length" class="empty-card" @click="addCard"><span>＋</span><strong>添加第一个媒体库</strong><small>从 Komga 读取可用库</small></button>
           </div>
-          <div v-if="contextMenu.visible" class="context-menu" :style="{left:contextMenu.x+'px',top:contextMenu.y+'px'}" @click.stop><button :disabled="status.running" @click="refresh(false);closeContextMenu()">增量刮削</button><button :disabled="status.running" @click="refresh(true);closeContextMenu()">全量刮削</button><button class="danger" @click="deleteCard(contextMenu.index)">删除此媒体库</button></div>
+          <div v-if="contextMenu.visible" class="context-menu" :style="{left:contextMenu.x+'px',top:contextMenu.y+'px'}" @click.stop><button @click="refreshCardPreview(contextMenu.index)">刷新封面拼贴</button><button :disabled="status.running" @click="refresh(false);closeContextMenu()">增量刮削</button><button :disabled="status.running" @click="refresh(true);closeContextMenu()">全量刮削</button><button class="danger" @click="deleteCard(contextMenu.index)">删除此媒体库</button></div>
         </section>
 
         <section v-else-if="view==='records'" class="view-stack">

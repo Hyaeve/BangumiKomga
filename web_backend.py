@@ -280,11 +280,11 @@ def _read_scrape_stats():
         return {"total": 0, "today": 0, "success": 0, "error": 0}
 
 
-def _preview_items(server_id, library_id):
+def _preview_items(server_id, library_id, force=False):
     key = (server_id or "", library_id or "")
     cached = PREVIEW_CACHE.get(key)
     now = __import__("time").time()
-    if cached and now - cached["created"] < PREVIEW_CACHE_TTL:
+    if cached and not force and now - cached["created"] < PREVIEW_CACHE_TTL:
         return cached["items"]
     komga = _load_komga(server_id)
     payload = komga.get_latest_series(library_id=library_id, page=0)
@@ -389,11 +389,12 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             server_id = query.get("server_id", [""])[0]
             library_id = query.get("library_id", [""])[0]
+            force = query.get("refresh", ["0"])[0] == "1"
             if not library_id:
                 self._json(400, {"error": "缺少媒体库 ID"})
             else:
                 try:
-                    self._json(200, {"items": _preview_items(server_id, library_id)})
+                    self._json(200, {"items": _preview_items(server_id, library_id, force=force)})
                 except Exception as exc:
                     self._json(400, {"error": str(exc)})
         elif path == "/api/komga/cover":
