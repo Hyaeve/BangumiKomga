@@ -1,0 +1,8 @@
+.collapse-btn span{display:block!important}
+.collapse-btn:before,.collapse-btn:after{display:none!important}
+.collapse-btn:hover span{display:none!important}
+.sidebar.collapsed .collapse-btn:hover:before,.sidebar.collapsed .collapse-btn:hover:after,.sidebar:not(.collapsed) .collapse-btn:hover:before,.sidebar:not(.collapsed) .collapse-btn:hover:after{display:block!important;opacity:1!important;height:16px!important}
+.sidebar.collapsed .collapse-btn:hover:before{transform:translateY(-50%) rotate(-38deg)!important;transform-origin:center bottom!important}
+.sidebar.collapsed .collapse-btn:hover:after{transform:translateY(-50%) rotate(38deg)!important;transform-origin:center top!important}
+.sidebar:not(.collapsed) .collapse-btn:hover:before{transform:translateY(-50%) rotate(38deg)!important;transform-origin:center bottom!important}
+.sidebar:not(.collapsed) .collapse-btn:hover:after{transform:translateY(-50%) rotate(-38deg)!important;transform-origin:center top!important}

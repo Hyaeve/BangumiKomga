@@ -21,7 +21,8 @@ class InitEnv:
         self.bgm = BangumiDataSourceFactory.create(BANGUMI_DATA_SOURCE_CONFIG)
         # 初始化 komga API
         self.komga = komga_api.KomgaApi(
-            KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD
+            KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD,
+            globals().get("KOMGA_API_KEY", "") or None,
         )
 
     def prepare_procedure(self):

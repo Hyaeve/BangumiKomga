@@ -29,6 +29,7 @@ DEFAULTS = {
     "KOMGA_BASE_URL": "",
     "KOMGA_EMAIL": "",
     "KOMGA_EMAIL_PASSWORD": "",
+    "KOMGA_API_KEY": "",
     "KOMGA_LIBRARY_LIST": [],
     "KOMGA_COLLECTION_LIST": [],
     "USE_BANGUMI_ARCHIVE": False,
@@ -140,10 +141,12 @@ def save_state(data: dict) -> dict:
 
 def _load_komga():
     state = _read_state()
-    if not state.get("KOMGA_BASE_URL") or not state.get("KOMGA_EMAIL"):
-        raise ValueError("请先保存 Komga 地址、邮箱和密码")
+    if not state.get("KOMGA_BASE_URL"):
+        raise ValueError("请先保存 Komga 地址")
+    if not state.get("KOMGA_API_KEY") and (not state.get("KOMGA_EMAIL") or not state.get("KOMGA_EMAIL_PASSWORD")):
+        raise ValueError("请填写 Komga 账号密码或 API 密钥")
     from api.komga_api import KomgaApi
-    return KomgaApi(state["KOMGA_BASE_URL"], state["KOMGA_EMAIL"], state["KOMGA_EMAIL_PASSWORD"])
+    return KomgaApi(state["KOMGA_BASE_URL"], state.get("KOMGA_EMAIL", ""), state.get("KOMGA_EMAIL_PASSWORD", ""), state.get("KOMGA_API_KEY") or None)
 
 
 def _start_refresh(full=False):
@@ -168,13 +171,26 @@ def _start_refresh(full=False):
     return True
 
 
-def _read_logs(limit=160):
+def _read_logs(limit=80):
     log_file = ROOT / "logs" / "refreshMetadata.log"
     if not log_file.exists():
         return []
     try:
-        lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
-        return lines[-limit:]
+        # Read backwards in bounded chunks rather than loading a growing log
+        # file into memory just to return its tail.
+        with log_file.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            position = handle.tell()
+            chunks = []
+            newline_count = 0
+            while position > 0 and newline_count <= limit:
+                size = min(8192, position)
+                position -= size
+                handle.seek(position)
+                chunk = handle.read(size)
+                chunks.append(chunk)
+                newline_count += chunk.count(b"\n")
+        return b"".join(reversed(chunks)).decode("utf-8", errors="replace").splitlines()[-limit:]
     except OSError:
         return []
 
@@ -225,7 +241,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/status":
             self._json(200, REFRESH_STATE)
         elif path == "/api/logs":
-            self._json(200, {"lines": _read_logs()})
+            query = urlparse(self.path).query
+            limit = 80
+            if query.startswith("limit="):
+                try:
+                    limit = max(20, min(int(query.split("=", 1)[1]), 120))
+                except ValueError:
+                    pass
+            self._json(200, {"lines": _read_logs(limit)})
         elif path == "/api/komga/libraries":
             try:
                 self._json(200, {"items": _load_komga().list_libraries()})

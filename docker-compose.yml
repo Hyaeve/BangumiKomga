@@ -1,0 +1,13 @@
+services:
+  bangumikomga:
+    image: ghcr.io/hyaeve/bangumikomga:latest
+    platform: linux/amd64
+    container_name: bangumikomga
+    ports:
+      - "15600:15600"
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./archivedata:/app/archivedata
+      - ./recordsRefreshed.db:/app/recordsRefreshed.db
+    restart: always

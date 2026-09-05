@@ -9,6 +9,9 @@ createApp({
       showCredentialModal: false,
       showCredentialConfirm: false,
       sidebarCollapsed: false,
+      komgaAuthMode: 'password',
+      dragIndex: null,
+      contextMenu: { visible: false, x: 0, y: 0, index: null },
       view: 'scrape',
       message: '',
       messageError: false,
@@ -18,7 +21,7 @@ createApp({
       cardHues: [105, 270, 195, 35, 320, 155],
       status: { running: false, last_result: null, last_error: null },
       config: {
-        BANGUMI_ACCESS_TOKEN: '', KOMGA_BASE_URL: '', KOMGA_EMAIL: '', KOMGA_EMAIL_PASSWORD: '',
+        BANGUMI_ACCESS_TOKEN: '', KOMGA_BASE_URL: '', KOMGA_EMAIL: '', KOMGA_EMAIL_PASSWORD: '', KOMGA_API_KEY: '',
         KOMGA_LIBRARY_LIST: [], BANGUMI_KOMGA_SERVICE_TYPE: 'poll', BANGUMI_KOMGA_SERVICE_POLL_INTERVAL: 20,
         BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL: 10000
       },
@@ -57,20 +60,26 @@ createApp({
     },
     async logout() { await this.api('/api/auth/logout', { method: 'POST', body: '{}' }); this.authenticated = false; },
     async loadApp() {
-      const config = await this.api('/api/config'); this.config = { ...this.config, ...config }; this.cards = (config.KOMGA_LIBRARY_LIST || []).map((item, index) => this.makeCard(item, index));
-      if (this.config.KOMGA_BASE_URL && this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD) await this.loadLibraries(false);
+      const config = await this.api('/api/config'); this.config = { ...this.config, ...config }; this.komgaAuthMode = this.config.KOMGA_API_KEY ? 'key' : 'password'; this.cards = (config.KOMGA_LIBRARY_LIST || []).map((item, index) => this.makeCard(item, index));
+      if (this.config.KOMGA_BASE_URL && (this.komgaAuthMode === 'key' ? this.config.KOMGA_API_KEY : (this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD))) await this.loadLibraries(false);
       this.pollStatus();
     },
     makeCard(item = {}, index = 0) { return { uid: `${Date.now()}-${Math.random()}`, id: item.LIBRARY || '', name: '', path: '', isNovel: !!item.IS_NOVEL_ONLY, rules: item.REQUIRED_FIELDS || [], showRules: false, hue: this.cardHues[index % this.cardHues.length] }; },
     addCard() { this.cards.push(this.makeCard({}, this.cards.length)); },
     removeCard(index) { this.cards.splice(index, 1); },
+    dragStart(index, event) { this.dragIndex = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); },
+    dropCard(index) { if (this.dragIndex === null || this.dragIndex === index) return; const [card] = this.cards.splice(this.dragIndex, 1); this.cards.splice(index, 0, card); this.dragIndex = null; },
+    openCardMenu(index, event) { const menuWidth = 150, menuHeight = 44; this.contextMenu = { visible: true, index, x: Math.min(event.clientX, window.innerWidth - menuWidth - 12), y: Math.min(event.clientY, window.innerHeight - menuHeight - 12) }; },
+    closeContextMenu() { if (this.contextMenu.visible) this.contextMenu = { visible: false, x: 0, y: 0, index: null }; },
+    deleteCard(index) { this.removeCard(index); this.closeContextMenu(); this.notify('媒体库卡片已删除'); },
     syncCardName(card) { const library = this.libraries.find(item => item.id === card.id); if (library) { card.name = library.name; card.path = library.root || library.path || ''; } },
     async loadLibraries(showMessage = true) {
-      if (!this.config.KOMGA_BASE_URL || !this.config.KOMGA_EMAIL || !this.config.KOMGA_EMAIL_PASSWORD) return;
+      const hasCredentials = this.komgaAuthMode === 'key' ? !!this.config.KOMGA_API_KEY : !!(this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD);
+      if (!this.config.KOMGA_BASE_URL || !hasCredentials) { if (showMessage) this.notify('请先填写 Komga 地址和认证信息', true); return; }
       try { const data = await this.api('/api/komga/libraries'); this.libraries = data.items || []; this.cards.forEach(card => this.syncCardName(card)); if (showMessage) this.notify(`已读取 ${this.libraries.length} 个媒体库`); }
       catch (error) { if (showMessage) this.notify(error.message, true); }
     },
-    collectConfig() { return { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, IS_NOVEL_ONLY: card.isNovel, REQUIRED_FIELDS: card.rules })) }; },
+    collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, IS_NOVEL_ONLY: card.isNovel, REQUIRED_FIELDS: card.rules })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); } catch (error) { this.notify(error.message, true); } },
     async refresh(full) { try { await this.api('/api/refresh', { method: 'POST', body: JSON.stringify({ full }) }); this.notify(full ? '全量刮削已开始' : '增量刮削已开始'); } catch (error) { this.notify(error.message, true); } },
     async loadLogs() { try { this.logs = (await this.api('/api/logs')).lines || []; } catch (error) { this.notify(error.message, true); } },

@@ -19,6 +19,10 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from tools.log import logger
 from config.config import KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD, KOMGA_LIBRARY_LIST
+try:
+    from config.config import KOMGA_API_KEY
+except ImportError:
+    KOMGA_API_KEY = ""
 
 # 可配置的订阅事件类型
 RefreshEventType = ["SeriesAdded",
@@ -279,7 +283,7 @@ class KomgaSseClient:
 
 
 class KomgaSseApi:
-    def __init__(self, base_url=KOMGA_BASE_URL, username=KOMGA_EMAIL, password=KOMGA_EMAIL_PASSWORD, api_key=None, timeout=30, retries=5):
+    def __init__(self, base_url=KOMGA_BASE_URL, username=KOMGA_EMAIL, password=KOMGA_EMAIL_PASSWORD, api_key=KOMGA_API_KEY or None, timeout=30, retries=5):
         # 实例化 KomgaSseApi 对象
         self.sse_client = KomgaSseClient(
             base_url, username, password, api_key, timeout, retries)

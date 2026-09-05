@@ -1,20 +1,83 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BangumiKomga · 控制台</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><style>.login-kicker{margin:0 0 9px;color:#7e72c6;font-size:11px;font-weight:700;letter-spacing:1.4px}.login-card h1{font-size:26px}.login-card>p:not(.login-kicker){margin:8px 0 25px;color:#7b858d}</style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css"><link rel="stylesheet" href="overrides.css">
+  <style>.login-kicker{margin:0 0 9px;color:#7e72c6;font-size:11px;font-weight:700;letter-spacing:1.4px}</style>
 </head>
-<body><div id="app" v-cloak>
-  <section v-if="!authenticated" class="login-screen"><div class="login-orbit orbit-a"></div><div class="login-orbit orbit-b"></div><form class="login-card" @submit.prevent="login"><div class="brand login-brand"><span class="brand-mark">BK</span><div><strong>BangumiKomga</strong><small>Metadata workspace</small></div></div><p class="login-kicker">CONTROL CONSOLE</p><h1>登录后台</h1><p>管理媒体库刮削与运行策略</p><label>账号<input v-model.trim="loginForm.username" autocomplete="username" autofocus></label><label>密码<input v-model="loginForm.password" type="password" autocomplete="current-password"></label><button class="primary login-button" type="submit">进入后台 <span>→</span></button></form></section>
-  <template v-else>
-    <aside class="sidebar" :class="{collapsed: sidebarCollapsed}"><div class="brand"><span class="brand-mark">BK</span><span class="brand-name">BangumiKomga</span></div><button class="collapse-btn" @click="sidebarCollapsed=!sidebarCollapsed" :aria-label="sidebarCollapsed?'展开侧栏':'收起侧栏'">{{ sidebarCollapsed ? '›' : '‹' }}</button><nav class="nav"><button v-for="item in navItems" :key="item.id" class="nav-item" :class="{active:view===item.id}" @click="view=item.id"><span class="nav-icon">{{ item.icon }}</span><span class="nav-label">{{ item.label }}</span></button></nav><div class="sidebar-foot"><span class="dot"></span><span class="nav-label">服务在线</span></div></aside>
-    <main class="main" :class="{expanded:sidebarCollapsed}"><header class="page-head"><div><p class="kicker">BANGUMI KOMGA / {{ currentNav.label }}</p><h1>{{ currentNav.title }}</h1><p class="subtitle">{{ currentNav.subtitle }}</p></div><div class="head-actions"><span class="sync-state" :class="{busy:status.running}">{{ status.running?'刮削进行中':'已同步' }}</span><button class="avatar" @click="openCredentialModal" title="修改后台账号密码">BK</button><button class="logout" @click="logout" title="退出登录">↪</button></div></header>
-      <section v-if="view==='scrape'" class="view-stack"><div class="toolbar"><div><h2>媒体库</h2><p>按卡片管理库范围与元数据补全规则</p></div><button class="primary" @click="addCard">＋ 添加媒体库</button></div><div class="library-grid"><article v-for="(card,index) in cards" :key="card.uid" class="library-card" :style="{'--card-hue':card.hue}"><div class="card-top"><span class="folder-icon">⌁</span><button class="remove" @click="removeCard(index)" title="删除媒体库">×</button></div><div class="card-content"><p class="card-label">MEDIA LIBRARY {{String(index+1).padStart(2,'0')}}</p><h3>{{card.name||'选择媒体库'}}</h3><p class="card-path">{{card.path||'从 Komga 载入媒体库'}}</p><span v-if="card.id" class="tag">{{card.isNovel?'小说':'漫画'}}</span></div><select v-model="card.id" @change="syncCardName(card)"><option value="">选择媒体库</option><option v-for="lib in libraries" :key="lib.id" :value="lib.id">{{lib.name}} · {{lib.id}}</option></select><label class="novel-toggle"><input type="checkbox" v-model="card.isNovel"><span>仅匹配小说</span></label><div class="rule-row"><span>缺失字段重刷</span><button class="rule-button" @click="card.showRules=!card.showRules">{{card.rules.length}} 项 <span>{{card.showRules?'⌃':'⌄'}}</span></button></div><div v-if="card.showRules" class="rules"><label v-for="field in fieldOptions" :key="field.value"><input type="checkbox" :value="field.value" v-model="card.rules"><span>{{field.label}}</span></label></div></article><button v-if="!cards.length" class="empty-card" @click="addCard"><span>＋</span><strong>添加第一个媒体库</strong><small>从 Komga 读取可用库</small></button></div><div class="run-panel"><div><p class="kicker">SCRAPER CONTROL</p><h2>准备好开始刮削了吗？</h2><p>{{lastRunText}}</p></div><div class="run-actions"><button class="secondary" :disabled="status.running" @click="refresh(false)">增量刮削</button><button class="primary" :disabled="status.running" @click="refresh(true)">全量刮削 <span>→</span></button></div></div></section>
-      <section v-else-if="view==='logs'" class="view-stack"><div class="toolbar"><div><h2>运行日志</h2><p>实时查看最近的刮削和服务记录</p></div><button class="secondary" @click="loadLogs">刷新日志</button></div><div class="log-panel"><div v-for="(line,index) in logs" :key="index" class="log-line" :class="logClass(line)"><span class="log-index">{{String(index+1).padStart(3,'0')}}</span><code>{{line}}</code></div><div v-if="!logs.length" class="log-empty">暂无日志记录</div></div></section>
-      <section v-else class="view-stack"><div class="toolbar"><div><h2>系统设置</h2><p>连接服务、Bangumi 密钥与运行策略</p></div><button class="primary" @click="save">保存设置</button></div><div class="settings-grid"><section class="setting-card"><h3>服务连接</h3><label>Komga 地址<input v-model.trim="config.KOMGA_BASE_URL" placeholder="http://komga:25600"></label><label>Komga 登录邮箱<input v-model.trim="config.KOMGA_EMAIL" type="email"></label><label>Komga 登录密码<input v-model="config.KOMGA_EMAIL_PASSWORD" type="password"></label><label>Bangumi 访问密钥<input v-model.trim="config.BANGUMI_ACCESS_TOKEN" type="password" placeholder="可选，用于 NSFW 条目"></label><button class="secondary full" @click="loadLibraries">测试连接并读取媒体库</button></section><section class="setting-card"><h3>服务策略</h3><label>运行模式<select v-model="config.BANGUMI_KOMGA_SERVICE_TYPE"><option value="poll">轮询增量</option><option value="sse">SSE 实时</option><option value="once">手动运行</option></select></label><label>轮询间隔（秒）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_INTERVAL" type="number" min="5"></label><label>全量刷新周期（轮询次数）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL" type="number" min="1"></label><div class="account-box"><div><strong>后台账号安全</strong><small>当前账号：{{credentialHint}}</small></div><button class="secondary" @click="openCredentialModal">修改账号密码</button></div></section></div></section><p v-if="message" class="toast" :class="{error:messageError}">{{message}}</p></main>
+<body>
+  <div id="app" v-cloak>
+    <section v-if="!authenticated" class="login-screen">
+      <div class="login-orbit orbit-a"></div><div class="login-orbit orbit-b"></div>
+      <form class="login-card" @submit.prevent="login">
+        <div class="brand login-brand"><span class="brand-mark">BK</span><div><strong>BangumiKomga</strong><small>Metadata workspace</small></div></div>
+        <p class="login-kicker">CONTROL CONSOLE</p>
+        <h1>登录后台</h1><p>管理媒体库刮削与运行策略</p>
+        <label>账号<input v-model.trim="loginForm.username" autocomplete="username" autofocus></label>
+        <label>密码<input v-model="loginForm.password" type="password" autocomplete="current-password"></label>
+        <button class="primary login-button" type="submit">进入后台 <span>→</span></button>
+      </form>
+    </section>
+
+    <template v-else>
+      <aside class="sidebar" :class="{collapsed:sidebarCollapsed}">
+        <div class="brand"><span class="brand-mark">BK</span><span class="brand-name">BangumiKomga</span></div>
+        <button class="collapse-btn" @click="sidebarCollapsed=!sidebarCollapsed" :aria-label="sidebarCollapsed?'展开侧栏':'收起侧栏'"><span aria-hidden="true"></span></button>
+        <nav class="nav"><button v-for="item in navItems" :key="item.id" class="nav-item" :class="{active:view===item.id}" @click="view=item.id"><span class="nav-icon">{{item.icon}}</span><span class="nav-label">{{item.label}}</span></button></nav>
+        <div class="sidebar-foot"><span class="dot"></span><span class="nav-label">服务在线</span></div>
+      </aside>
+
+      <main class="main" :class="{expanded:sidebarCollapsed}">
+        <header class="page-head"><div><p class="kicker">BANGUMI KOMGA</p><p class="subtitle">{{currentNav.subtitle}}</p></div><div class="head-actions"><span class="sync-state" :class="{busy:status.running}">{{status.running?'刮削进行中':'已同步'}}</span><button class="avatar" @click="openCredentialModal" title="修改后台账号密码">BK</button><button class="logout" @click="logout" title="退出登录">↪</button></div></header>
+
+        <section v-if="view==='scrape'" class="view-stack">
+          <div class="toolbar"><div><h2>媒体库</h2><p>拖拽卡片排序，右键卡片删除</p></div><div class="toolbar-actions"><button class="secondary" @click="save">保存卡片</button><button class="primary" @click="addCard">＋ 添加媒体库</button></div></div>
+          <div class="library-grid" @click="closeContextMenu">
+            <article v-for="(card,index) in cards" :key="card.uid" class="library-card" :class="{dragging:dragIndex===index}" draggable="true" :style="{'--card-hue':card.hue}" @dragstart="dragStart(index,$event)" @dragend="dragIndex=null" @dragover.prevent @drop="dropCard(index)" @contextmenu.prevent="openCardMenu(index,$event)">
+              <div class="card-top"><span class="folder-icon">↓</span></div>
+              <div class="card-content"><p class="card-label">MEDIA LIBRARY {{String(index+1).padStart(2,'0')}}</p><h3>{{card.name||'选择媒体库'}}</h3><p class="card-path">{{card.path||'从 Komga 载入媒体库'}}</p><span v-if="card.id" class="tag">{{card.isNovel?'小说':'漫画'}}</span></div>
+              <select v-model="card.id" @change="syncCardName(card)"><option value="">选择媒体库</option><option v-for="lib in libraries" :key="lib.id" :value="lib.id">{{lib.name}} · {{lib.id}}</option></select>
+              <label class="novel-toggle"><input type="checkbox" v-model="card.isNovel"><span>仅匹配小说</span></label>
+              <div class="rule-row"><span>缺失字段重刷</span><button class="rule-button" @click.stop="card.showRules=!card.showRules">{{card.rules.length}} 项 <span>{{card.showRules?'⌃':'⌄'}}</span></button></div>
+              <div v-if="card.showRules" class="rules"><label v-for="field in fieldOptions" :key="field.value"><input type="checkbox" :value="field.value" v-model="card.rules"><span>{{field.label}}</span></label></div>
+            </article>
+            <button v-if="!cards.length" class="empty-card" @click="addCard"><span>＋</span><strong>添加第一个媒体库</strong><small>从 Komga 读取可用库</small></button>
+          </div>
+          <div v-if="contextMenu.visible" class="context-menu" :style="{left:contextMenu.x+'px',top:contextMenu.y+'px'}"><button @click="deleteCard(contextMenu.index)">删除此媒体库</button></div>
+          <div class="run-panel"><div><p class="kicker">SCRAPER CONTROL</p><h2>准备好开始刮削了吗？</h2><p>{{lastRunText}}</p></div><div class="run-actions"><button class="secondary" :disabled="status.running" @click="refresh(false)">增量刮削</button><button class="primary" :disabled="status.running" @click="refresh(true)">全量刮削 <span>→</span></button></div></div>
+        </section>
+
+        <section v-else-if="view==='logs'" class="view-stack">
+          <div class="toolbar"><div><h2>运行日志</h2><p>实时查看最近的刮削和服务记录</p></div><button class="secondary" @click="loadLogs">刷新日志</button></div>
+          <div class="log-panel"><div v-for="(line,index) in logs" :key="index" class="log-line" :class="logClass(line)"><span class="log-index">{{String(index+1).padStart(3,'0')}}</span><code>{{line}}</code></div><div v-if="!logs.length" class="log-empty">暂无日志记录</div></div>
+        </section>
+
+        <section v-else class="view-stack">
+          <div class="toolbar"><div><h2>系统设置</h2><p>连接服务、Bangumi 密钥与运行策略</p></div><button class="primary" @click="save">保存设置</button></div>
+          <div class="settings-grid">
+            <section class="setting-card"><h3>服务连接</h3>
+              <label>Komga 地址<input v-model.trim="config.KOMGA_BASE_URL" placeholder="http://komga:25600"></label>
+              <div class="auth-tabs"><button :class="{active:komgaAuthMode==='password'}" @click="komgaAuthMode='password'">账号密码</button><button :class="{active:komgaAuthMode==='key'}" @click="komgaAuthMode='key'">API 密钥</button></div>
+              <template v-if="komgaAuthMode==='password'"><label>Komga 登录邮箱<input v-model.trim="config.KOMGA_EMAIL" type="email"></label><label>Komga 登录密码<input v-model="config.KOMGA_EMAIL_PASSWORD" type="password"></label></template>
+              <label v-else>Komga API 密钥<input v-model.trim="config.KOMGA_API_KEY" type="password"></label>
+              <label>Bangumi 访问密钥 <a href="https://next.bgm.tv/demo/access-token" target="_blank" rel="noopener noreferrer">创建密钥 ↗</a><input v-model.trim="config.BANGUMI_ACCESS_TOKEN" type="password" placeholder="可选，用于 NSFW 条目"></label>
+              <button class="secondary full" @click="loadLibraries">测试连接并读取媒体库</button>
+            </section>
+            <section class="setting-card"><h3>服务策略</h3><label>运行模式<select v-model="config.BANGUMI_KOMGA_SERVICE_TYPE"><option value="poll">轮询增量</option><option value="sse">SSE 实时</option><option value="once">手动运行</option></select></label><label>轮询间隔（秒）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_INTERVAL" type="number" min="5"></label><label>全量刷新周期（轮询次数）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL" type="number" min="1"></label><div class="account-box"><div><strong>后台账号安全</strong><small>当前账号：{{credentialHint}}</small></div><button class="secondary" @click="openCredentialModal">修改账号密码</button></div></section>
+          </div>
+        </section>
+        <p v-if="message" class="toast" :class="{error:messageError}">{{message}}</p>
+      </main>
     </template>
-  <div v-if="showCredentialModal" class="modal-backdrop" @click.self="showCredentialModal=false"><form class="modal" @submit.prevent="requestCredentialSave"><button type="button" class="modal-close" @click="showCredentialModal=false">×</button><p class="kicker">ACCOUNT SECURITY</p><h2>修改后台账号</h2><p>新的账号密码会立即生效。</p><label>新账号<input v-model.trim="credentialForm.username" autocomplete="username"></label><label>新密码<input v-model="credentialForm.password" type="password" autocomplete="new-password"></label><div class="modal-actions"><button type="button" class="secondary" @click="showCredentialModal=false">取消</button><button class="primary" type="submit">继续</button></div></form></div>
-  <div v-if="showCredentialConfirm" class="modal-backdrop" @click.self="showCredentialConfirm=false"><div class="modal confirm-modal"><p class="kicker">CONFIRM CHANGE</p><h2>确认保存新账号密码？</h2><p>保存后当前登录会话仍保持有效，但下次登录需要使用新凭据。</p><div class="modal-actions"><button class="secondary" @click="showCredentialConfirm=false">返回修改</button><button class="primary" @click="confirmCredentialSave">确定保存</button></div></div></div>
-</div><script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script><script src="config.js"></script></body></html>
+
+    <div v-if="showCredentialModal" class="modal-backdrop" @click.self="showCredentialModal=false"><form class="modal" @submit.prevent="requestCredentialSave"><button type="button" class="modal-close" @click="showCredentialModal=false">×</button><p class="kicker">ACCOUNT SECURITY</p><h2>修改后台账号</h2><p>新的账号密码会立即生效。</p><label>新账号<input v-model.trim="credentialForm.username" autocomplete="username"></label><label>新密码<input v-model="credentialForm.password" type="password" autocomplete="new-password"></label><div class="modal-actions"><button type="button" class="secondary" @click="showCredentialModal=false">取消</button><button class="primary" type="submit">继续</button></div></form></div>
+    <div v-if="showCredentialConfirm" class="modal-backdrop" @click.self="showCredentialConfirm=false"><div class="modal confirm-modal"><p class="kicker">CONFIRM CHANGE</p><h2>确认保存新账号密码？</h2><p>保存后当前登录会话仍保持有效，但下次登录需要使用新凭据。</p><div class="modal-actions"><button class="secondary" @click="showCredentialConfirm=false">返回修改</button><button class="primary" @click="confirmCredentialSave">确定保存</button></div></div></div>
+  </div>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script><script src="config.js"></script>
+</body>
+</html>

@@ -33,6 +33,15 @@ KOMGA_EMAIL = ""
 # @@version: 0.1
 KOMGA_EMAIL_PASSWORD = ""
 
+# @@name: KOMGA_API_KEY
+# @@prompt: KOMGA API 密钥（与账号密码二选一）
+# @@type: password
+# @@required: False
+# @@validator:
+# @@info: 可在 Komga 用户设置中创建 API 密钥
+# @@version: 0.20.0
+KOMGA_API_KEY = ""
+
 
 # @@name: KOMGA_LIBRARY_LIST
 # @@prompt: 配置 KOMGA 库
