@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BangumiKomga · 控制台</title>
+  <link rel="icon" type="image/png" href="favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -23,7 +24,7 @@
 
     <template v-else>
       <aside class="sidebar" :class="{collapsed:sidebarCollapsed}">
-        <div class="brand"><span class="brand-mark">BK</span><span class="brand-name">BangumiKomga</span></div>
+        <div class="brand"><img class="brand-mark" src="logo-icon.png" alt="BangumiKomga"><span class="brand-name">BangumiKomga</span></div>
         <button class="collapse-btn" @click="sidebarCollapsed=!sidebarCollapsed" :aria-label="sidebarCollapsed?'展开侧栏':'收起侧栏'"><span aria-hidden="true"></span></button>
         <nav class="nav"><button v-for="item in navItems" :key="item.id" class="nav-item" :class="{active:view===item.id}" @click="view=item.id"><span class="nav-icon">{{item.icon}}</span><span class="nav-label">{{item.label}}</span></button></nav>
         <div class="sidebar-foot"><span class="dot"></span><span class="nav-label">服务在线</span><button class="sidebar-logout" @click="logout" title="退出登录" aria-label="退出登录">↪</button></div>

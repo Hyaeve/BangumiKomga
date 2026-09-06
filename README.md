@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/logo-icon.png" alt="BangumiKomga Logo" width="96">
+</p>
+
 # Bangumi metadata scraper for Komga
 
 - [Bangumi metadata scraper for Komga](#bangumi-metadata-scraper-for-komga)
