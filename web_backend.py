@@ -402,8 +402,23 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 komga = _load_komga(query.get("server_id", [""])[0])
                 series_id = query.get("series_id", [""])[0]
-                response = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnail", timeout=30)
-                response.raise_for_status()
+                response = None
+                for suffix in ("/thumbnail", "/thumbnail?selected=true"):
+                    candidate = komga.r.get(f"{komga.base_url}/series/{series_id}{suffix}", headers={"Accept": "image/jpeg,image/*"}, timeout=30)
+                    if candidate.ok and candidate.content:
+                        response = candidate
+                        break
+                if response is None:
+                    thumbs = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails", timeout=30)
+                    thumbs.raise_for_status()
+                    thumb_items = thumbs.json() if isinstance(thumbs.json(), list) else []
+                    selected = next((item for item in thumb_items if item.get("selected")), None) or (thumb_items[0] if thumb_items else None)
+                    if selected and selected.get("id"):
+                        candidate = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails/{selected['id']}", headers={"Accept": "image/jpeg,image/*"}, timeout=30)
+                        if candidate.ok and candidate.content:
+                            response = candidate
+                if response is None:
+                    raise ValueError("Komga 未返回封面")
                 self.send_response(200)
                 self.send_header("Content-Type", response.headers.get("Content-Type", "image/jpeg"))
                 self.send_header("Cache-Control", "public, max-age=86400")
