@@ -14,11 +14,13 @@
 
 后台账号密码以 SHA-256 哈希保存在 `/app/config/config.py`，不保存明文密码。默认 compose 将整个 `/app/config` 绑定到宿主机的 `./config`，因此重启或重建容器后仍会保留自定义账号密码。
 
-Komga 支持添加多个连接，每个连接可设置自定义名称，并在账号密码/API Key 中二选一。媒体库卡片保存连接 ID、库 ID、小说过滤和缺失字段规则；右键删除与拖拽排序均在前端完成，点击“保存卡片”后会写入 `config/config.py` 的 `KOMGA_LIBRARY_LIST`。
+Komga 支持添加多个连接，每个连接可设置自定义名称，并在账号密码/API Key 中二选一。媒体库卡片保存连接 ID、库 ID、小说过滤、缺失字段规则和 `OVERWRITE_FIELDS` 覆盖字段；未选中的字段只在 Komga 原值为空时填入，选中的字段会以 Bangumi 匹配结果覆盖。右键删除与拖拽排序均在前端完成，点击“保存卡片”后会写入 `config/config.py` 的 `KOMGA_LIBRARY_LIST`。
 
 系统设置中的“备份”会下载完整 JSON 配置，“还原”会校验并覆盖当前配置，同时同步更新 `config/config.py`。
 
-刮削卡片会根据绑定的 Komga 连接和媒体库读取最新系列封面，服务端按连接/媒体库缓存 24 小时，前端以错落堆叠的封面流展示。
+刮削卡片会根据绑定的 Komga 连接和媒体库读取最新系列封面，服务端按连接/媒体库缓存 24 小时，前端以统一倾斜的规整封面流展示。
+
+OpenAI 翻译是独立的可选集成：`tools/summary_translation.py` 使用既有的 `requests` 依赖调用 OpenAI 兼容的 `/chat/completions` 接口。配置 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL` 并启用 `TRANSLATE_SUMMARY_TO_ZH` 后，匹配到的简介会交给模型输出简体中文；未配置或接口失败时保留原文。删除该模块并清空四项配置即可解除该集成，不影响原版刮削。
 
 ## 增量运行
 

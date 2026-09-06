@@ -15,6 +15,7 @@ from corpus.vocabulary import (
     RATING_R15_KEYWORDS,
     RATING_R18_KEYWORDS,
 )
+from tools.summary_translation import translate_summary_to_zh
 
 
 def _set_tags(komga_metadata, bangumi_metadata):
@@ -210,7 +211,7 @@ def _set_summary(komga_metadata, bangumi_metadata):
     """
     概要
     """
-    komga_metadata.summary = bangumi_metadata["summary"]
+    komga_metadata.summary = translate_summary_to_zh(bangumi_metadata["summary"])
 
 
 def _set_links(komga_metadata, bangumi_metadata, subject_relations):

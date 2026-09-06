@@ -11,7 +11,8 @@
 
 - `main.py`：先启动 Web 服务；首次安装没有 `config.py` 时不会阻塞在交互式配置生成器，而是等待页面保存配置。
 - `services/service_runner.py`：移除启动时无条件全量刷新；`once` 模式保持进程常驻，避免 Docker 重启策略反复扫库。
-- `core/refresh_metadata.py`：复用 `recordsRefreshed.db` 的系列/书籍记录；已成功匹配的系列仅在媒体库卡片指定字段缺失时重新匹配；修复增量扫描缓存时间取值，并正确处理增量列表。
+- `core/refresh_metadata.py`：复用 `recordsRefreshed.db` 的系列/书籍记录；已成功匹配的系列仅在媒体库卡片指定字段缺失时重新匹配；`OVERWRITE_FIELDS` 控制字段级覆盖，其他字段仅补充空值。
+- `tools/summary_translation.py`：可选的 OpenAI 兼容简介翻译适配层，不影响未启用翻译的原版流程。
 - `config/config.template.py`：默认服务模式调整为 `poll`。
 - `Dockerfile`：声明容器端口 `15600`。
 

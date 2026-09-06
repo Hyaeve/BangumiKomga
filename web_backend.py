@@ -32,6 +32,10 @@ DEFAULTS = {
     "WEB_ADMIN_USERNAME": "admin",
     "WEB_ADMIN_PASSWORD_HASH": "",
     "BANGUMI_ACCESS_TOKEN": "",
+    "OPENAI_BASE_URL": "",
+    "OPENAI_API_KEY": "",
+    "OPENAI_MODEL": "",
+    "TRANSLATE_SUMMARY_TO_ZH": False,
     "KOMGA_BASE_URL": "",
     "KOMGA_EMAIL": "",
     "KOMGA_EMAIL_PASSWORD": "",
@@ -193,11 +197,13 @@ def save_state(data: dict) -> dict:
             "SERVER_ID": str(item.get("SERVER_ID", "")),
             "IS_NOVEL_ONLY": bool(item.get("IS_NOVEL_ONLY", False)),
             "REQUIRED_FIELDS": list(item.get("REQUIRED_FIELDS", []) or []),
+            "OVERWRITE_FIELDS": list(item.get("OVERWRITE_FIELDS", []) or []),
         })
     merged["KOMGA_LIBRARY_LIST"] = libraries
     merged["KOMGA_COLLECTION_LIST"] = [
         {"COLLECTION": str(x["COLLECTION"]), "IS_NOVEL_ONLY": bool(x.get("IS_NOVEL_ONLY", False)),
-         "REQUIRED_FIELDS": list(x.get("REQUIRED_FIELDS", []) or [])}
+         "REQUIRED_FIELDS": list(x.get("REQUIRED_FIELDS", []) or []),
+         "OVERWRITE_FIELDS": list(x.get("OVERWRITE_FIELDS", []) or [])}
         for x in (merged.get("KOMGA_COLLECTION_LIST", []) or []) if x.get("COLLECTION")
     ]
     with STATE_LOCK:

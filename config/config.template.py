@@ -49,6 +49,13 @@ KOMGA_API_KEY = ""
 # either email/password or api_key. The first entry is used by legacy workers.
 KOMGA_SERVERS = []
 
+# Optional OpenAI-compatible translation for matched Bangumi summaries.
+# Use a base URL ending in /v1, for example https://api.openai.com/v1.
+OPENAI_BASE_URL = ""
+OPENAI_API_KEY = ""
+OPENAI_MODEL = ""
+TRANSLATE_SUMMARY_TO_ZH = False
+
 
 # @@name: KOMGA_LIBRARY_LIST
 # @@prompt: 配置 KOMGA 库

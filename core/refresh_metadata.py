@@ -50,6 +50,27 @@ def _required_fields_for_series(series):
     return []
 
 
+def _overwrite_fields_for_library(library_id):
+    for item in KOMGA_LIBRARY_LIST:
+        if item.get("LIBRARY") == library_id:
+            return set(item.get("OVERWRITE_FIELDS", []) or [])
+    return set()
+
+
+def _is_metadata_empty(value):
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _metadata_write_payload(existing_metadata, matched_metadata, overwrite_fields):
+    """Keep populated Komga values unless a card explicitly permits overwrite."""
+    existing_metadata = existing_metadata or {}
+    return {
+        field: value
+        for field, value in matched_metadata.items()
+        if field in overwrite_fields or _is_metadata_empty(existing_metadata.get(field))
+    }
+
+
 def _series_needs_refresh(series, required_fields):
     metadata = series.get("metadata") or {}
     for field in required_fields:
@@ -195,7 +216,7 @@ def refresh_metadata(series_list=None):
             )
             continue
 
-        series_data = {
+        matched_series_data = {
             "status": komga_metadata.status,
             "summary": komga_metadata.summary,
             "publisher": komga_metadata.publisher,
@@ -209,9 +230,13 @@ def refresh_metadata(series_list=None):
             "language": komga_metadata.language,
             "titleSort": komga_metadata.titleSort,
         }
+        overwrite_fields = _overwrite_fields_for_library(series.get("libraryId"))
+        series_data = _metadata_write_payload(
+            series.get("metadata"), matched_series_data, overwrite_fields
+        )
 
-        # Update the metadata for the series on komga
-        is_success = komga.update_series_metadata(series_id, series_data)
+        # Only selected fields overwrite existing values; blank values are filled.
+        is_success = not series_data or komga.update_series_metadata(series_id, series_data)
         if is_success:
             success_count, success_comic = record_series_status(
                 conn,
@@ -225,9 +250,10 @@ def refresh_metadata(series_list=None):
             )
             # 使用 Bangumi 图片替换原封面
             # 确保没有上传过海报，避免重复上传
-            if (
-                USE_BANGUMI_THUMBNAIL
-                and len(komga.get_series_thumbnails(series_id)) == 0
+            thumbnail_updated = False
+            if USE_BANGUMI_THUMBNAIL and (
+                "thumbnail" in overwrite_fields
+                or len(komga.get_series_thumbnails(series_id)) == 0
             ):
                 # 尝试多尺寸海报上传
                 for thumbnail_size in ['large', 'common', 'medium']:
@@ -241,6 +267,7 @@ def refresh_metadata(series_list=None):
 
                     if replace_thumbnail_result:
                         logger.debug("成功替换系列: %s 的海报", series_name)
+                        thumbnail_updated = True
                         # 成功则跳出海报更新循环
                         break
                     else:
@@ -259,7 +286,7 @@ def refresh_metadata(series_list=None):
                     komga_metadata.title or series_name,
                     series.get("libraryId"),
                     _library_name(series.get("libraryId")),
-                    list(series_data.keys()),
+                    list(series_data.keys()) + (["thumbnail"] if thumbnail_updated else []),
                 )
         else:
             failed_count, failed_comic = record_series_status(
@@ -458,7 +485,7 @@ def refresh_partial_metadata():
     return
 
 
-def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False):
+def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None):
     # Get the metadata for the book from bangumi
     book_metadata = process_metadata.set_komga_book_metadata(
         related_subject["id"], number, book_name, bgm
@@ -469,7 +496,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         )
         return
 
-    book_data = {
+    matched_book_data = {
         "authors": book_metadata.authors,
         "summary": book_metadata.summary,
         "tags": book_metadata.tags,
@@ -480,27 +507,22 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         "releaseDate": book_metadata.releaseDate,
         "numberSort": book_metadata.numberSort,
     }
+    overwrite_fields = _overwrite_fields_for_library(library_id)
+    book_data = _metadata_write_payload(
+        current_metadata, matched_book_data, overwrite_fields
+    )
 
-    # Update the metadata for the series on komga
-    is_success = komga.update_book_metadata(book_id, book_data)
+    # Keep existing book fields unless the card selected them for overwrite.
+    is_success = not book_data or komga.update_book_metadata(book_id, book_data)
     if is_success:
         record_book_status(
             conn, book_id, related_subject["id"], 1, book_name, "")
-        if _is_scrape_card_library(library_id):
-            record_scrape_event(
-                conn,
-                "小说" if is_novel else "漫画",
-                book_metadata.title or book_name,
-                library_id,
-                _library_name(library_id),
-                list(book_data.keys()),
-            )
-
         # 使用 Bangumi 图片替换原封面
         # 确保没有上传过海报，避免重复上传，排除 komga 生成的封面
-        if (
-            USE_BANGUMI_THUMBNAIL_FOR_BOOK
-            and len(komga.get_book_thumbnails(book_id)) == 1
+        thumbnail_updated = False
+        if USE_BANGUMI_THUMBNAIL_FOR_BOOK and (
+            "thumbnail" in overwrite_fields
+            or len(komga.get_book_thumbnails(book_id)) == 1
         ):
             # 尝试多尺寸海报上传
             for thumbnail_size in ['large', 'common', 'medium']:
@@ -514,6 +536,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
 
                 if replace_thumbnail_result:
                     logger.debug("替换书籍: %s 的海报 ", book_name)
+                    thumbnail_updated = True
                     # 成功则跳出海报更新循环
                     break
                 else:
@@ -525,6 +548,15 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
             # 所有尺寸都失败时
             else:
                 logger.warning("替换书籍: %s 的海报失败", book_name)
+        if _is_scrape_card_library(library_id):
+            record_scrape_event(
+                conn,
+                "小说" if is_novel else "漫画",
+                book_metadata.title or book_name,
+                library_id,
+                _library_name(library_id),
+                list(book_data.keys()) + (["thumbnail"] if thumbnail_updated else []),
+            )
     else:
         record_book_status(
             conn, book_id, related_subject["id"], 0, book_name, "komga update failed"
@@ -569,7 +601,10 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     link["url"].split("/")[-1])
                 number, _ = get_number(
                     cbl_subject["name"] + cbl_subject["name_cn"])
-                update_book_metadata(book_id, cbl_subject, book_name, number, library_id, is_novel)
+                update_book_metadata(
+                    book_id, cbl_subject, book_name, number, library_id, is_novel,
+                    book.get("metadata"),
+                )
                 break
 
         # 找到对应的book_record
@@ -619,7 +654,8 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     ep_flag = False
 
                     update_book_metadata(
-                        book_id, related_subjects[i], book_name, number, library_id, is_novel
+                        book_id, related_subjects[i], book_name, number, library_id,
+                        is_novel, book.get("metadata"),
                     )
 
                     break
