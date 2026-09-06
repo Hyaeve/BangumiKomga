@@ -697,7 +697,7 @@
 }
 
 .card-settings-modal {
-  width: min(900px, calc(100vw - 40px)) !important;
+  width: min(1080px, calc(100vw - 40px)) !important;
   max-height: none !important;
   overflow: visible !important;
 }
