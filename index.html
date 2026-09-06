@@ -30,10 +30,9 @@
       </aside>
 
       <main class="main" :class="{expanded:sidebarCollapsed}" @click="closeContextMenu">
-        <header class="page-head hero-head"><div><p class="kicker">BANGUMI KOMGA</p><h1>{{currentNav.title}}</h1><p class="subtitle">{{currentNav.subtitle}}</p></div><div class="hero-status"><span class="status-pill">检查时间：{{new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}}</span><span class="status-pill online"><i></i> 已连接</span></div></header>
+        <header class="page-head hero-head"><div><p class="kicker">BANGUMI KOMGA</p><h1>{{currentNav.title}}</h1><p class="subtitle">{{currentNav.subtitle}}</p></div><div class="hero-status"><span class="status-pill">检查时间：{{new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}}</span><span class="status-pill online"><i></i> 已连接</span><template v-if="view==='scrape'"><button class="secondary hero-action" @click="save">保存卡片</button><button class="primary hero-action" @click="addCard">＋ 添加媒体库</button></template></div></header>
 
         <section v-if="view==='scrape'" class="view-stack">
-          <div class="toolbar"><div></div><div class="toolbar-actions"><button class="secondary" @click="save">保存卡片</button><button class="primary" @click="addCard">＋ 添加媒体库</button></div></div>
           <div class="library-grid" @click="closeContextMenu">
             <article v-for="(card,index) in cards" :key="card.uid" class="library-card" :class="{dragging:dragIndex===index}" draggable="true" :style="{'--card-hue':card.hue}" @click="openCardSettings(card)" @dragstart="dragStart(index,$event)" @dragend="dragIndex=null" @dragover.prevent @drop="dropCard(index)" @contextmenu.prevent="openCardMenu(index,$event)">
               <div class="cover-collage" :class="{'has-covers':card.covers.some(cover => !cover.failed)}" aria-hidden="true"><template v-for="(cover,coverIndex) in card.covers" :key="cover.id"><img v-if="!cover.failed" :src="cover.url" :style="{'--cover-index':coverIndex}" loading="lazy" @error="coverError(cover)"></template></div><div class="card-content"><p class="card-label">MEDIA LIBRARY {{String(index+1).padStart(2,'0')}}</p><h3>{{card.name||'选择媒体库'}}</h3><span class="tag">{{card.isNovel?'小说':'漫画'}}</span></div>
