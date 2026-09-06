@@ -30,7 +30,7 @@
       </aside>
 
       <main class="main" :class="{expanded:sidebarCollapsed}" @click="closeContextMenu">
-        <header class="page-head hero-head"><div><p class="kicker">BANGUMI KOMGA</p><h1>{{currentNav.title}}</h1><p class="subtitle">{{currentNav.subtitle}}</p></div><div class="hero-status"><span class="status-pill">检查时间：{{new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}}</span><span class="status-pill online"><i></i> 已连接</span><template v-if="view==='scrape'"><button class="secondary hero-action" @click="save">保存卡片</button><button class="primary hero-action" @click="addCard">＋ 添加媒体库</button></template></div></header>
+        <header class="page-head hero-head"><div><p class="kicker">BANGUMI KOMGA</p><h1>{{currentNav.title}}</h1><p class="subtitle">{{currentNav.subtitle}}</p></div><div class="hero-controls"><div class="hero-status"><span class="status-pill">检查时间：{{new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}}</span><span class="status-pill online"><i></i> 已连接</span></div><div v-if="view==='scrape'" class="hero-actions"><button class="secondary hero-action" @click="save">保存卡片</button><button class="primary hero-action" @click="addCard">＋ 添加媒体库</button></div></div></header>
 
         <section v-if="view==='scrape'" class="view-stack">
           <div class="library-grid" @click="closeContextMenu">
