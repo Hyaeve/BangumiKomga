@@ -202,6 +202,83 @@
   .cover-collage { inset: 0 0 0 39% !important; }
 }
 
+/* Final compact layout: aligned cover waterfall, readable records and sidebar affordance. */
+.library-grid {
+  grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)) !important;
+  max-width: none !important;
+  gap: 14px !important;
+  align-items: stretch;
+}
+.library-card, .empty-card {
+  aspect-ratio: 1.22 / 1 !important;
+  min-height: 184px !important;
+  border-radius: 16px !important;
+}
+.library-card .card-content { left: 16px !important; right: 52% !important; bottom: 16px !important; }
+.library-card .card-label { display: none !important; }
+.library-card h3 { font-size: 20px !important; line-height: 1.2 !important; margin: 0 0 8px !important; }
+.card-meta { font-size: 12px !important; }
+.cover-collage {
+  inset: 0 0 0 34% !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-auto-rows: 66px !important;
+  gap: 8px !important;
+  padding: 14px 12px 14px 8px !important;
+  align-content: center !important;
+}
+.cover-collage:after { display: none !important; }
+.cover-collage img, .cover-collage img:nth-child(n) {
+  height: 66px !important;
+  border-radius: 9px !important;
+  transform: rotate(7deg) !important;
+  transform-origin: center !important;
+}
+
+.records-head, .record-item {
+  grid-template-columns: minmax(220px, 1.7fr) minmax(140px, .9fr) minmax(110px, .72fr) 86px 156px !important;
+}
+.records-head { font-size: 12px !important; font-weight: 700 !important; color: #5c6d73 !important; }
+.record-item { cursor: default !important; }
+.record-item.grouped-record:hover, .record-item:hover { background: rgba(126,114,198,.055) !important; }
+.record-fields { margin-top: 4px; color: #8a989c; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.record-status { justify-self: start; }
+.time-sort { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; padding: 0; }
+.time-sort span { color: var(--accent); margin-left: 4px; }
+.record-stats.compact { gap: 18px !important; }
+.record-stats.compact > div { min-width: 62px; grid-template-columns: 22px auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; }
+.record-stats.compact > div::before { grid-row: 1 / span 2; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; background: #e9eef0; color: #71838a; font-size: 12px; content: "#"; }
+.record-stats.compact > div:nth-child(2)::before { content: "◷"; }
+.record-stats.compact > div:nth-child(3)::before { content: "✓"; color: #45a789; background: #e3f2ec; }
+.record-stats.compact > div:nth-child(4)::before { content: "!"; color: #b36a75; background: #f8e6e9; }
+.record-stats.compact strong { font-size: 21px !important; }
+.record-stats.compact span { font-size: 11px !important; }
+
+.settings-layout {
+  grid-template-areas: "account komga" "strategy integrations" "backup integrations" !important;
+}
+.strategy-card { align-self: end; }
+
+.collapse-btn { right: -13px !important; width: 26px !important; height: 86px !important; }
+.collapse-btn span { width: 2px !important; height: 48px !important; background: #aebbc1 !important; }
+.collapse-btn:before, .collapse-btn:after { width: 3px !important; height: 28px !important; background: #6e7f87 !important; }
+.sidebar.collapsed .collapse-btn:hover:before { transform: rotate(-18deg) !important; }
+.sidebar.collapsed .collapse-btn:hover:after { transform: rotate(18deg) !important; }
+.sidebar:not(.collapsed) .collapse-btn:hover:before { transform: rotate(18deg) !important; }
+.sidebar:not(.collapsed) .collapse-btn:hover:after { transform: rotate(-18deg) !important; }
+
+@media (max-width: 980px) {
+  .settings-layout { grid-template-areas: "account" "komga" "integrations" "backup" "strategy" !important; }
+}
+@media (max-width: 720px) {
+  .library-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)) !important; }
+  .records-head { display: none; }
+  .record-list { min-width: 0; }
+  .record-item { grid-template-columns: minmax(0, 1fr) auto !important; gap: 8px !important; }
+  .record-service, .record-library { grid-column: 1 / -1; }
+  .record-time { grid-column: 1; grid-row: 2; }
+  .record-status { grid-column: 2; grid-row: 2; }
+}
+
 /* The scraping and history views share one full-width page header. */
 .hero-head {
   width: 100%;

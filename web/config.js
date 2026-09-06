@@ -26,7 +26,7 @@ createApp({
       libraries: [],
       records: [],
       recordSearch: '',
-      expandedRecordIds: [],
+      recordSortNewest: true,
       recordStats: { total: 0, today: 0, success: 0, error: 0 },
       cards: [],
       cardHues: [105, 270, 195, 35, 320, 155],
@@ -36,6 +36,7 @@ createApp({
         KOMGA_BASE_URL: '', KOMGA_EMAIL: '', KOMGA_EMAIL_PASSWORD: '', KOMGA_API_KEY: '',
         KOMGA_SERVERS: [], KOMGA_LIBRARY_LIST: [], BANGUMI_KOMGA_SERVICE_TYPE: 'poll', BANGUMI_KOMGA_SERVICE_POLL_INTERVAL: 20,
         BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL: 10000
+        ,RECORD_RETENTION_DAYS: 30
       },
       navItems: [
         { id: 'scrape', label: '刮削卡片', title: '刮削卡片', subtitle: '为不同媒体库配置独立的增量匹配规则' },
@@ -65,7 +66,13 @@ createApp({
     ,filteredRecords() {
       const keyword = this.recordSearch.trim().toLocaleLowerCase();
       if (!keyword) return this.records;
-      return this.records.filter(record => [record.item_type, record.item_title, record.library_name, record.server_name, ...(record.metadata_fields || []), ...(record.volumes || []).flatMap(volume => [volume.item_title, volume.library_name, ...(volume.metadata_fields || [])])].some(value => String(value || '').toLocaleLowerCase().includes(keyword)));
+      return this.records.filter(record => [record.item_type, record.item_title, record.library_name, record.server_name, ...(record.metadata_fields || [])].some(value => String(value || '').toLocaleLowerCase().includes(keyword)));
+    },
+    sortedRecords() {
+      return [...this.filteredRecords].sort((a, b) => {
+        const left = String(a.recorded_at || ''), right = String(b.recorded_at || '');
+        return this.recordSortNewest ? right.localeCompare(left) : left.localeCompare(right);
+      });
     }
   },
   watch: { view(value) { if (!['scrape', 'records', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(); } },
@@ -121,13 +128,20 @@ createApp({
       try { const data = await this.api(`/api/komga/libraries${this.activeServer ? `?server_id=${encodeURIComponent(this.activeServer.id)}` : ''}`); this.libraries = data.items || []; this.cards.forEach(card => this.syncCardName(card)); if (showMessage) this.notify(`已读取 ${this.libraries.length} 个媒体库`); }
       catch (error) { if (showMessage) this.notify(error.message, true); }
     },
+    async testServer(server) {
+      try {
+        const data = await this.api(`/api/komga/libraries?server_id=${encodeURIComponent(server.id)}`);
+        this.libraries = data.items || [];
+        this.notify(`${server.name || 'Komga 服务'} 连接成功，读取到 ${this.libraries.length} 个媒体库`);
+      } catch (error) { this.notify(`连接失败：${error.message}`, true); }
+    },
     collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.isNovel, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); } catch (error) { this.notify(error.message, true); } },
     async backupConfig() { try { const data = await this.api('/api/config/backup'); const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `bangumikomga-config-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); this.notify('配置备份已下载'); } catch (error) { this.notify(error.message, true); } },
     async restoreConfig(event) { const file = event.target.files && event.target.files[0]; event.target.value = ''; if (!file || !window.confirm('还原配置会覆盖当前系统设置，是否继续？')) return; try { const payload = JSON.parse(await file.text()); const restored = await this.api('/api/config/restore', { method: 'POST', body: JSON.stringify({ config: payload.config || payload }) }); this.applyConfig(restored); this.notify('配置已还原'); if (this.config.KOMGA_SERVERS.length) await this.loadLibraries(false); } catch (error) { this.notify(`还原失败：${error.message}`, true); } },
     async refresh(full) { try { await this.api('/api/refresh', { method: 'POST', body: JSON.stringify({ full }) }); this.notify(full ? '全量刮削已开始' : '增量刮削已开始'); } catch (error) { this.notify(error.message, true); } },
-    async loadRecords() { try { const [records, stats] = await Promise.all([this.api('/api/scrape-records?limit=300'), this.api('/api/scrape-records/stats')]); this.records = records.items || []; this.recordStats = stats; this.expandedRecordIds = []; } catch (error) { this.notify(error.message, true); } },
-    toggleRecord(id) { this.expandedRecordIds = this.expandedRecordIds.includes(id) ? this.expandedRecordIds.filter(item => item !== id) : [...this.expandedRecordIds, id]; },
+    async loadRecords() { try { const [records, stats] = await Promise.all([this.api('/api/scrape-records?limit=300'), this.api('/api/scrape-records/stats')]); this.records = records.items || []; this.recordStats = stats; } catch (error) { this.notify(error.message, true); } },
+    toggleRecordSort() { this.recordSortNewest = !this.recordSortNewest; },
     formatRecordTime(value) { return String(value || '').replace('T', ' ').replace(/-/g, '/').replace(/\.\d{3}Z?$/, ''); },
     cardServerName(card) { return this.config.KOMGA_SERVERS.find(server => server.id === card.serverId)?.name || 'Komga 服务'; },
     metadataText(record) { const labels = { status: '状态', summary: '简介', publisher: '出版商', genres: '流派', tags: '标签', title: '标题', alternateTitles: '别名', ageRating: '年龄分级', links: 'Bangumi 链接', totalBookCount: '册数', language: '语言', titleSort: '标题排序', authors: '作者', isbn: 'ISBN', number: '卷号', releaseDate: '发行日期', numberSort: '卷号排序', thumbnail: '封面' }; return (record.metadata_fields || []).map(field => labels[field] || field).join('、'); },

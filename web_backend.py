@@ -50,6 +50,7 @@ DEFAULTS = {
     "BANGUMI_KOMGA_SERVICE_TYPE": "poll",
     "BANGUMI_KOMGA_SERVICE_POLL_INTERVAL": 20,
     "BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL": 10000,
+    "RECORD_RETENTION_DAYS": 30,
     "USE_BANGUMI_THUMBNAIL": False,
     "USE_BANGUMI_THUMBNAIL_FOR_BOOK": False,
     "SORT_TITLE": False,
@@ -163,6 +164,10 @@ def _write_config(data: dict):
 
 def save_state(data: dict) -> dict:
     merged = {**DEFAULTS, **data}
+    try:
+        merged["RECORD_RETENTION_DAYS"] = max(1, min(int(merged.get("RECORD_RETENTION_DAYS", 30)), 365))
+    except (TypeError, ValueError):
+        merged["RECORD_RETENTION_DAYS"] = 30
     servers = []
     for item in merged.get("KOMGA_SERVERS", []) or []:
         if not item.get("base_url") or not item.get("name"):
@@ -269,68 +274,6 @@ def _configured_library_context():
     }
 
 
-def _book_group_title(title):
-    """Fold common volume suffixes so a book can expose its volume updates."""
-    value = re.sub(r"\s*(?:[\[【(（]?\s*)?(?:vol(?:ume)?\.?|v|第)?\s*\d+(?:\.\d+)?\s*(?:卷|冊|册|话|話|巻)?\s*[\]】)）]?$", "", str(title or ""), flags=re.I)
-    return value.strip(" -_·") or str(title or "未命名书籍")
-
-
-def _group_scrape_rows(rows, library_context):
-    """Fold series and volume events into stable book records.
-
-    The database stores one event for a series and additional events for its
-    books.  The series event is kept on the parent record while the remaining
-    events become expandable volume details.  Grouping happens before API
-    pagination so a book can never be split between pages.
-    """
-    groups = {}
-    for row in rows:
-        context = library_context.get(str(row[3]), {})
-        title = _book_group_title(row[2])
-        key = (row[1], title, row[3], context.get("server_id", ""))
-        volume = {
-            "id": row[0], "item_type": row[1], "item_title": row[2],
-            "library_id": row[3], "library_name": row[4],
-            "metadata_fields": [field for field in (row[5] or "").split(",") if field],
-            "status": row[6], "recorded_at": row[7],
-        }
-        group = groups.setdefault(key, {
-            "id": "book-" + str(row[0]), "item_type": row[1], "item_title": title,
-            "library_id": row[3], "library_name": row[4],
-            "server_id": context.get("server_id", ""),
-            "server_name": context.get("server_name", "默认 Komga 服务"),
-            "metadata_fields": [], "status": row[6], "recorded_at": row[7],
-            "volumes": [], "_series_events": [],
-        })
-        # Rows are read newest first, so the first row is the current status.
-        if not group["metadata_fields"]:
-            group["metadata_fields"] = volume["metadata_fields"]
-            group["status"] = volume["status"]
-            group["recorded_at"] = volume["recorded_at"]
-        if str(row[2]).strip() == title:
-            group["_series_events"].append(volume)
-        else:
-            group["volumes"].append(volume)
-
-    result = []
-    for group in groups.values():
-        # The oldest exact-title event is the series update.  If the only
-        # event is exact-title, retain it as a detail so a one-volume book is
-        # still inspectable in the UI.
-        exact = group.pop("_series_events")
-        if exact:
-            series_event = exact[0]
-            group["metadata_fields"] = series_event["metadata_fields"]
-            group["status"] = series_event["status"]
-            group["recorded_at"] = series_event["recorded_at"]
-            if not group["volumes"]:
-                group["volumes"] = [series_event]
-        group["volumes"].sort(key=lambda item: item["recorded_at"] or "", reverse=True)
-        group["id"] = "book-" + str(group["volumes"][0]["id"] if group["volumes"] else group["recorded_at"])
-        result.append(group)
-    return sorted(result, key=lambda item: item["recorded_at"] or "", reverse=True)
-
-
 def _read_scrape_records(limit=100, offset=0):
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
@@ -340,11 +283,18 @@ def _read_scrape_records(limit=100, offset=0):
         configured_ids = list(library_context)
         if not configured_ids:
             return []
+        _cleanup_expired_records()
         with sqlite3.connect(db_file) as conn:
             placeholders = ",".join("?" for _ in configured_ids)
-            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC", configured_ids).fetchall()
-        grouped = _group_scrape_rows(rows, library_context)
-        return grouped[offset:offset + limit]
+            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC LIMIT ? OFFSET ?", (*configured_ids, limit, offset)).fetchall()
+        return [{
+            "id": row[0], "item_type": row[1], "item_title": row[2],
+            "library_id": row[3], "library_name": row[4],
+            "server_id": library_context.get(str(row[3]), {}).get("server_id", ""),
+            "server_name": library_context.get(str(row[3]), {}).get("server_name", "默认 Komga 服务"),
+            "metadata_fields": [field for field in (row[5] or "").split(",") if field],
+            "status": row[6], "recorded_at": row[7],
+        } for row in rows]
     except (OSError, sqlite3.Error):
         return []
 
@@ -358,22 +308,35 @@ def _read_scrape_stats():
         if not configured_ids:
             return {"total": 0, "today": 0, "success": 0, "error": 0}
         placeholders = ",".join("?" for _ in configured_ids)
+        _cleanup_expired_records()
         with sqlite3.connect(db_file) as conn:
             rows = conn.execute(
                 """SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at
                    FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC", configured_ids
             ).fetchall()
-        context = _configured_library_context()
-        grouped = _group_scrape_rows(rows, context)
         today = __import__("datetime").date.today().isoformat()
         return {
-            "total": len(grouped),
-            "today": sum(1 for item in grouped if str(item["recorded_at"] or "").startswith(today)),
-            "success": sum(1 for item in grouped if item["status"] == "success"),
-            "error": sum(1 for item in grouped if item["status"] != "success"),
+            "total": len(rows),
+            "today": sum(1 for item in rows if str(item[7] or "").startswith(today)),
+            "success": sum(1 for item in rows if item[6] == "success"),
+            "error": sum(1 for item in rows if item[6] != "success"),
         }
     except (OSError, sqlite3.Error):
         return {"total": 0, "today": 0, "success": 0, "error": 0}
+
+
+def _cleanup_expired_records():
+    """Delete scrape history older than the configured retention window."""
+    db_file = ROOT / "recordsRefreshed.db"
+    if not db_file.exists():
+        return
+    try:
+        days = max(1, min(int(_read_state().get("RECORD_RETENTION_DAYS", 30)), 365))
+        with sqlite3.connect(db_file) as conn:
+            conn.execute("DELETE FROM scrape_records WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
+            conn.commit()
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return
 
 
 def _preview_items(server_id, library_id, force=False):
@@ -392,36 +355,6 @@ def _preview_items(server_id, library_id, force=False):
             result.append({"id": series_id, "title": series.get("name") or (series.get("metadata") or {}).get("title", ""), "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}"})
     PREVIEW_CACHE[key] = {"created": now, "items": result}
     return result
-    """legacy unreachable block removed"""
-    return result
-    try:
-        configured_ids = [
-            str(item.get("LIBRARY"))
-            for item in (_read_state().get("KOMGA_LIBRARY_LIST") or [])
-            if item.get("LIBRARY")
-        ]
-        if not configured_ids:
-            return []
-        with sqlite3.connect(db_file) as conn:
-            placeholders = ",".join("?" for _ in configured_ids)
-            rows = conn.execute(
-                """SELECT id,item_type,item_title,library_id,library_name,
-                   metadata_fields,status,recorded_at
-                   FROM scrape_records WHERE library_id IN (""" + placeholders + """)
-                   ORDER BY id DESC LIMIT ? OFFSET ?""",
-                (*configured_ids, limit, offset),
-            ).fetchall()
-        return [
-            {
-                "id": row[0], "item_type": row[1], "item_title": row[2],
-                "library_id": row[3], "library_name": row[4],
-                "metadata_fields": [field for field in row[5].split(",") if field],
-                "status": row[6], "recorded_at": row[7],
-            }
-            for row in rows
-        ]
-    except (OSError, sqlite3.Error):
-        return []
 
 
 class Handler(BaseHTTPRequestHandler):
