@@ -9,6 +9,7 @@ import ast
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -251,18 +252,99 @@ def _start_refresh(full=False):
     return True
 
 
+def _configured_library_context():
+    state = _read_state()
+    servers = {
+        str(server.get("id")): server.get("name") or "Komga 服务"
+        for server in (state.get("KOMGA_SERVERS") or [])
+        if server.get("id")
+    }
+    return {
+        str(item.get("LIBRARY")): {
+            "server_id": str(item.get("SERVER_ID") or ""),
+            "server_name": servers.get(str(item.get("SERVER_ID") or ""), "默认 Komga 服务"),
+        }
+        for item in (state.get("KOMGA_LIBRARY_LIST") or [])
+        if item.get("LIBRARY")
+    }
+
+
+def _book_group_title(title):
+    """Fold common volume suffixes so a book can expose its volume updates."""
+    value = re.sub(r"\s*(?:[\[【(（]?\s*)?(?:vol(?:ume)?\.?|v|第)?\s*\d+(?:\.\d+)?\s*(?:卷|冊|册|话|話|巻)?\s*[\]】)）]?$", "", str(title or ""), flags=re.I)
+    return value.strip(" -_·") or str(title or "未命名书籍")
+
+
+def _group_scrape_rows(rows, library_context):
+    """Fold series and volume events into stable book records.
+
+    The database stores one event for a series and additional events for its
+    books.  The series event is kept on the parent record while the remaining
+    events become expandable volume details.  Grouping happens before API
+    pagination so a book can never be split between pages.
+    """
+    groups = {}
+    for row in rows:
+        context = library_context.get(str(row[3]), {})
+        title = _book_group_title(row[2])
+        key = (row[1], title, row[3], context.get("server_id", ""))
+        volume = {
+            "id": row[0], "item_type": row[1], "item_title": row[2],
+            "library_id": row[3], "library_name": row[4],
+            "metadata_fields": [field for field in (row[5] or "").split(",") if field],
+            "status": row[6], "recorded_at": row[7],
+        }
+        group = groups.setdefault(key, {
+            "id": "book-" + str(row[0]), "item_type": row[1], "item_title": title,
+            "library_id": row[3], "library_name": row[4],
+            "server_id": context.get("server_id", ""),
+            "server_name": context.get("server_name", "默认 Komga 服务"),
+            "metadata_fields": [], "status": row[6], "recorded_at": row[7],
+            "volumes": [], "_series_events": [],
+        })
+        # Rows are read newest first, so the first row is the current status.
+        if not group["metadata_fields"]:
+            group["metadata_fields"] = volume["metadata_fields"]
+            group["status"] = volume["status"]
+            group["recorded_at"] = volume["recorded_at"]
+        if str(row[2]).strip() == title:
+            group["_series_events"].append(volume)
+        else:
+            group["volumes"].append(volume)
+
+    result = []
+    for group in groups.values():
+        # The oldest exact-title event is the series update.  If the only
+        # event is exact-title, retain it as a detail so a one-volume book is
+        # still inspectable in the UI.
+        exact = group.pop("_series_events")
+        if exact:
+            series_event = exact[0]
+            group["metadata_fields"] = series_event["metadata_fields"]
+            group["status"] = series_event["status"]
+            group["recorded_at"] = series_event["recorded_at"]
+            if not group["volumes"]:
+                group["volumes"] = [series_event]
+        group["volumes"].sort(key=lambda item: item["recorded_at"] or "", reverse=True)
+        group["id"] = "book-" + str(group["volumes"][0]["id"] if group["volumes"] else group["recorded_at"])
+        result.append(group)
+    return sorted(result, key=lambda item: item["recorded_at"] or "", reverse=True)
+
+
 def _read_scrape_records(limit=100, offset=0):
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
         return []
     try:
-        configured_ids = [str(item.get("LIBRARY")) for item in (_read_state().get("KOMGA_LIBRARY_LIST") or []) if item.get("LIBRARY")]
+        library_context = _configured_library_context()
+        configured_ids = list(library_context)
         if not configured_ids:
             return []
         with sqlite3.connect(db_file) as conn:
             placeholders = ",".join("?" for _ in configured_ids)
-            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC LIMIT ? OFFSET ?", (*configured_ids, limit, offset)).fetchall()
-        return [{"id": row[0], "item_type": row[1], "item_title": row[2], "library_id": row[3], "library_name": row[4], "metadata_fields": [field for field in row[5].split(",") if field], "status": row[6], "recorded_at": row[7]} for row in rows]
+            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC", configured_ids).fetchall()
+        grouped = _group_scrape_rows(rows, library_context)
+        return grouped[offset:offset + limit]
     except (OSError, sqlite3.Error):
         return []
 
@@ -277,11 +359,19 @@ def _read_scrape_stats():
             return {"total": 0, "today": 0, "success": 0, "error": 0}
         placeholders = ",".join("?" for _ in configured_ids)
         with sqlite3.connect(db_file) as conn:
-            total, today, success, error = conn.execute(
-                """SELECT COUNT(*), SUM(recorded_at >= date('now','localtime')), SUM(status='success'), SUM(status!='success')
-                   FROM scrape_records WHERE library_id IN (""" + placeholders + ")", configured_ids
-            ).fetchone()
-        return {"total": total or 0, "today": today or 0, "success": success or 0, "error": error or 0}
+            rows = conn.execute(
+                """SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at
+                   FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC", configured_ids
+            ).fetchall()
+        context = _configured_library_context()
+        grouped = _group_scrape_rows(rows, context)
+        today = __import__("datetime").date.today().isoformat()
+        return {
+            "total": len(grouped),
+            "today": sum(1 for item in grouped if str(item["recorded_at"] or "").startswith(today)),
+            "success": sum(1 for item in grouped if item["status"] == "success"),
+            "error": sum(1 for item in grouped if item["status"] != "success"),
+        }
     except (OSError, sqlite3.Error):
         return {"total": 0, "today": 0, "success": 0, "error": 0}
 
@@ -512,6 +602,8 @@ class Handler(BaseHTTPRequestHandler):
             content_type = "application/javascript; charset=utf-8"
         elif target.suffix == ".css":
             content_type = "text/css; charset=utf-8"
+        elif target.suffix == ".ico":
+            content_type = "image/x-icon"
         raw = target.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)

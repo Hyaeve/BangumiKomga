@@ -306,3 +306,335 @@
   .backup-card { display: block; }
   .backup-actions { margin-top: 14px; }
 }
+
+/* 2026-09 library cards, settings and scrape history refinements. */
+.library-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  max-width: 980px;
+  gap: 14px;
+}
+
+.library-card,
+.empty-card {
+  aspect-ratio: 1.92 / 1 !important;
+  min-height: 238px !important;
+  border-radius: 18px;
+}
+
+.library-card {
+  overflow: hidden;
+}
+
+.card-logo { display: none !important; }
+
+.library-card .card-content {
+  top: auto;
+  right: 53% !important;
+  bottom: 23px !important;
+  left: 24px !important;
+}
+
+.library-card .card-label {
+  margin-bottom: 7px;
+  color: #61727d;
+  font-size: 11px;
+  letter-spacing: .06em;
+}
+
+.library-card h3 {
+  margin: 0 0 9px !important;
+  font-size: 24px !important;
+  line-height: 1.16;
+}
+
+.card-meta {
+  margin: 0;
+  color: #657680;
+  font-size: 13px;
+}
+
+.cover-collage {
+  inset: 0 0 0 43% !important;
+  grid-auto-rows: 92px !important;
+  gap: 9px !important;
+  padding: 18px 18px 18px 10px !important;
+}
+
+.cover-collage img,
+.cover-collage img:nth-child(n) {
+  height: 92px !important;
+  border-radius: 12px !important;
+}
+
+.settings-layout {
+  grid-template-areas:
+    "strategy komga"
+    "account integrations"
+    "backup integrations" !important;
+}
+
+.account-card label { margin-top: 13px; }
+.account-card .full { margin-top: 18px; }
+
+.server-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(224px, 1fr));
+  gap: 13px;
+}
+
+.server-entry.compact-server {
+  position: relative;
+  display: grid;
+  min-height: 218px;
+  padding: 20px;
+  border: 1px solid #dbe7ea;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #f9fbfb, #f0f6f4) !important;
+}
+
+.server-icon {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 15px;
+  border-radius: 11px;
+  object-fit: cover;
+  box-shadow: 0 5px 12px rgba(53, 85, 89, .14);
+}
+
+.compact-server .server-entry-head { margin: 0; }
+.compact-server .server-entry-head strong { font-size: 17px; }
+.compact-server .server-entry-head small { max-width: 100%; font-size: 12px; }
+.compact-server .server-summary { align-self: end; margin: 12px 0; }
+.compact-server .server-entry-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.compact-server .server-entry-actions button { width: 100%; }
+.danger-secondary { border: 1px solid #f0d5d9; border-radius: 9px; color: #ae5e69; background: #fff4f5; }
+.danger-secondary:hover { border-color: #e8b9c0; background: #fdebed; }
+
+.card-settings-modal {
+  width: min(860px, calc(100vw - 40px)) !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 30px 34px;
+}
+
+.card-setting-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.card-setting-grid label { min-width: 0; }
+.card-settings-modal .modal-rules { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.card-settings-modal .modal-actions { margin-top: 26px; }
+
+.records-hero-controls {
+  display: grid;
+  justify-items: end;
+  gap: 13px;
+}
+
+.record-stats.compact {
+  display: flex;
+  gap: 14px;
+}
+
+.record-stats.compact > div {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.record-stats.compact strong { font-size: 18px; }
+.record-stats.compact span { font-size: 10px; }
+
+.record-search {
+  display: flex;
+  align-items: center;
+  width: min(360px, 42vw);
+  padding: 0 11px;
+  border: 1px solid rgba(112, 143, 145, .24);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .72);
+}
+
+.record-search span { width: 13px; height: 13px; margin-right: 8px; border: 2px solid #829996; border-radius: 50%; position: relative; }
+.record-search span::after { position: absolute; right: -5px; bottom: -3px; width: 6px; height: 2px; border-radius: 2px; background: #829996; content: ""; transform: rotate(45deg); }
+.record-search input { width: 100%; min-width: 0; height: 36px; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 12px; }
+
+.records-head,
+.record-item {
+  grid-template-columns: minmax(250px, 1.7fr) minmax(140px, .9fr) minmax(130px, .85fr) 146px 64px !important;
+}
+
+.record-item.grouped-record { position: relative; cursor: pointer; }
+.record-item.grouped-record:hover { background: rgba(126, 114, 198, .065); }
+.record-title-row small { margin-left: auto; color: #98a4a7; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.record-expand { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 7px; color: #617d7a; background: #e9f1ef; line-height: 1; transition: transform .18s ease; }
+.grouped-record.expanded .record-expand { transform: rotate(180deg); }
+.record-service { display: flex; align-items: center; min-width: 0; gap: 7px; color: #607774; font-size: 12px; font-weight: 600; }
+.record-service img { width: 19px; height: 19px; border-radius: 6px; object-fit: cover; }
+.record-service span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-status.error { color: #a85f68; background: #f9e7e9; }
+
+.record-volumes {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0;
+  margin: 13px 0 1px 30px;
+  overflow: hidden;
+  border: 1px solid #e0e9e6;
+  border-radius: 11px;
+  background: #fbfdfc;
+}
+
+.record-volume {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 146px 56px;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf2f0;
+  color: #697a7a;
+  font-size: 11px;
+}
+
+.record-volume:last-child { border-bottom: 0; }
+.record-volume span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-volume time { color: #8f9d9c; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.record-volume b { justify-self: end; color: #5d8d82; font-size: 10px; }
+.record-volume b.error { color: #a85f68; }
+
+.nav-icon { position: relative; width: 24px; height: 24px; }
+.nav-icon::before,.nav-icon::after,.nav-icon i { position: absolute; box-sizing: border-box; content: ""; }
+.icon-scrape::before { inset: 4px 3px; border: 2px solid currentColor; border-radius: 4px; box-shadow: 4px -4px 0 -2px currentColor, -4px 4px 0 -2px currentColor; }
+.icon-records::before { inset: 3px 5px; border: 2px solid currentColor; border-radius: 4px; }
+.icon-records::after { top: 8px; right: 7px; width: 7px; height: 2px; background: currentColor; box-shadow: 0 4px 0 currentColor, 0 8px 0 currentColor; }
+.icon-settings::before { inset: 5px; border: 2px solid currentColor; border-radius: 50%; box-shadow: 0 -5px 0 -3px currentColor, 5px 0 0 -3px currentColor, 0 5px 0 -3px currentColor, -5px 0 0 -3px currentColor; }
+
+@media (max-width: 860px) {
+  .library-card,.empty-card { aspect-ratio: 1.45 / 1 !important; }
+  .cover-collage { left: 40% !important; }
+  .card-setting-grid { grid-template-columns: 1fr; gap: 0; }
+  .card-settings-modal .modal-rules { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .records-hero-controls { justify-items: start; width: 100%; }
+  .record-search { width: 100%; }
+}
+
+@media (max-width: 600px) {
+  .library-card,.empty-card { aspect-ratio: 1.15 / 1 !important; }
+  .library-card .card-content { right: 47% !important; left: 17px !important; bottom: 18px !important; }
+  .library-card h3 { font-size: 19px !important; }
+  .cover-collage { left: 38% !important; grid-auto-rows: 68px !important; padding: 10px !important; }
+  .cover-collage img,.cover-collage img:nth-child(n) { height: 68px !important; }
+  .card-settings-modal { width: min(calc(100vw - 24px), 860px) !important; padding: 24px 18px; }
+  .card-settings-modal .modal-rules { grid-template-columns: 1fr; }
+  .record-volumes { margin-left: 0; }
+  .record-volume { grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+  .record-volume span:nth-child(2),.record-volume time { grid-column: 1 / -1; }
+}
+
+/* Final settings and card proportions. Keep these rules last so the page stays
+   compact and the settings layout follows the requested desktop arrangement. */
+.library-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
+  max-width: 1120px;
+  gap: 16px !important;
+}
+
+.library-card,
+.empty-card {
+  aspect-ratio: 1.72 / 1 !important;
+  min-height: 190px !important;
+  border-radius: 18px !important;
+}
+
+.library-card .card-content {
+  left: 20px !important;
+  right: 57% !important;
+  bottom: 20px !important;
+}
+
+.library-card h3 {
+  font-size: 21px !important;
+}
+
+.cover-collage {
+  inset: 0 0 0 41% !important;
+  grid-auto-rows: 68px !important;
+  gap: 8px !important;
+  padding: 15px 15px 15px 8px !important;
+}
+
+.cover-collage img,
+.cover-collage img:nth-child(n) {
+  height: 68px !important;
+  border-radius: 11px !important;
+}
+
+.settings-layout {
+  grid-template-areas:
+    "strategy komga"
+    "account integrations"
+    "backup integrations" !important;
+}
+
+.backup-card {
+  display: block !important;
+  align-self: start;
+}
+
+.backup-card .backup-actions {
+  margin-top: 15px;
+}
+
+.server-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(218px, 1fr)) !important;
+  gap: 13px !important;
+}
+
+.server-entry.compact-server {
+  min-height: 224px !important;
+  aspect-ratio: 1.08 / 1;
+  padding: 18px !important;
+  border-radius: 18px !important;
+}
+
+.compact-server .server-icon {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 13px;
+}
+
+.compact-server .server-entry-actions {
+  align-self: end;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.compact-server .server-entry-actions button {
+  min-height: 36px;
+}
+
+.card-settings-modal {
+  width: min(900px, calc(100vw - 40px)) !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 980px) {
+  .settings-layout {
+    grid-template-areas: "strategy" "account" "komga" "integrations" "backup" !important;
+  }
+}
+
+@media (max-width: 680px) {
+  .library-grid { grid-template-columns: 1fr !important; }
+  .library-card,
+  .empty-card { aspect-ratio: 1.35 / 1 !important; }
+  .server-entry.compact-server { aspect-ratio: auto; min-height: 210px !important; }
+  .card-settings-modal { width: calc(100vw - 24px) !important; }
+}
