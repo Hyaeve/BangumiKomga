@@ -715,3 +715,28 @@
   .server-entry.compact-server { aspect-ratio: auto; min-height: 210px !important; }
   .card-settings-modal { width: calc(100vw - 24px) !important; }
 }
+
+/* Final page structure and interaction refinements. */
+.settings-layout { grid-template-areas: "account komga" "bangumi ai" "strategy ai" "backup ai" !important; }
+.bangumi-card { grid-area: bangumi; }
+.ai-card { grid-area: ai; }
+.strategy-card { grid-area: strategy; }
+.backup-card { grid-area: backup; }
+.account-card { grid-area: account; }
+.komga-settings-card { grid-area: komga; }
+.settings-layout + * { min-width: 0; }
+.metadata-options { display: flex !important; flex-wrap: wrap; gap: 8px !important; padding: 12px !important; }
+.metadata-options .meta-option { border: 1px solid #c7d0d6; border-radius: 999px; padding: 7px 13px; background: #eef1f3; color: #68757d; font-size: 12px; cursor: pointer; transition: .18s ease; }
+.metadata-options .meta-option.selected { border-color: #7e72c6; background: #e8e5fa; color: #5b50a1; box-shadow: 0 3px 8px rgba(126,114,198,.16); }
+.backup-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 96px; min-height: 40px; margin: 0; }
+.backup-button span { font-size: 18px; line-height: 1; }
+.records-head, .record-item { grid-template-columns: minmax(230px, 1.45fr) 156px minmax(145px, .9fr) minmax(115px, .8fr) minmax(210px, 1.2fr) 82px !important; }
+.time-sort { display: inline-flex; align-items: center; gap: 7px; }
+.record-fields { white-space: normal; line-height: 1.45; }
+.library-card { aspect-ratio: 1.65 / 1 !important; }
+.cover-collage { inset: 0 0 0 38% !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; grid-auto-rows: 72px !important; gap: 9px !important; padding: 16px 18px 16px 10px !important; }
+.cover-collage img, .cover-collage img:nth-child(n) { height: 72px !important; transform: rotate(7deg) !important; border-radius: 13px !important; }
+.collapse-btn { border-left: 1px solid rgba(126,114,198,.15) !important; background: rgba(255,255,255,.24) !important; }
+.collapse-btn span { height: 44px !important; background: #a4afb5 !important; }
+.collapse-btn:hover { background: rgba(126,114,198,.13) !important; }
+@media (max-width: 980px) { .settings-layout { grid-template-areas: "account" "bangumi" "strategy" "komga" "ai" "backup" !important; } }
