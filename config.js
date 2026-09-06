@@ -38,7 +38,7 @@ createApp({
         { id: 'settings', label: '系统设置', title: '系统设置', subtitle: '连接服务、Bangumi 密钥与账号安全', icon: '⚙' }
       ],
       fieldOptions: [
-        { value: 'summary', label: '简介' }, { value: 'publisher', label: '出版商' },
+        { value: 'title', label: '标题' }, { value: 'summary', label: '简介' }, { value: 'publisher', label: '出版商' },
         { value: 'genres', label: '流派' }, { value: 'tags', label: '标签' },
         { value: 'links', label: 'Bangumi 链接' }, { value: 'thumbnail', label: '封面' }
       ]

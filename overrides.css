@@ -201,3 +201,19 @@
   .library-card, .empty-card { max-width: none; aspect-ratio: 1.15 / 1 !important; }
   .cover-collage { inset: 0 0 0 39% !important; }
 }
+
+/* The scraping and history views share one full-width page header. */
+.hero-head {
+  width: 100%;
+  min-height: 142px;
+  box-sizing: border-box;
+}
+
+.hero-head .hero-controls {
+  align-self: flex-end;
+}
+
+@media (max-width: 680px) {
+  .hero-head { min-height: 0; }
+  .hero-head .hero-controls { align-self: stretch; }
+}
