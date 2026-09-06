@@ -1,0 +1,13 @@
+.git
+.github
+__pycache__
+**/__pycache__
+*.pyc
+logs
+test_results
+archivedata
+recordsRefreshed.db
+config/config.py
+config/web_config.json
+config/web_auth.json
+*.log
