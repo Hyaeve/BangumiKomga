@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.0 (2026-09-06)
+
+
+### Features
+
+* add scrape history and move logs to container output ([e0d356a](https://github.com/Hyaeve/BangumiKomga/commit/e0d356ac6e01657a658a360cd1960eeb6e17642c))
+* add visibility toggles for service secrets ([85f7fa7](https://github.com/Hyaeve/BangumiKomga/commit/85f7fa72d030b5436de81fdd17bb2f9412226bca))
+* finish web console controls and Komga auth ([9422550](https://github.com/Hyaeve/BangumiKomga/commit/9422550fab32fecd809d43fc8a3cc26aeca16b0f))
+
+
+### Bug Fixes
+
+* grant Pages workflow write permission ([8a32d28](https://github.com/Hyaeve/BangumiKomga/commit/8a32d28ee87c36a38fb42ee49dbc6e31c97d2e32))
+* persist web credentials across container restarts ([d70b311](https://github.com/Hyaeve/BangumiKomga/commit/d70b311cc1957374ae2476c445794c2317e2a02e))
+
 ## [0.19.0](https://github.com/chu-shen/BangumiKomga/compare/v0.18.0...v0.19.0) (2025-12-17)
 
 
