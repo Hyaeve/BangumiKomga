@@ -7,6 +7,7 @@
 .sidebar:not(.collapsed) .collapse-btn:hover:before{transform:translateY(-50%) rotate(38deg)!important;transform-origin:center bottom!important}
 .sidebar:not(.collapsed) .collapse-btn:hover:after{transform:translateY(-50%) rotate(-38deg)!important;transform-origin:center top!important}
 .login-card h1{font-size:32px!important;letter-spacing:0;margin-bottom:8px}
+.brand-mark{object-fit:cover;background:none!important;color:transparent!important;box-shadow:0 4px 12px rgba(44,73,112,.17)}
 .label-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.label-row a{margin-left:auto!important;white-space:nowrap}
 .secret-input{position:relative;display:flex;align-items:center}.secret-input input{width:100%;padding-right:42px!important}.eye-button{position:absolute;right:5px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);line-height:1}.eye-button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.eye-button:hover{background:var(--accent-soft);color:var(--accent)}
 .sidebar-foot{right:18px;left:24px}.sidebar-logout{margin-left:auto;width:30px;height:30px;padding:0;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:17px}.sidebar-logout:hover{background:var(--accent-soft);color:var(--accent)}.sidebar.collapsed .sidebar-foot{left:24px;right:18px}.sidebar.collapsed .sidebar-logout{display:none}
