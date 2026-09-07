@@ -43,6 +43,7 @@ DEFAULTS = {
     "KOMGA_API_KEY": "",
     "KOMGA_SERVERS": [],
     "KOMGA_LIBRARY_LIST": [],
+    "AI_RECOGNITION": False,
     "KOMGA_COLLECTION_LIST": [],
     "USE_BANGUMI_ARCHIVE": False,
     "ARCHIVE_FILES_DIR": "./archivedata/",
@@ -204,6 +205,8 @@ def save_state(data: dict) -> dict:
             "IS_NOVEL_ONLY": bool(item.get("IS_NOVEL_ONLY", False)),
             "REQUIRED_FIELDS": list(item.get("REQUIRED_FIELDS", []) or []),
             "OVERWRITE_FIELDS": list(item.get("OVERWRITE_FIELDS", []) or []),
+            "TRANSLATE_SUMMARY_TO_ZH": bool(item.get("TRANSLATE_SUMMARY_TO_ZH", False)),
+            "AI_RECOGNITION": bool(item.get("AI_RECOGNITION", False)),
         })
     merged["KOMGA_LIBRARY_LIST"] = libraries
     merged["KOMGA_COLLECTION_LIST"] = [

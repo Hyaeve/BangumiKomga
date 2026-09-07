@@ -13,13 +13,13 @@ from config import config as app_config
 from tools.log import logger
 
 
-def translate_summary_to_zh(summary: str) -> str:
+def translate_summary_to_zh(summary: str, enabled_override=None) -> str:
     """Return a Simplified Chinese translation, or the source on any failure."""
     text = (summary or "").strip()
     base_url = str(getattr(app_config, "OPENAI_BASE_URL", "") or "").strip().rstrip("/")
     api_key = str(getattr(app_config, "OPENAI_API_KEY", "") or "").strip()
     model = str(getattr(app_config, "OPENAI_MODEL", "") or "").strip()
-    enabled = bool(getattr(app_config, "TRANSLATE_SUMMARY_TO_ZH", False))
+    enabled = bool(getattr(app_config, "TRANSLATE_SUMMARY_TO_ZH", False)) if enabled_override is None else bool(enabled_override)
 
     if not text or not enabled or not (base_url and api_key and model):
         return text

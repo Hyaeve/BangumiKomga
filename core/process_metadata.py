@@ -17,6 +17,14 @@ from corpus.vocabulary import (
 )
 from tools.summary_translation import translate_summary_to_zh
 
+# Web scraping cards can override the global translation switch per library.
+TRANSLATE_SUMMARY_OVERRIDE = None
+
+
+def set_translation_override(enabled):
+    global TRANSLATE_SUMMARY_OVERRIDE
+    TRANSLATE_SUMMARY_OVERRIDE = enabled
+
 
 def _set_tags(komga_metadata, bangumi_metadata):
     """
@@ -211,7 +219,11 @@ def _set_summary(komga_metadata, bangumi_metadata):
     """
     概要
     """
-    komga_metadata.summary = translate_summary_to_zh(bangumi_metadata["summary"])
+    summary = bangumi_metadata["summary"]
+    if TRANSLATE_SUMMARY_OVERRIDE is False:
+        komga_metadata.summary = summary
+    else:
+        komga_metadata.summary = translate_summary_to_zh(summary, TRANSLATE_SUMMARY_OVERRIDE)
 
 
 def _set_links(komga_metadata, bangumi_metadata, subject_relations):

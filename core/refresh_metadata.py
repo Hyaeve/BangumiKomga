@@ -57,6 +57,13 @@ def _overwrite_fields_for_library(library_id):
     return set()
 
 
+def _translation_enabled_for_library(library_id):
+    for item in KOMGA_LIBRARY_LIST:
+        if item.get("LIBRARY") == library_id:
+            return bool(item.get("TRANSLATE_SUMMARY_TO_ZH", False))
+    return False
+
+
 def _is_metadata_empty(value):
     return value is None or value == "" or value == [] or value == {}
 
@@ -199,6 +206,7 @@ def refresh_metadata(series_list=None):
             logger.warning("无法获取元数据: %s", series_name)
             continue
 
+        process_metadata.set_translation_override(_translation_enabled_for_library(series.get("libraryId")))
         komga_metadata = process_metadata.set_komga_series_metadata(
             metadata, series_name, bgm
         )
@@ -487,6 +495,7 @@ def refresh_partial_metadata():
 
 def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None):
     # Get the metadata for the book from bangumi
+    process_metadata.set_translation_override(_translation_enabled_for_library(library_id))
     book_metadata = process_metadata.set_komga_book_metadata(
         related_subject["id"], number, book_name, bgm
     )
