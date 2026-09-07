@@ -963,3 +963,54 @@
   .library-card h3 { font-size: 23px !important; }
   .cover-collage { inset: -12px -18px -12px 33% !important; }
 }
+
+/* Final sizing corrections requested for the desktop workflow. */
+@media (min-width: 1180px) {
+  .library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+@media (min-width: 760px) and (max-width: 1179px) {
+  .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+.card-settings-modal {
+  width: calc(100vw - 48px) !important;
+  max-width: 1400px !important;
+  min-width: min(920px, calc(100vw - 48px)) !important;
+  padding: 38px 48px !important;
+}
+.settings-layout {
+  align-items: stretch !important;
+  grid-auto-rows: minmax(0, auto) !important;
+  grid-template-rows: repeat(4, minmax(0, 1fr)) !important;
+  min-height: 820px !important;
+}
+.settings-layout > .setting-card {
+  height: 100% !important;
+  min-height: 0 !important;
+  align-self: stretch !important;
+}
+.settings-layout .ai-card {
+  min-height: 100% !important;
+}
+.settings-layout .komga-settings-card {
+  overflow: auto;
+}
+.settings-layout .backup-card {
+  align-items: center !important;
+}
+@media (max-width: 980px) {
+  .settings-layout {
+    grid-template-rows: none !important;
+    min-height: 0 !important;
+  }
+  .settings-layout > .setting-card {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+}
+@media (max-width: 620px) {
+  .card-settings-modal {
+    width: calc(100vw - 24px) !important;
+    min-width: 0 !important;
+    padding: 24px 18px !important;
+  }
+}
