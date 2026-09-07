@@ -1154,3 +1154,238 @@
   .cover-collage { inset: 0 -8px 0 34% !important; grid-template-columns: repeat(3, minmax(56px, 1fr)) !important; grid-template-rows: repeat(2, 76px) !important; }
   .cover-collage img, .cover-collage img:nth-child(n) { height: 76px !important; border-radius: 6px !important; }
 }
+
+/* Settings actions sit in the page header; cards retain their natural content height. */
+.settings-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  margin: -8px 0 18px;
+}
+.settings-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.settings-toolbar .backup-button {
+  min-width: 94px;
+  min-height: 38px;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+}
+.settings-toolbar .backup-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.settings-toolbar .file-button { display: inline-flex; }
+.settings-layout {
+  grid-template-columns: minmax(248px, .82fr) minmax(480px, 1.58fr) !important;
+  grid-template-areas:
+    "account komga"
+    "bangumi ai"
+    "strategy ai" !important;
+  grid-auto-rows: auto !important;
+  grid-template-rows: none !important;
+  align-items: start !important;
+  min-height: 0 !important;
+}
+.settings-layout > .setting-card,
+.settings-layout > .account-card,
+.settings-layout > .bangumi-card,
+.settings-layout > .strategy-card,
+.settings-layout > .komga-settings-card,
+.settings-layout > .ai-card {
+  align-self: start !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+.backup-card { display: none !important; }
+
+/* Scrape history is a five-column table: book, time, service, library and action. */
+.records-head,
+.record-item {
+  grid-template-columns: minmax(245px, 1.55fr) 142px minmax(150px, .92fr) minmax(108px, .7fr) minmax(195px, 1.12fr) !important;
+  gap: 14px !important;
+}
+.record-book-title {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.record-book-title::after {
+  position: absolute;
+  z-index: 16;
+  left: 0;
+  bottom: calc(100% + 9px);
+  display: block;
+  width: max-content;
+  max-width: min(420px, 65vw);
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(91, 107, 116, .16);
+  border-radius: 9px;
+  background: rgba(38, 49, 57, .94);
+  box-shadow: 0 10px 24px rgba(35, 46, 55, .18);
+  color: #fff;
+  content: attr(data-tooltip);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+.record-book-title:hover::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+.record-library { min-width: 0; }
+.record-library strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.record-status { display: none !important; }
+.time-sort {
+  border: 0;
+  padding: 0;
+  color: #5b6d74;
+  background: transparent;
+  font-weight: 700;
+}
+.time-sort:hover { color: var(--accent); }
+.time-sort span {
+  color: #71838a !important;
+  opacity: 1 !important;
+}
+.time-sort span::before,
+.time-sort span::after { border-color: currentColor !important; }
+.record-stats.compact > div:nth-child(3)::before {
+  content: "册" !important;
+  color: #537b9d !important;
+  background: #e7eef7 !important;
+}
+.record-stats.compact > div:nth-child(4)::before {
+  content: "文" !important;
+  color: #7b65a5 !important;
+  background: #eee9f7 !important;
+}
+.record-stats.compact .comic strong { color: #537b9d !important; }
+.record-stats.compact .novel strong { color: #7b65a5 !important; }
+
+/* A continuous pale canvas and one orderly right-leaning cover flow. */
+.library-grid {
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)) !important;
+  max-width: none !important;
+  gap: 16px !important;
+}
+.library-card,
+.empty-card {
+  aspect-ratio: 1.66 / 1 !important;
+  min-height: 202px !important;
+  border-radius: 17px !important;
+  background: hsl(var(--card-hue) 30% 96% / .98) !important;
+}
+.library-card::before,
+.library-card::after { display: none !important; }
+.library-card .card-content {
+  left: 20px !important;
+  right: 57% !important;
+  bottom: 19px !important;
+}
+.library-card h3 {
+  font-size: 23px !important;
+  line-height: 1.13 !important;
+}
+.cover-collage {
+  inset: -5px -13px -5px 40% !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(64px, 1fr)) !important;
+  grid-template-rows: repeat(2, 102px) !important;
+  gap: 9px !important;
+  padding: 15px 13px 15px 7px !important;
+  align-content: center !important;
+  overflow: visible !important;
+  background: transparent !important;
+}
+.cover-collage img,
+.cover-collage img:nth-child(n),
+.cover-collage img:nth-child(2n),
+.cover-collage img:nth-child(3n) {
+  position: static !important;
+  width: 100% !important;
+  height: 102px !important;
+  min-height: 0 !important;
+  object-fit: cover !important;
+  border-radius: 7px !important;
+  box-shadow: 0 8px 17px rgba(44, 62, 74, .18) !important;
+  transform: rotate(8deg) !important;
+}
+@media (max-width: 980px) {
+  .settings-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-areas: "account" "bangumi" "strategy" "komga" "ai" !important;
+  }
+}
+@media (max-width: 700px) {
+  .settings-toolbar { margin-bottom: 14px; }
+  .settings-toolbar-actions { width: 100%; }
+  .settings-toolbar .backup-button { flex: 1; }
+  .records-head { display: none !important; }
+  .records-head, .record-list { min-width: 0 !important; }
+  .record-item { grid-template-columns: minmax(0, 1fr) auto !important; }
+  .record-main { grid-column: 1 / -1; }
+  .record-time { grid-column: 1; }
+  .record-service { grid-column: 2; }
+  .record-library, .record-fields { grid-column: 1 / -1; }
+  .library-grid { grid-template-columns: 1fr !important; }
+  .library-card, .empty-card { aspect-ratio: 1.52 / 1 !important; }
+  .cover-collage { inset: -3px -8px -3px 38% !important; grid-template-columns: repeat(3, minmax(54px, 1fr)) !important; grid-template-rows: repeat(2, 82px) !important; }
+  .cover-collage img, .cover-collage img:nth-child(n) { height: 82px !important; }
+}
+
+/* Keep the two settings rails independent so a tall Komga form never creates
+   an artificial hole between the compact cards on the left. */
+.settings-layout {
+  display: grid !important;
+  grid-template-columns: minmax(248px, .82fr) minmax(480px, 1.58fr) !important;
+  grid-template-areas: none !important;
+  align-items: start !important;
+  gap: 18px !important;
+}
+.settings-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+  align-items: stretch;
+}
+.settings-left { grid-column: 1; }
+.settings-right { grid-column: 2; }
+.settings-column .setting-card {
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  align-self: stretch !important;
+}
+.settings-column .account-card,
+.settings-column .bangumi-card,
+.settings-column .strategy-card,
+.settings-column .komga-settings-card,
+.settings-column .ai-card {
+  grid-area: auto !important;
+}
+@media (max-width: 980px) {
+  .settings-layout { grid-template-columns: 1fr !important; }
+  .settings-left, .settings-right { grid-column: 1; }
+}
