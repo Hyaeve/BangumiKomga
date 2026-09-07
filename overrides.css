@@ -1389,3 +1389,45 @@
   .settings-layout { grid-template-columns: 1fr !important; }
   .settings-left, .settings-right { grid-column: 1; }
 }
+
+/* Settings backup actions belong to the page header, alongside the title. */
+.settings-hero-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+}
+.settings-hero-actions .backup-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 94px;
+  min-height: 38px;
+  margin: 0;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+}
+.settings-hero-actions .backup-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.settings-hero-actions .file-button { display: inline-flex; }
+
+/* Both rails share one bottom edge. When Komga cards make the right rail taller,
+   the additional room is absorbed by the basic-settings card rather than a gap. */
+.settings-layout { align-items: stretch !important; }
+.settings-column {
+  height: 100%;
+  align-self: stretch !important;
+}
+.settings-left .strategy-card { flex: 1 1 auto; }
+@media (max-width: 700px) {
+  .settings-hero-actions { width: 100%; }
+  .settings-hero-actions .backup-button { flex: 1; }
+}
