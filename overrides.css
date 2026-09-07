@@ -1012,6 +1012,51 @@
   .cover-collage img, .cover-collage img:nth-child(n) { height: 78px !important; border-radius: 10px !important; }
 }
 
+/* Final proportions: wider artwork tiles, restrained corners and a narrower
+   card editor that remains comfortable on desktop. */
+.cover-collage {
+  inset: -6px -16px -6px 37% !important;
+  grid-template-columns: repeat(4, minmax(88px, 1fr)) !important;
+  grid-template-rows: repeat(2, 118px) !important;
+  gap: 10px !important;
+  padding: 18px 18px 18px 8px !important;
+}
+.cover-collage img,
+.cover-collage img:nth-child(n) {
+  width: 100% !important;
+  height: 118px !important;
+  border-radius: 8px !important;
+  transform: rotate(8deg) !important;
+}
+.cover-collage img:nth-child(2n) { transform: rotate(8deg) translateY(5px) !important; }
+.cover-collage img:nth-child(3n) { transform: rotate(8deg) translateY(-5px) !important; }
+.card-settings-modal {
+  width: min(900px, calc(100vw - 40px)) !important;
+  max-width: 900px !important;
+  padding: 30px 34px !important;
+}
+.feature-options {
+  margin-top: 10px !important;
+  border-radius: 10px !important;
+}
+.feature-options .meta-option {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  margin: 0 !important;
+  border-radius: 8px !important;
+}
+.feature-options .meta-option input { accent-color: var(--accent); }
+@media (max-width: 900px) {
+  .cover-collage { inset: -4px -12px -4px 36% !important; grid-template-columns: repeat(4, minmax(70px, 1fr)) !important; grid-template-rows: repeat(2, 100px) !important; }
+  .cover-collage img, .cover-collage img:nth-child(n) { height: 100px !important; }
+}
+@media (max-width: 620px) {
+  .cover-collage { inset: 0 -8px 0 34% !important; grid-template-columns: repeat(3, minmax(58px, 1fr)) !important; grid-template-rows: repeat(2, 78px) !important; }
+  .cover-collage img, .cover-collage img:nth-child(n) { height: 78px !important; border-radius: 7px !important; }
+  .card-settings-modal { width: calc(100vw - 24px) !important; max-width: none !important; }
+}
+
 /* Final sizing corrections requested for the desktop workflow. */
 @media (min-width: 1180px) {
   .library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
