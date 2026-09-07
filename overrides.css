@@ -1431,3 +1431,88 @@
   .settings-hero-actions { width: 100%; }
   .settings-hero-actions .backup-button { flex: 1; }
 }
+
+/* Scrape-card artwork: a clipped, irregular cover mosaic that stays on the
+   right while the library text remains calm and legible on the left. */
+.library-card,
+.empty-card {
+  aspect-ratio: 1.72 / 1 !important;
+  min-height: 214px !important;
+  border-radius: 18px !important;
+}
+.library-card .card-content {
+  z-index: 4 !important;
+  left: 22px !important;
+  right: 54% !important;
+  bottom: 22px !important;
+}
+.library-card h3 {
+  font-size: 24px !important;
+  line-height: 1.12 !important;
+}
+.cover-collage {
+  position: absolute !important;
+  inset: 0 0 0 40% !important;
+  display: block !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: transparent !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+}
+.cover-collage::after { display: none !important; }
+.cover-collage img,
+.cover-collage img:nth-child(n),
+.cover-collage img:nth-child(2n),
+.cover-collage img:nth-child(3n) {
+  position: absolute !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  object-fit: cover !important;
+  border-radius: 10px !important;
+  box-shadow: 0 10px 22px rgba(37, 51, 63, .17) !important;
+  filter: saturate(.76) contrast(.98) !important;
+  transform-origin: center !important;
+}
+.cover-collage img:nth-child(1) {
+  z-index: 2; top: -19%; right: 48%; width: 35%; height: 43%; opacity: .58; transform: rotate(12deg) !important;
+}
+.cover-collage img:nth-child(2) {
+  z-index: 4; top: -10%; right: 15%; width: 35%; height: 48%; opacity: .88; transform: rotate(13deg) !important;
+}
+.cover-collage img:nth-child(3) {
+  z-index: 1; top: -12%; right: -23%; width: 34%; height: 50%; opacity: .42; transform: rotate(12deg) !important;
+}
+.cover-collage img:nth-child(4) {
+  z-index: 5; top: 29%; right: 31%; width: 33%; height: 53%; opacity: .96; transform: rotate(9deg) !important;
+}
+.cover-collage img:nth-child(5) {
+  z-index: 3; top: 34%; right: -8%; width: 32%; height: 51%; opacity: .72; transform: rotate(10deg) !important;
+}
+.cover-collage img:nth-child(6) {
+  z-index: 2; top: 73%; right: 54%; width: 31%; height: 43%; opacity: .36; transform: rotate(11deg) !important;
+}
+.cover-collage img:nth-child(7) {
+  z-index: 3; top: 73%; right: 15%; width: 35%; height: 49%; opacity: .66; transform: rotate(9deg) !important;
+}
+.cover-collage img:nth-child(8) {
+  z-index: 1; top: 68%; right: -23%; width: 32%; height: 48%; opacity: .4; transform: rotate(12deg) !important;
+}
+.cover-collage img:nth-child(n+9) { display: none !important; }
+@media (max-width: 900px) {
+  .library-card, .empty-card { aspect-ratio: 1.62 / 1 !important; }
+  .library-card .card-content { right: 52% !important; }
+  .cover-collage { left: 37% !important; }
+}
+@media (max-width: 620px) {
+  .library-card, .empty-card { aspect-ratio: 1.5 / 1 !important; min-height: 194px !important; }
+  .library-card .card-content { left: 18px !important; right: 53% !important; bottom: 18px !important; }
+  .library-card h3 { font-size: 21px !important; }
+  .cover-collage { left: 39% !important; }
+  .cover-collage img:nth-child(1) { width: 37%; height: 41%; }
+  .cover-collage img:nth-child(2) { width: 37%; height: 47%; }
+  .cover-collage img:nth-child(4) { width: 35%; height: 50%; }
+}
