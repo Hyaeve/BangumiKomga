@@ -1107,3 +1107,50 @@
     padding: 24px 18px !important;
   }
 }
+
+/* Final compactness pass: let small settings cards end with their content,
+   and keep the AI action in the card header. */
+.card-settings-modal {
+  width: min(860px, calc(100vw - 40px)) !important;
+  max-width: 860px !important;
+  min-width: 0 !important;
+  padding: 28px 32px !important;
+}
+.settings-layout > .account-card,
+.settings-layout > .ai-card,
+.settings-layout > .bangumi-card,
+.settings-layout > .strategy-card,
+.settings-layout > .backup-card {
+  align-self: start !important;
+  height: max-content !important;
+}
+.ai-card { position: relative !important; }
+.ai-card-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
+.ai-card-head h3 { margin: 0 !important; }
+.ai-save { margin: 0 !important; min-width: 74px; padding: 9px 14px !important; }
+.ai-card label { margin-top: 14px; }
+.cover-collage {
+  inset: -4px -14px -4px 37% !important;
+  grid-template-columns: repeat(4, minmax(84px, 1fr)) !important;
+  grid-template-rows: repeat(2, 108px) !important;
+  gap: 9px !important;
+  padding: 16px 16px 16px 8px !important;
+}
+.cover-collage img,
+.cover-collage img:nth-child(n) {
+  height: 108px !important;
+  border-radius: 7px !important;
+  transform: rotate(8deg) !important;
+}
+.cover-collage img:nth-child(2n),
+.cover-collage img:nth-child(3n) { transform: rotate(8deg) !important; }
+@media (max-width: 900px) {
+  .card-settings-modal { width: min(760px, calc(100vw - 32px)) !important; max-width: 760px !important; }
+  .cover-collage { grid-template-columns: repeat(4, minmax(66px, 1fr)) !important; grid-template-rows: repeat(2, 92px) !important; }
+  .cover-collage img, .cover-collage img:nth-child(n) { height: 92px !important; }
+}
+@media (max-width: 620px) {
+  .card-settings-modal { width: calc(100vw - 24px) !important; max-width: none !important; padding: 24px 18px !important; }
+  .cover-collage { inset: 0 -8px 0 34% !important; grid-template-columns: repeat(3, minmax(56px, 1fr)) !important; grid-template-rows: repeat(2, 76px) !important; }
+  .cover-collage img, .cover-collage img:nth-child(n) { height: 76px !important; border-radius: 6px !important; }
+}
