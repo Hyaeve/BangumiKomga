@@ -4,6 +4,32 @@ from zhconv import convert
 from corpus.vocabulary import ALL_VOCABULARY
 
 
+def get_title_candidates(name):
+    """Return deterministic title candidates in the scraper's priority order.
+
+    Bracketed titles are intentionally handled before the legacy vocabulary
+    parser: release-group and author tags are metadata, while ``《...》`` and
+    the first ``[...]`` segment are the user's explicit title hints.
+    """
+    raw = str(name or "").strip()
+    if not raw:
+        return []
+
+    candidates = []
+    for value in re.findall(r"《\s*([^《》]+?)\s*》", raw):
+        value = value.strip()
+        if value and value not in candidates:
+            candidates.append(value)
+
+    bracketed = re.findall(r"\[\s*([^\[\]]+?)\s*\]", raw)
+    if bracketed:
+        value = bracketed[0].strip()
+        if value and value not in candidates:
+            candidates.append(value)
+
+    return candidates
+
+
 def read_corpus(file_path):
     """
     Read the contents of a text file and return a list of lowercase strings (lines)

@@ -1,6 +1,7 @@
 import os
 from api.bangumi_model import SubjectRelation
-from tools.get_title import ParseTitle
+from tools.get_title import get_title_candidates
+from tools.title_recognition import recognize_title
 import core.process_metadata as process_metadata
 from time import strftime, localtime
 from tools.get_number import get_number, NumberType
@@ -64,6 +65,13 @@ def _translation_enabled_for_library(library_id):
     return False
 
 
+def _ai_recognition_enabled_for_library(library_id):
+    for item in KOMGA_LIBRARY_LIST:
+        if item.get("LIBRARY") == library_id:
+            return bool(item.get("AI_RECOGNITION", False))
+    return False
+
+
 def _is_metadata_empty(value):
     return value is None or value == "" or value == [] or value == {}
 
@@ -111,8 +119,6 @@ def refresh_metadata(series_list=None):
     if not series_list:
         series_list = get_series_metadata()
 
-    parse_title = ParseTitle()
-
     # 批量获取所有series_id
     series_ids = [series["id"] for series in series_list]
     # 执行一次查询获取所有series_id对应的记录
@@ -133,6 +139,7 @@ def refresh_metadata(series_list=None):
         series_id = series["id"]
         series_name = series["name"]
         is_novel_series = series["is_novel"]
+        metadata = None
 
         # 若存在 Correct Bgm Link (CBL) 则获取其中的 subject_id
         subject_id = None
@@ -168,28 +175,50 @@ def refresh_metadata(series_list=None):
                     logger.debug("跳过刮削失败的系列: %s", series_name)
                     continue
 
+        # A previously matched series may need selected fields refreshed. It
+        # already has a Bangumi id, so load metadata directly instead of
+        # searching it again.
+        if subject_id is not None and metadata is None:
+            metadata = bgm.get_subject_metadata(subject_id)
+
         # 使用 bangumi API 搜索 komga 中系列标题
-        if subject_id == None:
+        if subject_id is None:
             logger.debug("在 Bangumi 中搜索: %s ", series_name)
-            title = parse_title.get_title(series_name)
-            if title == None:
-                failed_count, failed_comic = record_series_status(
-                    conn,
-                    series_id,
-                    subject_id,
-                    0,
-                    series_name,
-                    "None",
-                    failed_count,
-                    failed_comic,
-                )
-                continue
-            search_results = bgm.search_subjects(
-                title, FUZZ_SCORE_THRESHOLD, is_novel_series)
-            if len(search_results) > 0:
-                subject_id = search_results[0]["id"]
-                metadata = search_results[0]
-            else:
+            title_candidates = get_title_candidates(series_name)
+            ai_title = ""
+            for candidate in title_candidates:
+                search_results = bgm.search_subjects(
+                    candidate, FUZZ_SCORE_THRESHOLD, is_novel_series)
+                if search_results:
+                    subject_id = search_results[0]["id"]
+                    metadata = search_results[0]
+                    logger.debug("标题候选匹配成功 [%s]: %s", candidate, series_name)
+                    break
+
+            if subject_id is None and _ai_recognition_enabled_for_library(series.get("libraryId")):
+                ai_title = recognize_title(series_name, only_novel=is_novel_series)
+                if ai_title and ai_title not in title_candidates:
+                    title_candidates.append(ai_title)
+                    search_results = bgm.search_subjects(
+                        ai_title, FUZZ_SCORE_THRESHOLD, is_novel_series)
+                    if search_results:
+                        subject_id = search_results[0]["id"]
+                        metadata = search_results[0]
+                        logger.debug("AI 标题匹配成功 [%s]: %s", ai_title, series_name)
+
+            if subject_id is None:
+                # The original full name is the last resort, even when the
+                # bracket/title heuristics produced no candidate.
+                fallback_title = series_name.strip()
+                if fallback_title and fallback_title not in title_candidates:
+                    search_results = bgm.search_subjects(
+                        fallback_title, FUZZ_SCORE_THRESHOLD, is_novel_series)
+                    if search_results:
+                        subject_id = search_results[0]["id"]
+                        metadata = search_results[0]
+                        logger.debug("原始名称匹配成功: %s", series_name)
+
+            if subject_id is None:
                 failed_count, failed_comic = record_series_status(
                     conn,
                     series_id,

@@ -801,6 +801,81 @@
 .cover-collage img:nth-child(3n) { transform: rotate(8deg) translateY(-7px) !important; }
 .cover-collage img:nth-child(n+9) { display: none !important; }
 
+/* Final card hierarchy: the Komga service name is the sole text anchor;
+   the right side stays a clipped, softly layered cover mosaic. */
+.library-card .card-content {
+  top: 21px !important;
+  right: 55% !important;
+  bottom: auto !important;
+  left: 22px !important;
+}
+.library-card .card-label {
+  display: block !important;
+  margin: 0 !important;
+  color: #263842 !important;
+  font-size: clamp(18px, 1.5vw, 23px) !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+}
+.library-card h3,
+.library-card .card-meta { display: none !important; }
+.library-card .cover-collage {
+  inset: -8px -16px -9px 39% !important;
+  overflow: hidden !important;
+}
+.library-card .cover-collage img,
+.library-card .cover-collage img:nth-child(n) {
+  border-radius: 8px !important;
+}
+
+/* The primary Komga action belongs with the service heading, not in the form. */
+.komga-settings-card .setting-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.komga-settings-card .setting-card-head h3 { margin: 0 !important; }
+.komga-settings-card .add-server-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+.komga-settings-card .add-server-button span {
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1;
+}
+.komga-settings-card .server-form { margin-top: 0 !important; }
+
+/* Keep the token form roomy without leaving an accidental blank footer. */
+.settings-left .bangumi-card {
+  justify-content: flex-start !important;
+  gap: 0 !important;
+  padding: 20px !important;
+}
+.settings-left .bangumi-card h3 { margin-bottom: 16px !important; }
+.settings-left .bangumi-card label { margin: 0 !important; }
+.settings-left .bangumi-card .full {
+  align-self: flex-start;
+  min-width: 116px;
+  margin-top: 16px !important;
+}
+@media (max-width: 620px) {
+  .library-card .card-content { top: 18px !important; left: 18px !important; }
+  .library-card .card-label { font-size: 18px !important; }
+  .komga-settings-card .setting-card-head { align-items: flex-start; }
+}
+
 @media (max-width: 900px) {
   .library-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important; }
   .library-card, .empty-card { aspect-ratio: 1.85 / 1 !important; }
@@ -1299,6 +1374,196 @@
 .library-card::before,
 .library-card::after { display: none !important; }
 
+/* Final override layer: the inline SVGs are the only sidebar glyphs. */
+.nav-icon::before,
+.nav-icon::after,
+.nav-icon i,
+.collapse-btn::before,
+.collapse-btn::after {
+  display: none !important;
+  content: none !important;
+  box-shadow: none !important;
+}
+.nav-icon {
+  display: grid !important;
+  place-items: center !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+.nav-icon svg {
+  display: block !important;
+  width: 21px !important;
+  height: 21px !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  stroke-width: 1.75 !important;
+}
+.collapse-btn .collapse-rail,
+.collapse-btn .collapse-icon { display: block !important; }
+
+/* Keep the latest card treatment at the end so old experimental rules cannot
+   restore the hidden media-library title or bottom-aligned text. */
+.library-card .card-content {
+  top: 21px !important;
+  right: 55% !important;
+  bottom: auto !important;
+  left: 22px !important;
+}
+.library-card .card-label {
+  display: block !important;
+  margin: 0 !important;
+  color: #263842 !important;
+  font-size: clamp(18px, 1.5vw, 23px) !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+}
+.library-card h3,
+.library-card .card-meta { display: none !important; }
+.library-card .cover-collage {
+  inset: -8px -16px -9px 39% !important;
+  overflow: hidden !important;
+}
+.library-card .cover-collage img,
+.library-card .cover-collage img:nth-child(n) { border-radius: 8px !important; }
+.komga-settings-card .setting-card-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  margin-bottom: 14px !important;
+}
+.komga-settings-card .setting-card-head h3 { margin: 0 !important; }
+.komga-settings-card .add-server-button {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  min-height: 36px !important;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+.komga-settings-card .add-server-button span { font-size: 17px; line-height: 1; }
+.komga-settings-card .server-form { margin-top: 0 !important; }
+.settings-left .bangumi-card {
+  justify-content: flex-start !important;
+  gap: 0 !important;
+  padding: 20px !important;
+}
+.settings-left .bangumi-card h3 { margin-bottom: 16px !important; }
+.settings-left .bangumi-card label { margin: 0 !important; }
+.settings-left .bangumi-card .full {
+  align-self: flex-start !important;
+  min-width: 116px !important;
+  margin-top: 16px !important;
+}
+@media (max-width: 620px) {
+  .library-card .card-content { top: 18px !important; left: 18px !important; }
+  .library-card .card-label { font-size: 18px !important; }
+  .komga-settings-card .setting-card-head { align-items: flex-start !important; }
+}
+
+/* Last override layer: the inline SVGs are the only sidebar glyphs. */
+.nav-icon::before,
+.nav-icon::after,
+.nav-icon i,
+.collapse-btn::before,
+.collapse-btn::after {
+  display: none !important;
+  content: none !important;
+  box-shadow: none !important;
+}
+.nav-icon {
+  display: grid !important;
+  place-items: center !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+.nav-icon svg {
+  display: block !important;
+  width: 21px !important;
+  height: 21px !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  stroke-width: 1.75 !important;
+}
+.collapse-btn .collapse-rail { display: block !important; }
+.collapse-btn .collapse-icon { display: block !important; }
+
+/* Keep the latest card treatment at the end so older experimental overrides
+   cannot restore the hidden media-library title or bottom-aligned text. */
+.library-card .card-content {
+  top: 21px !important;
+  right: 55% !important;
+  bottom: auto !important;
+  left: 22px !important;
+}
+.library-card .card-label {
+  display: block !important;
+  margin: 0 !important;
+  color: #263842 !important;
+  font-size: clamp(18px, 1.5vw, 23px) !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+}
+.library-card h3,
+.library-card .card-meta { display: none !important; }
+.library-card .cover-collage {
+  inset: -8px -16px -9px 39% !important;
+  overflow: hidden !important;
+}
+.library-card .cover-collage img,
+.library-card .cover-collage img:nth-child(n) {
+  border-radius: 8px !important;
+}
+.komga-settings-card .setting-card-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  margin-bottom: 14px !important;
+}
+.komga-settings-card .setting-card-head h3 { margin: 0 !important; }
+.komga-settings-card .add-server-button {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  min-height: 36px !important;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+.komga-settings-card .add-server-button span { font-size: 17px; line-height: 1; }
+.komga-settings-card .server-form { margin-top: 0 !important; }
+.settings-left .bangumi-card {
+  justify-content: flex-start !important;
+  gap: 0 !important;
+  padding: 20px !important;
+}
+.settings-left .bangumi-card h3 { margin-bottom: 16px !important; }
+.settings-left .bangumi-card label { margin: 0 !important; }
+.settings-left .bangumi-card .full {
+  align-self: flex-start !important;
+  min-width: 116px !important;
+  margin-top: 16px !important;
+}
+@media (max-width: 620px) {
+  .library-card .card-content { top: 18px !important; left: 18px !important; }
+  .library-card .card-label { font-size: 18px !important; }
+  .komga-settings-card .setting-card-head { align-items: flex-start !important; }
+}
+
 /* Bangumi token gets a calmer, roomier form rhythm within its allocated rail. */
 .settings-left .bangumi-card {
   display: flex !important;
@@ -1749,3 +2014,43 @@
 }
 .library-card::before,
 .library-card::after { display: none !important; }
+
+/* Final override layer: the inline SVGs are the only sidebar glyphs. */
+.nav-icon::before,
+.nav-icon::after,
+.nav-icon i,
+.collapse-btn::before,
+.collapse-btn::after {
+  display: none !important;
+  content: none !important;
+  box-shadow: none !important;
+}
+.nav-icon { display: grid !important; place-items: center !important; width: 24px !important; height: 24px !important; }
+.nav-icon svg { display: block !important; width: 21px !important; height: 21px !important; fill: none !important; stroke: currentColor !important; stroke-linecap: round !important; stroke-linejoin: round !important; stroke-width: 1.75 !important; }
+.collapse-btn .collapse-rail,
+.collapse-btn .collapse-icon { display: block !important; }
+
+/* Pin card copy to the top-left and reserve the rest for cover collage. */
+.library-card .card-content { top: 21px !important; right: 55% !important; bottom: auto !important; left: 22px !important; }
+.library-card .card-label { display: block !important; margin: 0 !important; color: #263842 !important; font-size: clamp(18px, 1.5vw, 23px) !important; font-weight: 700 !important; line-height: 1.2 !important; letter-spacing: 0 !important; }
+.library-card h3,
+.library-card .card-meta { display: none !important; }
+.library-card .cover-collage { inset: -8px -16px -9px 39% !important; overflow: hidden !important; }
+.library-card .cover-collage img,
+.library-card .cover-collage img:nth-child(n) { border-radius: 8px !important; }
+
+/* Put the Komga primary action into this panel's title row. */
+.komga-settings-card .setting-card-head { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 14px !important; margin-bottom: 14px !important; }
+.komga-settings-card .setting-card-head h3 { margin: 0 !important; }
+.komga-settings-card .add-server-button { display: inline-flex !important; flex: 0 0 auto !important; align-items: center !important; justify-content: center !important; gap: 6px !important; min-height: 36px !important; margin: 0 !important; padding: 8px 12px !important; border-radius: 10px !important; font-size: 12px !important; }
+.komga-settings-card .add-server-button span { font-size: 17px; line-height: 1; }
+.komga-settings-card .server-form { margin-top: 0 !important; }
+.settings-left .bangumi-card { justify-content: flex-start !important; gap: 0 !important; padding: 20px !important; }
+.settings-left .bangumi-card h3 { margin-bottom: 16px !important; }
+.settings-left .bangumi-card label { margin: 0 !important; }
+.settings-left .bangumi-card .full { align-self: flex-start !important; min-width: 116px !important; margin-top: 16px !important; }
+@media (max-width: 620px) {
+  .library-card .card-content { top: 18px !important; left: 18px !important; }
+  .library-card .card-label { font-size: 18px !important; }
+  .komga-settings-card .setting-card-head { align-items: flex-start !important; }
+}
