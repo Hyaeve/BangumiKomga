@@ -1468,6 +1468,89 @@
   .komga-settings-card .setting-card-head { align-items: flex-start !important; }
 }
 
+/* Reference collage: a clean right-side grid with one shared diagonal angle,
+   slight row offsets, and a clipped edge rather than a vertical strip. */
+.library-card .cover-collage {
+  inset: -18px -20px -18px 38% !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(54px, 1fr)) !important;
+  grid-template-rows: repeat(2, minmax(88px, 1fr)) !important;
+  gap: 12px !important;
+  padding: 14px 6px 14px 22px !important;
+  align-content: center !important;
+  overflow: hidden !important;
+}
+.library-card .cover-collage img,
+.library-card .cover-collage img:nth-child(n) {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  object-fit: cover !important;
+  border-radius: 11px !important;
+  transform: rotate(10deg) !important;
+  transform-origin: center !important;
+  box-shadow: 0 8px 18px rgba(38, 52, 63, .16) !important;
+  filter: saturate(.82) contrast(.98) !important;
+}
+.library-card .cover-collage img:nth-child(2n) { transform: rotate(10deg) translateY(9px) !important; }
+.library-card .cover-collage img:nth-child(3n) { transform: rotate(10deg) translateY(-8px) !important; }
+.library-card .cover-collage img:nth-child(1),
+.library-card .cover-collage img:nth-child(5) { opacity: .68 !important; }
+.library-card .cover-collage img:nth-child(3),
+.library-card .cover-collage img:nth-child(8) { opacity: .48 !important; }
+.library-card .card-content { right: 60% !important; }
+.library-card .card-label {
+  font-size: clamp(15px, 1.15vw, 18px) !important;
+  line-height: 1.18 !important;
+}
+.library-card .card-meta {
+  display: inline-flex !important;
+  margin: 9px 0 0 !important;
+  padding: 5px 9px !important;
+  border: 1px solid rgba(86, 105, 115, .14) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, .62) !important;
+  color: #65747d !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+}
+
+/* Give the token card the quiet lower breathing room shown in the reference. */
+.settings-left .bangumi-card { flex: 0 0 318px !important; }
+.settings-left .bangumi-card .full { margin-top: 18px !important; }
+
+/* Unified setting action rhythm. Full-width actions retain their layout while
+   compact heading actions use the same height, type size, and corner radius. */
+.account-card > .full,
+.bangumi-card > .full,
+.komga-settings-card .add-server-button,
+.ai-card .ai-save {
+  min-height: 38px !important;
+  height: 38px !important;
+  padding: 8px 13px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  font-weight: 600 !important;
+}
+.settings-hero-actions {
+  transform: translateY(8px);
+}
+.settings-hero-actions .backup-button {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+.settings-hero-actions .backup-button svg { width: 15px !important; height: 15px !important; }
+
+/* The navigation symbols are bespoke outline marks, not the old pseudo-icons. */
+.nav-icon.icon-scrape svg { width: 22px !important; height: 22px !important; stroke-width: 1.65 !important; }
+.nav-icon.icon-settings svg { width: 22px !important; height: 22px !important; stroke-width: 1.65 !important; }
+
 /* Last override layer: the inline SVGs are the only sidebar glyphs. */
 .nav-icon::before,
 .nav-icon::after,
