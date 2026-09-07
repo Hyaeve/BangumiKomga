@@ -1,0 +1,166 @@
+/* Final visual layer for the current dashboard direction. */
+
+/* Semantic inline SVGs replace the legacy pseudo-icons. */
+.nav-icon::before,
+.nav-icon::after,
+.nav-icon i,
+.collapse-btn::before,
+.collapse-btn::after {
+  display: none !important;
+  content: none !important;
+  box-shadow: none !important;
+}
+.nav-icon {
+  display: grid !important;
+  place-items: center !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+.nav-icon svg {
+  display: block !important;
+  width: 21px !important;
+  height: 21px !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  stroke-width: 1.75 !important;
+}
+.nav-icon.icon-scrape svg,
+.nav-icon.icon-settings svg {
+  width: 22px !important;
+  height: 22px !important;
+  stroke-width: 1.65 !important;
+}
+.collapse-btn .collapse-rail,
+.collapse-btn .collapse-icon { display: block !important; }
+
+/* Compact square card with a quiet service label, type badge, and a clipped
+   right-side mosaic. Every cover shares the same rightward lean. */
+.library-card {
+  aspect-ratio: 1.78 / 1 !important;
+  min-height: 204px !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  background: hsl(var(--card-hue) 28% 96% / .98) !important;
+}
+.library-card::before,
+.library-card::after { display: none !important; }
+.library-card .card-content {
+  top: 20px !important;
+  left: 20px !important;
+  right: 60% !important;
+  bottom: auto !important;
+  z-index: 5 !important;
+}
+.library-card .card-label {
+  display: block !important;
+  margin: 0 !important;
+  color: #2e4049 !important;
+  font-size: clamp(15px, 1.2vw, 18px) !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+}
+.library-card h3 { display: none !important; }
+.library-card .card-meta {
+  display: inline-flex !important;
+  margin: 9px 0 0 !important;
+  padding: 5px 9px !important;
+  border: 1px solid rgba(86, 105, 115, .14) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, .62) !important;
+  color: #65747d !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+}
+.library-card .cover-collage {
+  inset: -16px -18px -16px 37% !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(54px, 1fr)) !important;
+  grid-template-rows: repeat(2, minmax(86px, 1fr)) !important;
+  gap: 12px !important;
+  padding: 13px 6px 13px 24px !important;
+  align-content: center !important;
+  overflow: hidden !important;
+  opacity: 1 !important;
+}
+.library-card .cover-collage img,
+.library-card .cover-collage img:nth-child(n) {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  object-fit: cover !important;
+  border-radius: 10px !important;
+  transform: rotate(10deg) !important;
+  transform-origin: center !important;
+  box-shadow: 0 8px 18px rgba(38, 52, 63, .16) !important;
+  filter: saturate(.82) contrast(.98) !important;
+}
+.library-card .cover-collage img:nth-child(2n) { transform: rotate(10deg) translateY(8px) !important; }
+.library-card .cover-collage img:nth-child(3n) { transform: rotate(10deg) translateY(-8px) !important; }
+.library-card .cover-collage img:nth-child(1),
+.library-card .cover-collage img:nth-child(5) { opacity: .68 !important; }
+.library-card .cover-collage img:nth-child(3),
+.library-card .cover-collage img:nth-child(8) { opacity: .48 !important; }
+.library-card .cover-collage img:nth-child(n+9) { display: none !important; }
+
+/* Leave the token button followed by the calm lower whitespace in the card. */
+.settings-left .bangumi-card {
+  flex: 0 0 318px !important;
+  justify-content: flex-start !important;
+  gap: 0 !important;
+  padding: 20px !important;
+}
+.settings-left .bangumi-card h3 { margin-bottom: 16px !important; }
+.settings-left .bangumi-card label { margin: 0 !important; }
+.settings-left .bangumi-card .full {
+  align-self: flex-start !important;
+  min-width: 116px !important;
+  margin-top: 18px !important;
+}
+
+/* All setting actions share one compact button system. */
+.account-card > .full,
+.bangumi-card > .full,
+.komga-settings-card .add-server-button,
+.ai-card .ai-save {
+  min-height: 38px !important;
+  height: 38px !important;
+  padding: 8px 13px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  font-weight: 600 !important;
+}
+.komga-settings-card .setting-card-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  margin-bottom: 14px !important;
+}
+.komga-settings-card .setting-card-head h3 { margin: 0 !important; }
+.komga-settings-card .add-server-button { display: inline-flex !important; }
+.komga-settings-card .add-server-button span { font-size: 17px; line-height: 1; }
+.settings-hero-actions { transform: translateY(8px); }
+.settings-hero-actions .backup-button {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+.settings-hero-actions .backup-button svg { width: 15px !important; height: 15px !important; }
+
+@media (max-width: 900px) {
+  .library-card { aspect-ratio: 1.58 / 1 !important; }
+  .library-card .cover-collage { inset: -12px -15px -12px 36% !important; }
+}
+@media (max-width: 620px) {
+  .library-card { aspect-ratio: 1.38 / 1 !important; min-height: 188px !important; }
+  .library-card .card-content { top: 17px !important; left: 17px !important; right: 58% !important; }
+  .library-card .cover-collage { inset: -10px -12px -10px 35% !important; grid-template-columns: repeat(3, minmax(48px, 1fr)) !important; gap: 8px !important; }
+}
