@@ -305,11 +305,11 @@ def _read_scrape_records(limit=100, offset=0):
 def _read_scrape_stats():
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
-        return {"total": 0, "today": 0, "success": 0, "error": 0}
+        return {"total": 0, "today": 0, "comic": 0, "novel": 0}
     try:
         configured_ids = [str(item.get("LIBRARY")) for item in (_read_state().get("KOMGA_LIBRARY_LIST") or []) if item.get("LIBRARY")]
         if not configured_ids:
-            return {"total": 0, "today": 0, "success": 0, "error": 0}
+            return {"total": 0, "today": 0, "comic": 0, "novel": 0}
         placeholders = ",".join("?" for _ in configured_ids)
         _cleanup_expired_records()
         with sqlite3.connect(db_file) as conn:
@@ -321,11 +321,11 @@ def _read_scrape_stats():
         return {
             "total": len(rows),
             "today": sum(1 for item in rows if str(item[7] or "").startswith(today)),
-            "success": sum(1 for item in rows if item[6] == "success"),
-            "error": sum(1 for item in rows if item[6] != "success"),
+            "comic": sum(1 for item in rows if str(item[1] or "") == "漫画"),
+            "novel": sum(1 for item in rows if str(item[1] or "") == "小说"),
         }
     except (OSError, sqlite3.Error):
-        return {"total": 0, "today": 0, "success": 0, "error": 0}
+        return {"total": 0, "today": 0, "comic": 0, "novel": 0}
 
 
 def _cleanup_expired_records():

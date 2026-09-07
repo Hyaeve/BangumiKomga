@@ -27,7 +27,7 @@ createApp({
       records: [],
       recordSearch: '',
       recordSortNewest: true,
-      recordStats: { total: 0, today: 0, success: 0, error: 0 },
+      recordStats: { total: 0, today: 0, comic: 0, novel: 0 },
       cards: [],
       cardHues: [105, 270, 195, 35, 320, 155],
       status: { running: false, last_result: null, last_error: null },
