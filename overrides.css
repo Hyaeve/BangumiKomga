@@ -1298,6 +1298,102 @@
 }
 .library-card::before,
 .library-card::after { display: none !important; }
+
+/* Bangumi token gets a calmer, roomier form rhythm within its allocated rail. */
+.settings-left .bangumi-card {
+  display: flex !important;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 22px 20px !important;
+}
+.settings-left .bangumi-card h3 { margin: 0 0 14px !important; }
+.settings-left .bangumi-card label {
+  gap: 9px !important;
+  margin-top: 0 !important;
+}
+.settings-left .bangumi-card .label-row { min-height: 20px; }
+.settings-left .bangumi-card .secret-input input { min-height: 43px; }
+.settings-left .bangumi-card .full { margin-top: 18px !important; }
+
+/* Fresh SVG sidebar system. Old pseudo-element glyphs are explicitly disabled. */
+.nav-icon::before,
+.nav-icon::after,
+.nav-icon i,
+.collapse-btn::before,
+.collapse-btn::after {
+  display: none !important;
+  content: none !important;
+  box-shadow: none !important;
+}
+.nav-icon {
+  display: grid !important;
+  flex: 0 0 24px;
+  place-items: center;
+  width: 24px !important;
+  height: 24px !important;
+}
+.nav-icon svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+.nav-item:not(.active) .nav-icon { color: #718088; }
+.nav-item:hover .nav-icon { color: #6f61b8; }
+.nav-item.active .nav-icon { color: #fff; }
+.collapse-btn {
+  --collapse-turn: 180deg;
+  right: -14px !important;
+  display: grid !important;
+  place-items: center;
+  width: 28px !important;
+  height: 84px !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 10px 10px 0 !important;
+  background: transparent !important;
+}
+.sidebar.collapsed .collapse-btn { --collapse-turn: 0deg; }
+.collapse-btn .collapse-rail {
+  position: absolute;
+  width: 2px !important;
+  height: 48px !important;
+  border-radius: 999px;
+  background: #a7b4ba !important;
+  opacity: 1 !important;
+  transform: none !important;
+  transition: opacity .18s ease, background .18s ease;
+}
+.collapse-btn .collapse-icon {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: #5f737d;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+  opacity: 0;
+  transform: rotate(var(--collapse-turn)) scale(.76);
+  transition: opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1), stroke .18s ease;
+}
+.collapse-btn:hover {
+  background: rgba(126, 114, 198, .09) !important;
+}
+.collapse-btn:hover .collapse-rail { opacity: 0 !important; }
+.collapse-btn:hover .collapse-icon {
+  opacity: 1;
+  stroke: #695cb2;
+  transform: rotate(var(--collapse-turn)) scale(1);
+}
+.collapse-btn:focus-visible {
+  outline: 2px solid rgba(126, 114, 198, .55);
+  outline-offset: 3px;
+}
 .library-card .card-content {
   left: 20px !important;
   right: 57% !important;
@@ -1516,3 +1612,140 @@
   .cover-collage img:nth-child(2) { width: 37%; height: 47%; }
   .cover-collage img:nth-child(4) { width: 35%; height: 50%; }
 }
+
+/* Compact statistic icons: one consistent outline family, no text glyphs. */
+.record-stats.compact > div {
+  grid-template-columns: 26px auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  min-width: 72px;
+}
+.record-stats.compact > div::before { display: none !important; }
+.record-stats.compact .stat-icon {
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(102, 123, 132, .18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .72);
+}
+.record-stats.compact .stat-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.record-stats.compact .stat-icon-record { color: #687e87; background: #eaf0f1; }
+.record-stats.compact .stat-icon-today { color: #668d88; background: #e6f1ed; }
+.record-stats.compact .stat-icon-comic { color: #567c9e; background: #e7eef7; }
+.record-stats.compact .stat-icon-novel { color: #7a67a6; background: #eee9f7; }
+.record-stats.compact strong { align-self: end; }
+.record-stats.compact > div > span:not(.stat-icon) { align-self: start; }
+
+/* Sidebar toggle: a quiet vertical rail until hover, then a mirrored chevron. */
+.collapse-btn {
+  right: -14px !important;
+  width: 28px !important;
+  height: 86px !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+.collapse-btn span,
+.collapse-btn::before,
+.collapse-btn::after {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  width: 2px;
+  height: 48px;
+  border-radius: 3px;
+  background: #a7b2b8;
+  transform: translateY(-50%);
+  transition: opacity .18s ease, transform .2s ease, background .18s ease;
+}
+.collapse-btn::before,
+.collapse-btn::after { opacity: 0; height: 29px; background: #637680; }
+.collapse-btn:hover { background: rgba(126, 114, 198, .08) !important; }
+.collapse-btn:hover span { opacity: 0; }
+.sidebar.collapsed .collapse-btn:hover::before,
+.sidebar.collapsed .collapse-btn:hover::after,
+.sidebar:not(.collapsed) .collapse-btn:hover::before,
+.sidebar:not(.collapsed) .collapse-btn:hover::after { opacity: 1; }
+.sidebar.collapsed .collapse-btn:hover::before { transform: translateY(-100%) rotate(-42deg); transform-origin: 50% 100%; }
+.sidebar.collapsed .collapse-btn:hover::after { transform: translateY(0) rotate(42deg); transform-origin: 50% 0; }
+.sidebar:not(.collapsed) .collapse-btn:hover::before { transform: translateY(-100%) rotate(42deg); transform-origin: 50% 100%; }
+.sidebar:not(.collapsed) .collapse-btn:hover::after { transform: translateY(0) rotate(-42deg); transform-origin: 50% 0; }
+
+/* Sidebar symbols use the same light outline language as the record metrics. */
+.nav-icon::before,
+.nav-icon::after,
+.nav-icon i { background: transparent !important; box-shadow: none !important; }
+.icon-scrape::before {
+  inset: 4px 3px !important;
+  border: 1.8px solid currentColor !important;
+  border-radius: 5px !important;
+  transform: rotate(-3deg);
+}
+.icon-scrape::after {
+  left: 6px !important;
+  top: 7px !important;
+  width: 12px !important;
+  height: 8px !important;
+  border-top: 1.8px solid currentColor !important;
+  border-bottom: 1.8px solid currentColor !important;
+}
+.icon-records::before {
+  inset: 3px 5px !important;
+  border: 1.8px solid currentColor !important;
+  border-radius: 5px !important;
+}
+.icon-records::after {
+  top: 8px !important;
+  right: 7px !important;
+  width: 8px !important;
+  height: 1.8px !important;
+  background: currentColor !important;
+  box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor !important;
+}
+.icon-settings::before {
+  inset: 5px !important;
+  border: 1.8px solid currentColor !important;
+  border-radius: 50% !important;
+  box-shadow: 0 -6px 0 -3px currentColor, 6px 0 0 -3px currentColor, 0 6px 0 -3px currentColor, -6px 0 0 -3px currentColor !important;
+}
+.icon-settings::after {
+  inset: 9px !important;
+  border: 1.5px solid currentColor !important;
+  border-radius: 50% !important;
+}
+
+/* Rebalance the settings rails without stretching every card to a fixed height. */
+.settings-layout { align-items: stretch !important; }
+.settings-left,
+.settings-right { height: 100% !important; }
+.settings-left .bangumi-card { flex: 0 0 260px !important; }
+.settings-left .strategy-card {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+  padding: 17px !important;
+}
+.settings-left .strategy-card h3 { margin-bottom: 12px !important; }
+.settings-left .strategy-card label { margin-top: 11px !important; gap: 6px !important; }
+.settings-left .strategy-card input,
+.settings-left .strategy-card select { padding: 9px 10px !important; }
+.settings-right .ai-card { flex: 1 1 auto !important; }
+
+/* Match the reference card: one soft canvas, no panel seam, collage clipped at
+   the right edge with a mix of bright and faded thumbnails. */
+.library-card {
+  background: linear-gradient(108deg, hsl(var(--card-hue) 24% 97% / .98) 0%, hsl(calc(var(--card-hue) + 8) 26% 95% / .97) 48%, hsl(calc(var(--card-hue) + 16) 28% 91% / .95) 100%) !important;
+}
+.library-card::before,
+.library-card::after { display: none !important; }
