@@ -979,17 +979,17 @@
 }
 .settings-layout {
   align-items: stretch !important;
-  grid-auto-rows: minmax(0, auto) !important;
-  grid-template-rows: repeat(4, minmax(0, 1fr)) !important;
-  min-height: 820px !important;
+  grid-auto-rows: auto !important;
+  grid-template-rows: none !important;
+  min-height: 0 !important;
 }
 .settings-layout > .setting-card {
-  height: 100% !important;
-  min-height: 0 !important;
+  height: auto !important;
+  min-height: unset !important;
   align-self: stretch !important;
 }
 .settings-layout .ai-card {
-  min-height: 100% !important;
+  min-height: 0 !important;
 }
 .settings-layout .komga-settings-card {
   overflow: auto;
