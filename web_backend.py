@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import random
 import secrets
 import sqlite3
 import threading
@@ -351,8 +352,12 @@ def _preview_items(server_id, library_id, force=False):
     komga = _load_komga(server_id)
     payload = komga.get_latest_series(library_id=library_id, page=0)
     items = payload.get("content", []) if isinstance(payload, dict) else payload
+    # Komga returns this page in recent-first order. Pick a fresh subset from
+    # that latest batch so each 24-hour preview has natural visual variety.
+    latest_batch = list(items or [])[:20]
+    selected_items = random.sample(latest_batch, min(8, len(latest_batch)))
     result = []
-    for series in (items or [])[:8]:
+    for series in selected_items:
         series_id = series.get("id")
         if series_id:
             result.append({"id": series_id, "title": series.get("name") or (series.get("metadata") or {}).get("title", ""), "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}"})
