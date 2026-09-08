@@ -222,6 +222,7 @@ def save_state(data: dict) -> dict:
             "id": str(item.get("id") or secrets.token_hex(6)),
             "name": str(item.get("name") or "元数据补全"),
             "type": "metadata_completion",
+            "functions": [str(value) for value in (item.get("functions") or ([item.get("type")] if item.get("type") else []))],
             "fields": [str(field) for field in (item.get("fields") or [])],
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
             "enabled": bool(item.get("enabled", True)),
@@ -664,6 +665,7 @@ class Handler(BaseHTTPRequestHandler):
                 task["id"] = str(task.get("id") or f"task-{secrets.token_hex(6)}")
                 task["name"] = str(task.get("name") or "元数据补全").strip()
                 task["type"] = "metadata_completion"
+                task["functions"] = [str(value) for value in (task.get("functions") or [task["type"]])]
                 task["fields"] = list(task.get("fields") or [])
                 task["card_ids"] = list(task.get("card_ids") or [])
                 task["enabled"] = bool(task.get("enabled", True))

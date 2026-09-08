@@ -372,6 +372,8 @@
   align-items: end;
 }
 .task-form-row > label { margin-top: 14px !important; }
+.task-form-row .task-media-field { margin: 14px 0 0 !important; }
+.task-form-row .task-media-chips { min-height: 30px; }
 .task-function-field { min-width: 0; }
 .task-field-label {
   display: block;
