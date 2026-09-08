@@ -164,7 +164,15 @@
 .bangumi-test-message.error { color: #a96872 !important; }
 
 /* All setting actions share one compact button system. */
-.account-card > .full,
+.account-card .setting-card-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  margin-bottom: 14px !important;
+}
+.account-card .setting-card-head h3 { margin: 0 !important; }
+.account-card .account-save-button,
 .bangumi-card > .full,
 .komga-settings-card .add-server-button,
 .ai-card .ai-save {
@@ -177,6 +185,7 @@
   line-height: 1 !important;
   font-weight: 600 !important;
 }
+.account-card .account-save-button { flex: 0 0 auto !important; }
 .bangumi-card > .full,
 .account-card > .full { display: block !important; }
 .komga-settings-card .setting-card-head {
@@ -453,6 +462,78 @@
   font-size: 12px;
 }
 .task-media-chip.muted { color: #9b9aa2; background: #f1f1f3; }
+.task-picker-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.task-picker-summary:hover .task-media-chip.muted { background: #e9e9ed; color: #7e7d86; }
+.task-media-field:not(.open) .task-library-options { display: none !important; }
+.task-media-field.open .task-picker-chevron { transform: rotate(180deg); }
+.task-picker-chevron {
+  flex: 0 0 auto;
+  margin-left: 10px;
+  color: #8757f4;
+  font-size: 18px;
+  line-height: 1;
+  transition: transform .18s ease;
+}
+.task-picker-summary .task-media-chips { flex: 1; min-width: 0; }
+
+/* Keep Bangumi search feedback inside the field and align all three actions. */
+.bangumi-test-row {
+  grid-template-columns: minmax(0, 1fr) 86px 86px 86px !important;
+}
+.bangumi-test-row .search-input-wrap { min-width: 0; }
+.search-result-text {
+  position: absolute;
+  left: 13px;
+  right: 38px;
+  top: 50%;
+  overflow: hidden;
+  color: #64857d;
+  font-size: 12px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.search-result-text.error { color: #a96872; }
+
+/* Long record names can escape the scrolling board as a light, readable bubble. */
+.records-board,
+.records-board .record-list {
+  overflow: visible !important;
+}
+.records-board .record-list {
+  max-height: none !important;
+  overflow: visible !important;
+}
+.record-book-title { z-index: 20 !important; }
+.record-book-title::after {
+  z-index: 40 !important;
+  background: rgba(255, 255, 255, .98) !important;
+  color: #53666b !important;
+  border-color: rgba(111, 132, 136, .2) !important;
+  box-shadow: 0 10px 26px rgba(62, 82, 91, .16) !important;
+}
+
+@media (max-width: 760px) {
+  .bangumi-test-row { grid-template-columns: minmax(0, 1fr) 78px 78px 78px !important; gap: 7px !important; }
+}
+@media (max-width: 540px) {
+  .bangumi-test-row { grid-template-columns: minmax(0, 1fr) 72px 72px 72px !important; gap: 6px !important; }
+  .bangumi-test-row button { padding-left: 7px !important; padding-right: 7px !important; font-size: 12px !important; }
+}
 @media (max-width: 620px) {
   .task-form-row { grid-template-columns: 1fr; gap: 0; }
 }
