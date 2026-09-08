@@ -255,3 +255,91 @@
   .library-card .card-content { top: 17px !important; left: 17px !important; right: 54% !important; bottom: 16px !important; }
   .library-card .cover-collage { inset: -10px -12px -10px 35% !important; grid-template-columns: repeat(3, minmax(48px, 1fr)) !important; gap: 8px !important; }
 }
+
+/* Card configuration is committed from the modal; the page-level save action
+   is intentionally removed from the visible scrape toolbar. */
+.hero-actions .hero-action.secondary { display: none !important; }
+
+/* Show three Komga services at a time. Extra services stay on one horizontal
+   rail and the scrollbar remains invisible while wheel input scrolls it. */
+.komga-settings-card .server-card-grid {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 13px !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 2px 2px 8px !important;
+  scrollbar-width: none !important;
+  cursor: ew-resize !important;
+  overscroll-behavior-x: contain !important;
+}
+.komga-settings-card .server-card-grid::-webkit-scrollbar { display: none !important; }
+.komga-settings-card .server-card-grid .server-entry.compact-server {
+  flex: 0 0 calc((100% - 26px) / 3) !important;
+  width: calc((100% - 26px) / 3) !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  aspect-ratio: 1 / .98 !important;
+}
+@media (max-width: 760px) {
+  .komga-settings-card .server-card-grid .server-entry.compact-server {
+    flex-basis: calc((100% - 13px) / 2) !important;
+    width: calc((100% - 13px) / 2) !important;
+  }
+}
+@media (max-width: 520px) {
+  .komga-settings-card .server-card-grid .server-entry.compact-server {
+    flex-basis: 82% !important;
+    width: 82% !important;
+  }
+}
+
+/* Search feedback and preview surface. */
+.search-input-wrap { position: relative; min-width: 0; }
+.search-input-wrap input { width: 100%; padding-right: 38px !important; }
+.search-state { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 12px; font-weight: 700; }
+.search-state.success { background: #d9eee4; color: #4e8b72; }
+.search-state.error { background: #f5dddd; color: #a8666d; }
+.bangumi-test-row button { font-size: 13px !important; }
+.bangumi-preview-modal { width: min(720px, calc(100vw - 32px)); }
+.preview-grid { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 22px; align-items: start; }
+.preview-grid img { width: 150px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px; background: #edf1ef; }
+.preview-grid p { margin: 0 0 14px; white-space: pre-line; line-height: 1.7; color: #53666b; }
+.preview-grid span { display: block; color: #748489; font-size: 13px; margin-top: 7px; }
+.preview-original { color: #809096; margin-top: -10px; }
+
+/* Task and runtime-log views. */
+.task-toolbar, .log-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.task-toolbar h2 { margin: 0 0 4px; font-size: 22px; color: #3f555b; }
+.task-toolbar p { margin: 0; color: #7c8d91; font-size: 13px; }
+.task-list { display: grid; gap: 11px; }
+.task-card { display: grid; grid-template-columns: 34px minmax(0,1fr) auto auto auto auto; align-items: center; gap: 12px; min-height: 72px; padding: 14px 16px; border: 1px solid rgba(104,125,128,.14); border-radius: 14px; background: rgba(255,255,255,.72); box-shadow: 0 8px 24px rgba(79,102,103,.06); }
+.task-card-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: #e6f0eb; color: #6b9585; font-size: 17px; }
+.task-card-main { display: grid; gap: 4px; min-width: 0; }
+.task-card-main strong { color: #41575d; font-size: 15px; }
+.task-card-main span { color: #829094; font-size: 12px; }
+.task-status { color: #578b73; font-size: 12px; }
+.task-status.off { color: #9d8585; }
+.task-modal { width: min(640px, calc(100vw - 32px)); }
+.task-library-options { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.task-library-options .meta-option { cursor: pointer; }
+.log-stats { display: flex; align-items: center; gap: 22px; color: #78898e; font-size: 13px; }
+.log-stats b { color: #425c60; font-size: 20px; margin-right: 4px; }
+.runtime-log-board { height: min(64vh, 620px); overflow: auto; border: 1px solid rgba(104,125,128,.14); border-radius: 14px; background: rgba(255,255,255,.58); }
+.runtime-log-row { display: grid; grid-template-columns: 158px 170px minmax(0,1fr) 70px; gap: 12px; align-items: center; min-height: 48px; padding: 8px 14px; border-bottom: 1px solid rgba(104,125,128,.1); font-size: 12px; }
+.runtime-log-row:last-child { border-bottom: 0; }
+.runtime-log-row time, .runtime-log-row small { color: #87979a; }
+.runtime-log-row strong { color: #50686c; font-size: 12px; }
+.runtime-log-row span { color: #677b80; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runtime-log-row.error strong { color: #a9666d; }
+
+@media (max-width: 760px) {
+  .task-card { grid-template-columns: 32px minmax(0,1fr) auto; }
+  .task-card > button { grid-row: 2; }
+  .runtime-log-row { grid-template-columns: 1fr; gap: 4px; padding: 12px; }
+  .log-toolbar { align-items: stretch; flex-direction: column; }
+  .log-stats { justify-content: space-between; gap: 8px; }
+  .preview-grid { grid-template-columns: 100px minmax(0,1fr); gap: 14px; }
+  .preview-grid img { width: 100px; }
+}
