@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
   pull-requests: write
 
 name: release-please
@@ -15,4 +16,5 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v5
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           release-type: python
