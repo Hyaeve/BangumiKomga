@@ -420,6 +420,37 @@
   box-shadow: none !important;
 }
 .task-library-options .meta-option input { width: 18px; height: 18px; margin: 0; accent-color: #8b5cf6; }
+.task-media-field {
+  min-width: 0;
+  margin: 20px 0 0;
+  padding: 9px 10px 11px;
+  border: 2px solid #8757f4;
+  border-radius: 14px;
+}
+.task-media-field legend {
+  padding: 0 7px;
+  color: #8757f4;
+  font-size: 13px;
+  font-weight: 600;
+}
+.task-media-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-height: 30px;
+  padding: 2px 6px 9px;
+}
+.task-media-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: #eeeaf8;
+  color: #786b9e;
+  font-size: 12px;
+}
+.task-media-chip.muted { color: #9b9aa2; background: #f1f1f3; }
 @media (max-width: 620px) {
   .task-form-row { grid-template-columns: 1fr; gap: 0; }
 }
