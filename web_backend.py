@@ -53,6 +53,7 @@ DEFAULTS = {
     "BANGUMI_KOMGA_SERVICE_POLL_INTERVAL": 20,
     "BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL": 10000,
     "RECORD_RETENTION_DAYS": 30,
+    "METADATA_TASKS": [],
     "USE_BANGUMI_THUMBNAIL": False,
     "USE_BANGUMI_THUMBNAIL_FOR_BOOK": False,
     "SORT_TITLE": False,
@@ -216,6 +217,18 @@ def save_state(data: dict) -> dict:
          "OVERWRITE_FIELDS": list(x.get("OVERWRITE_FIELDS", []) or [])}
         for x in (merged.get("KOMGA_COLLECTION_LIST", []) or []) if x.get("COLLECTION")
     ]
+    merged["METADATA_TASKS"] = [
+        {
+            "id": str(item.get("id") or secrets.token_hex(6)),
+            "name": str(item.get("name") or "元数据补全"),
+            "type": "metadata_completion",
+            "fields": [str(field) for field in (item.get("fields") or [])],
+            "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
+            "enabled": bool(item.get("enabled", True)),
+            "last_run": str(item.get("last_run") or ""),
+        }
+        for item in (merged.get("METADATA_TASKS") or [])
+    ]
     with STATE_LOCK:
         WEB_STATE.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
         _write_config(merged)
@@ -239,7 +252,7 @@ def _load_komga(server_id=None):
     return KomgaApi(state["KOMGA_BASE_URL"], state.get("KOMGA_EMAIL", ""), state.get("KOMGA_EMAIL_PASSWORD", ""), state.get("KOMGA_API_KEY") or None)
 
 
-def _start_refresh(full=False):
+def _start_refresh(full=False, library_ids=None):
     if not REFRESH_LOCK.acquire(blocking=False):
         return False
     REFRESH_STATE.update({"running": True, "last_error": None})
@@ -249,7 +262,10 @@ def _start_refresh(full=False):
             # Import only after config.py exists and in the worker so the web UI
             # remains available even on a fresh installation.
             from core.refresh_metadata import refresh_metadata, refresh_partial_metadata
-            (refresh_metadata if full else refresh_partial_metadata)()
+            if full:
+                refresh_metadata()
+            else:
+                refresh_partial_metadata(library_ids=library_ids)
             REFRESH_STATE["last_result"] = "full" if full else "incremental"
         except Exception as exc:  # pragma: no cover - surfaced through API
             REFRESH_STATE["last_error"] = str(exc)
@@ -290,14 +306,17 @@ def _read_scrape_records(limit=100, offset=0):
         _cleanup_expired_records()
         with sqlite3.connect(db_file) as conn:
             placeholders = ",".join("?" for _ in configured_ids)
-            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC LIMIT ? OFFSET ?", (*configured_ids, limit, offset)).fetchall()
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(scrape_records)").fetchall()}
+            extra = ",source_title,matched_title,match_source" if {"source_title", "matched_title", "match_source"}.issubset(columns) else ",'' AS source_title,item_title AS matched_title,'' AS match_source"
+            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at""" + extra + " FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC LIMIT ? OFFSET ?", (*configured_ids, limit, offset)).fetchall()
         return [{
             "id": row[0], "item_type": row[1], "item_title": row[2],
             "library_id": row[3], "library_name": row[4],
             "server_id": library_context.get(str(row[3]), {}).get("server_id", ""),
             "server_name": library_context.get(str(row[3]), {}).get("server_name", "默认 Komga 服务"),
             "metadata_fields": [field for field in (row[5] or "").split(",") if field],
-            "status": row[6], "recorded_at": row[7],
+            "status": row[6], "recorded_at": row[7], "source_title": row[8] or row[2],
+            "matched_title": row[9] or row[2], "match_source": row[10] or "",
         } for row in rows]
     except (OSError, sqlite3.Error):
         return []
@@ -334,6 +353,52 @@ def _cleanup_expired_records():
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
         return
+
+
+def _read_runtime_logs(limit=100, offset=0, search=""):
+    db_file = ROOT / "recordsRefreshed.db"
+    if not db_file.exists():
+        return []
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
+        params = []
+        where = ""
+        if search:
+            where = "WHERE action LIKE ? OR detail LIKE ? OR source LIKE ?"
+            needle = f"%{search}%"
+            params.extend([needle, needle, needle])
+        rows = conn.execute(f"SELECT id,level,action,detail,source,recorded_at FROM activity_logs {where} ORDER BY id DESC LIMIT ? OFFSET ?", (*params, limit, offset)).fetchall()
+        conn.close()
+        return [{"id": r[0], "level": r[1], "action": r[2], "detail": r[3], "source": r[4], "recorded_at": r[5]} for r in rows]
+    except sqlite3.Error:
+        return []
+
+
+def _runtime_log_stats():
+    db_file = ROOT / "recordsRefreshed.db"
+    if not db_file.exists():
+        return {"total": 0, "today": 0, "errors": 0, "actions": 0}
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
+        today = __import__("datetime").date.today().isoformat()
+        row = conn.execute("SELECT COUNT(*), SUM(CASE WHEN recorded_at LIKE ? THEN 1 ELSE 0 END), SUM(CASE WHEN level='error' THEN 1 ELSE 0 END), SUM(CASE WHEN action LIKE '按钮%' OR action LIKE '配置%' THEN 1 ELSE 0 END) FROM activity_logs", (today + "%",)).fetchone()
+        conn.close()
+        return {"total": row[0] or 0, "today": row[1] or 0, "errors": row[2] or 0, "actions": row[3] or 0}
+    except sqlite3.Error:
+        return {"total": 0, "today": 0, "errors": 0, "actions": 0}
+
+
+def _write_activity(action, detail, level="info", source="web"):
+    try:
+        from tools.db import record_activity_log
+        conn = sqlite3.connect(ROOT / "recordsRefreshed.db")
+        conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
+        record_activity_log(conn, action, detail, level, source)
+        conn.close()
+    except Exception:
+        pass
     try:
         days = max(1, min(int(_read_state().get("RECORD_RETENTION_DAYS", 30)), 365))
         with sqlite3.connect(db_file) as conn:
@@ -422,6 +487,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"items": _read_scrape_records(limit, offset)})
         elif path == "/api/scrape-records/stats":
             self._json(200, _read_scrape_stats())
+        elif path == "/api/runtime-logs":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                limit = max(20, min(int(query.get("limit", [100])[0]), 200))
+                offset = max(0, int(query.get("offset", [0])[0]))
+            except ValueError:
+                limit, offset = 100, 0
+            self._json(200, {"items": _read_runtime_logs(limit, offset, query.get("q", [""])[0].strip())})
+        elif path == "/api/runtime-logs/stats":
+            self._json(200, _runtime_log_stats())
+        elif path == "/api/tasks":
+            self._json(200, {"items": _read_state().get("METADATA_TASKS", []) or []})
         elif path == "/api/bangumi/search":
             query = parse_qs(urlparse(self.path).query).get("q", [""])[0].strip()
             if not query:
@@ -441,10 +518,36 @@ class Handler(BaseHTTPRequestHandler):
                         "name": item.get("name", ""),
                         "name_cn": item.get("name_cn", ""),
                         "type": item.get("type"),
+                        "summary": item.get("summary", ""),
+                        "images": item.get("images", {}),
+                        "rating": item.get("rating", {}),
                     } for item in results[:8] if isinstance(item, dict)]
+                    _write_activity("按钮：Bangumi 搜索", f"搜索“{query}”，返回 {len(items)} 个结果")
                     self._json(200, {"items": items})
                 except Exception as exc:
                     self._json(400, {"error": f"Bangumi 搜索失败：{exc}"})
+        elif path == "/api/bangumi/subject":
+            subject_id = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            if not subject_id:
+                self._json(400, {"error": "缺少 Bangumi 条目 ID"})
+            else:
+                try:
+                    from api.bangumi_api import BangumiDataSourceFactory
+                    state = _read_state()
+                    source = BangumiDataSourceFactory.create({
+                        "access_token": state.get("BANGUMI_ACCESS_TOKEN", ""),
+                        "use_local_archive": bool(state.get("USE_BANGUMI_ARCHIVE", False)),
+                        "local_archive_folder": state.get("ARCHIVE_FILES_DIR", "./archivedata/"),
+                    })
+                    item = source.get_subject_metadata(subject_id) or {}
+                    self._json(200, {"item": {
+                        "id": item.get("id"), "name": item.get("name", ""), "name_cn": item.get("name_cn", ""),
+                        "summary": item.get("summary", ""), "type": item.get("type"), "images": item.get("images", {}),
+                        "rating": item.get("rating", {}), "volumes": item.get("volumes", 0),
+                        "date": item.get("date", ""), "tags": item.get("tags", []),
+                    }})
+                except Exception as exc:
+                    self._json(400, {"error": f"Bangumi 预览失败：{exc}"})
         elif path == "/api/komga/previews":
             query = parse_qs(urlparse(self.path).query)
             server_id = query.get("server_id", [""])[0]
@@ -512,6 +615,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 token = secrets.token_urlsafe(32)
                 SESSIONS.add(token)
+                _write_activity("按钮：登录", f"账号 {auth['username']} 登录后台")
                 raw = json.dumps({"authenticated": True, "username": auth["username"]}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -523,6 +627,7 @@ class Handler(BaseHTTPRequestHandler):
                 token = self._session_token()
                 if token:
                     SESSIONS.discard(token)
+                _write_activity("按钮：退出登录", "用户退出后台")
                 self._json(200, {"authenticated": False})
             elif path == "/api/auth/credentials" and self._require_auth():
                 body = self._body()
@@ -531,9 +636,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not username or not password:
                     self._json(400, {"error": "账号和密码不能为空"})
                     return
-                self._json(200, _save_auth(username, password))
+                result = _save_auth(username, password)
+                _write_activity("配置：保存账号", f"后台账号修改为 {username}")
+                self._json(200, result)
             elif path == "/api/config" and self._require_auth():
-                self._json(200, save_state(self._body()))
+                result = save_state(self._body())
+                _write_activity("配置：保存设置", "保存系统设置、Komga 服务或刮削卡片")
+                self._json(200, result)
             elif path == "/api/config/restore" and self._require_auth():
                 body = self._body()
                 payload = body.get("config", body) if isinstance(body, dict) else {}
@@ -544,6 +653,41 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/refresh" and self._require_auth():
                 body = self._body()
                 if _start_refresh(bool(body.get("full", False))):
+                    _write_activity("按钮：手动刮削", "启动" + ("全量" if body.get("full", False) else "增量") + "刮削")
+                    self._json(202, {"started": True})
+                else:
+                    self._json(409, {"started": False, "error": "已有刷新任务正在运行"})
+            elif path == "/api/tasks" and self._require_auth():
+                body = self._body()
+                state = _read_state()
+                task = dict(body or {})
+                task["id"] = str(task.get("id") or f"task-{secrets.token_hex(6)}")
+                task["name"] = str(task.get("name") or "元数据补全").strip()
+                task["type"] = "metadata_completion"
+                task["fields"] = list(task.get("fields") or [])
+                task["card_ids"] = list(task.get("card_ids") or [])
+                task["enabled"] = bool(task.get("enabled", True))
+                tasks = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task["id"]]
+                tasks.append(task)
+                state["METADATA_TASKS"] = tasks
+                result = save_state(state)
+                _write_activity("计划任务：保存", f"保存计划任务 {task['name']}")
+                self._json(200, {"items": result.get("METADATA_TASKS", [])})
+            elif path == "/api/tasks/delete" and self._require_auth():
+                task_id = str(self._body().get("id", ""))
+                state = _read_state()
+                state["METADATA_TASKS"] = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task_id]
+                result = save_state(state)
+                _write_activity("计划任务：删除", f"删除计划任务 {task_id}")
+                self._json(200, {"items": result.get("METADATA_TASKS", [])})
+            elif path == "/api/tasks/run" and self._require_auth():
+                body = self._body()
+                task_id = str(body.get("id", ""))
+                task = next((item for item in (_read_state().get("METADATA_TASKS") or []) if item.get("id") == task_id), None)
+                if not task:
+                    self._json(404, {"error": "计划任务不存在"})
+                elif _start_refresh(False, library_ids=task.get("card_ids") or None):
+                    _write_activity("计划任务：执行", f"执行计划任务 {task.get('name', '元数据补全')}")
                     self._json(202, {"started": True})
                 else:
                     self._json(409, {"started": False, "error": "已有刷新任务正在运行"})

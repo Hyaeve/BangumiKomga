@@ -81,6 +81,21 @@ def init_sqlite3():
             recorded_at TEXT NOT NULL
         )"""
     )
+    for column, definition in (("source_title", "TEXT"), ("matched_title", "TEXT"), ("match_source", "TEXT")):
+        try:
+            cursor.execute(f"ALTER TABLE scrape_records ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass
+    cursor.execute(
+        """CREATE TABLE IF NOT EXISTS activity_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            level TEXT NOT NULL,
+            action TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            source TEXT,
+            recorded_at TEXT NOT NULL
+        )"""
+    )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_scrape_records_time ON scrape_records(recorded_at)"
     )
@@ -89,13 +104,14 @@ def init_sqlite3():
 
 
 def record_scrape_event(conn, item_type, item_title, library_id, library_name,
-                        metadata_fields, status="success"):
+                        metadata_fields, status="success", source_title="",
+                        matched_title="", match_source=""):
     """Persist a compact, user-facing history entry for a metadata update."""
     with _record_lock:
         conn.execute(
             """INSERT INTO scrape_records
-            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at)
-            VALUES (?,?,?,?,?,?,?)""",
+            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at,source_title,matched_title,match_source)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 item_type,
                 item_title,
@@ -104,7 +120,20 @@ def record_scrape_event(conn, item_type, item_title, library_id, library_name,
                 ",".join(metadata_fields or []),
                 status,
                 strftime("%Y-%m-%d %H:%M:%S", localtime()),
+                source_title or "",
+                matched_title or item_title or "",
+                match_source or "",
             ),
+        )
+        conn.commit()
+
+
+def record_activity_log(conn, action, detail, level="info", source="web"):
+    """Write a compact operational audit entry used by the runtime log page."""
+    with _record_lock:
+        conn.execute(
+            "INSERT INTO activity_logs(level,action,detail,source,recorded_at) VALUES (?,?,?,?,?)",
+            (level, str(action), str(detail), str(source or ""), strftime("%Y-%m-%d %H:%M:%S", localtime())),
         )
         conn.commit()
 

@@ -8,7 +8,7 @@ from tools.get_number import get_number, NumberType
 from tools.env import *
 from tools.log import logger
 from tools.notification import send_notification
-from tools.db import init_sqlite3, record_series_status, record_book_status, record_scrape_event
+from tools.db import init_sqlite3, record_series_status, record_book_status, record_scrape_event, record_activity_log
 from tools.cache_time import TimeCacheManager
 
 
@@ -140,6 +140,8 @@ def refresh_metadata(series_list=None):
         series_name = series["name"]
         is_novel_series = series["is_novel"]
         metadata = None
+        match_source = "已有匹配"
+        matched_search_title = ""
 
         # 若存在 Correct Bgm Link (CBL) 则获取其中的 subject_id
         subject_id = None
@@ -151,6 +153,8 @@ def refresh_metadata(series_list=None):
                 # 从 bangumi 获取系列元数据
                 metadata = bgm.get_subject_metadata(subject_id)
                 force_refresh_flag = True
+                match_source = "CBL 链接"
+                matched_search_title = series_name
                 break
 
         if not force_refresh_flag:
@@ -192,6 +196,8 @@ def refresh_metadata(series_list=None):
                 if search_results:
                     subject_id = search_results[0]["id"]
                     metadata = search_results[0]
+                    matched_search_title = candidate
+                    match_source = "书名号" if f"《{candidate}》" in series_name else "方括号" if f"[{candidate}]" in series_name else "标题候选"
                     logger.debug("标题候选匹配成功 [%s]: %s", candidate, series_name)
                     break
 
@@ -204,6 +210,8 @@ def refresh_metadata(series_list=None):
                     if search_results:
                         subject_id = search_results[0]["id"]
                         metadata = search_results[0]
+                        matched_search_title = ai_title
+                        match_source = "AI 识别"
                         logger.debug("AI 标题匹配成功 [%s]: %s", ai_title, series_name)
 
             if subject_id is None:
@@ -216,6 +224,8 @@ def refresh_metadata(series_list=None):
                     if search_results:
                         subject_id = search_results[0]["id"]
                         metadata = search_results[0]
+                        matched_search_title = fallback_title
+                        match_source = "原始名称兜底"
                         logger.debug("原始名称匹配成功: %s", series_name)
 
             if subject_id is None:
@@ -324,7 +334,11 @@ def refresh_metadata(series_list=None):
                     series.get("libraryId"),
                     _library_name(series.get("libraryId")),
                     list(series_data.keys()) + (["thumbnail"] if thumbnail_updated else []),
+                    source_title=series_name,
+                    matched_title=komga_metadata.title or matched_search_title or series_name,
+                    match_source=match_source,
                 )
+                record_activity_log(conn, "刮削匹配", f"{series_name} → {komga_metadata.title or matched_search_title or series_name}（{match_source}）", source="scraper")
         else:
             failed_count, failed_comic = record_series_status(
                 conn,
@@ -338,7 +352,7 @@ def refresh_metadata(series_list=None):
             )
             continue
 
-        refresh_book_metadata(subject_id, series_id, force_refresh_flag, _required_fields_for_series(series), series.get("libraryId"))
+        refresh_book_metadata(subject_id, series_id, force_refresh_flag, _required_fields_for_series(series), series.get("libraryId"), series_name, komga_metadata.title or matched_search_title or series_name, match_source)
 
     # 将匹配失败的系列加入收藏 FAILED_COLLECTION
     if CREATE_FAILED_COLLECTION:
@@ -486,7 +500,7 @@ def _filter_new_modified_series(library_id=None):
     return new_series
 
 
-def refresh_partial_metadata():
+def refresh_partial_metadata(library_ids=None):
     """
     刷新部分书籍系列元数据
     """
@@ -494,8 +508,12 @@ def refresh_partial_metadata():
     recent_modified_series = []
     # NOTE: 仅处理 library, 因无法通过系列 ID 快速反查所在的 collection
     # 指定了 LIBRARY_ID
-    if KOMGA_LIBRARY_LIST:
-        for libray_item in KOMGA_LIBRARY_LIST:
+    configured_libraries = KOMGA_LIBRARY_LIST
+    if library_ids:
+        selected = {str(item) for item in library_ids}
+        configured_libraries = [item for item in KOMGA_LIBRARY_LIST if str(item.get("LIBRARY")) in selected]
+    if configured_libraries:
+        for libray_item in configured_libraries:
             series_list = _filter_new_modified_series(libray_item["LIBRARY"])
             for series in series_list:
                 series["is_novel"] = libray_item["IS_NOVEL_ONLY"]
@@ -522,7 +540,7 @@ def refresh_partial_metadata():
     return
 
 
-def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None):
+def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None, source_title="", match_source=""):
     # Get the metadata for the book from bangumi
     process_metadata.set_translation_override(_translation_enabled_for_library(library_id))
     book_metadata = process_metadata.set_komga_book_metadata(
@@ -594,6 +612,9 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 library_id,
                 _library_name(library_id),
                 list(book_data.keys()) + (["thumbnail"] if thumbnail_updated else []),
+                source_title=source_title or book_name,
+                matched_title=book_metadata.title or book_name,
+                match_source=match_source or "卷匹配",
             )
     else:
         record_book_status(
@@ -601,7 +622,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         )
 
 
-def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fields=None, library_id=None):
+def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fields=None, library_id=None, source_title="", matched_title="", match_source=""):
     """
     刷新书元数据
     """
@@ -641,7 +662,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     cbl_subject["name"] + cbl_subject["name_cn"])
                 update_book_metadata(
                     book_id, cbl_subject, book_name, number, library_id, is_novel,
-                    book.get("metadata"),
+                    book.get("metadata"), source_title, match_source,
                 )
                 break
 
@@ -693,7 +714,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
 
                     update_book_metadata(
                         book_id, related_subjects[i], book_name, number, library_id,
-                        is_novel, book.get("metadata"),
+                        is_novel, book.get("metadata"), source_title, match_source,
                     )
 
                     break
@@ -712,4 +733,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     library_id,
                     _library_name(library_id),
                     list(book_data.keys()),
+                    source_title=source_title or book_name,
+                    matched_title=matched_title or book_name,
+                    match_source=match_source or "卷号修正",
                 )
