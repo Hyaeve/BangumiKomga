@@ -334,6 +334,57 @@
 .runtime-log-row span { color: #677b80; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .runtime-log-row.error strong { color: #a9666d; }
 
+/* Records keep long source names readable without widening the table. */
+.record-book-title {
+  min-width: 0 !important;
+  overflow: visible !important;
+}
+.record-book-title strong,
+.record-book-title small {
+  display: block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.record-book-title small {
+  margin-top: 3px;
+  color: #78908d !important;
+  font-size: 11px !important;
+}
+.record-book-title::after {
+  border-radius: 10px !important;
+  max-width: min(520px, 68vw) !important;
+  padding: 9px 12px !important;
+  white-space: normal !important;
+}
+
+/* The task creation affordance lives in the page hero. */
+.tasks-hero-actions { position: relative; z-index: 1; }
+.tasks-hero-actions .hero-action { min-width: 132px; }
+.task-toolbar { min-height: 22px; margin-bottom: 14px !important; }
+.task-type-options { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.task-modal .task-library-options .meta-option,
+.task-modal .task-type-options .meta-option { border-radius: 9px !important; }
+
+/* A single eased motion keeps the rail, content, and labels moving together. */
+.sidebar,
+.main,
+.brand,
+.nav-item,
+.nav-label,
+.collapse-btn,
+.collapse-btn span,
+.collapse-btn::before,
+.collapse-btn::after {
+  transition-duration: .38s !important;
+  transition-timing-function: cubic-bezier(.22, .8, .22, 1) !important;
+}
+.sidebar { will-change: width; }
+.main { will-change: margin-left; }
+.collapse-btn span,
+.collapse-btn::before,
+.collapse-btn::after { will-change: transform, opacity, height; }
+
 @media (max-width: 760px) {
   .task-card { grid-template-columns: 32px minmax(0,1fr) auto; }
   .task-card > button { grid-row: 2; }
