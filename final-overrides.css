@@ -208,6 +208,44 @@
   line-height: 1 !important;
 }
 
+/* Refresh is an icon-only companion to the record search field. */
+.record-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.record-refresh {
+  display: grid;
+  flex: 0 0 36px;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(98, 118, 126, .16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .72);
+  color: #66827f;
+  transition: background .18s ease, color .18s ease, transform .18s ease;
+}
+.record-refresh:hover {
+  background: #e9f2ef;
+  color: #527571;
+  transform: rotate(-12deg);
+}
+.record-refresh:focus-visible {
+  outline: 2px solid rgba(102, 130, 127, .48);
+  outline-offset: 2px;
+}
+.record-refresh svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 @media (max-width: 900px) {
   .library-card { aspect-ratio: 1.58 / 1 !important; }
   .library-card .cover-collage { inset: -12px -15px -12px 36% !important; }
