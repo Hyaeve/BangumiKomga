@@ -15,6 +15,10 @@ createApp({
       showBangumiToken: false,
       showOpenAiKey: false,
       showServerDraftSecret: false,
+      bangumiTestQuery: '',
+      bangumiTestMessage: '',
+      bangumiTestError: false,
+      bangumiTestBusy: false,
       dragIndex: null,
       contextMenu: { visible: false, x: 0, y: 0, index: null },
       editingCard: null,
@@ -137,6 +141,18 @@ createApp({
     },
     collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.isNovel, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: card.translateSummary, AI_RECOGNITION: card.aiRecognition })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); } catch (error) { this.notify(error.message, true); } },
+    async testBangumiSearch() {
+      const query = this.bangumiTestQuery.trim();
+      if (!query) { this.bangumiTestMessage = '请输入漫画或小说名称'; this.bangumiTestError = true; return; }
+      this.bangumiTestBusy = true; this.bangumiTestMessage = ''; this.bangumiTestError = false;
+      try {
+        const data = await this.api(`/api/bangumi/search?q=${encodeURIComponent(query)}`);
+        const items = data.items || [];
+        this.bangumiTestMessage = items.length ? `搜索成功：${items.slice(0, 3).map(item => item.name_cn || item.name).join('、')}` : '未找到匹配条目';
+        this.bangumiTestError = !items.length;
+      } catch (error) { this.bangumiTestMessage = `搜索失败：${error.message}`; this.bangumiTestError = true; }
+      finally { this.bangumiTestBusy = false; }
+    },
     toggleCardField(card, key, value) { const fields = Array.isArray(card[key]) ? [...card[key]] : []; const index = fields.indexOf(value); if (index >= 0) fields.splice(index, 1); else fields.push(value); card[key] = fields; },
     async backupConfig() { try { const data = await this.api('/api/config/backup'); const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `bangumikomga-config-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); this.notify('配置备份已下载'); } catch (error) { this.notify(error.message, true); } },
     async restoreConfig(event) { const file = event.target.files && event.target.files[0]; event.target.value = ''; if (!file || !window.confirm('还原配置会覆盖当前系统设置，是否继续？')) return; try { const payload = JSON.parse(await file.text()); const restored = await this.api('/api/config/restore', { method: 'POST', body: JSON.stringify({ config: payload.config || payload }) }); this.applyConfig(restored); this.notify('配置已还原'); if (this.config.KOMGA_SERVERS.length) await this.loadLibraries(false); } catch (error) { this.notify(`还原失败：${error.message}`, true); } },

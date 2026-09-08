@@ -125,7 +125,7 @@
 
 /* Leave the token button followed by the calm lower whitespace in the card. */
 .settings-left .bangumi-card {
-  flex: 0 0 356px !important;
+  flex: 0 0 414px !important;
   justify-content: flex-start !important;
   gap: 0 !important;
   padding: 28px 20px 44px !important;
@@ -139,12 +139,36 @@
   min-width: 116px !important;
   margin-top: 26px !important;
 }
+.bangumi-test-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 132px !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+  margin-top: 24px !important;
+}
+.bangumi-test-row input {
+  min-width: 0 !important;
+  height: 44px !important;
+}
+.bangumi-test-row button {
+  height: 44px !important;
+  margin: 0 !important;
+}
+.bangumi-test-message {
+  min-height: 18px !important;
+  margin: 12px 0 0 !important;
+  color: #64857d !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+.bangumi-test-message.error { color: #a96872 !important; }
 
 /* All setting actions share one compact button system. */
 .account-card > .full,
 .bangumi-card > .full,
 .komga-settings-card .add-server-button,
 .ai-card .ai-save {
+  width: 132px !important;
   min-height: 44px !important;
   height: 44px !important;
   padding: 10px 16px !important;
@@ -153,6 +177,8 @@
   line-height: 1 !important;
   font-weight: 600 !important;
 }
+.bangumi-card > .full,
+.account-card > .full { display: block !important; }
 .komga-settings-card .setting-card-head {
   display: flex !important;
   align-items: center !important;
@@ -172,6 +198,15 @@
   font-weight: 600 !important;
 }
 .settings-hero-actions .backup-button svg { width: 15px !important; height: 15px !important; }
+
+/* Keep backup/restore visually related but subordinate to the main settings
+   actions: same font family, smaller scale, and a lower baseline. */
+.settings-hero-actions .backup-button,
+.settings-hero-actions .backup-button span {
+  font-family: inherit !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
 
 @media (max-width: 900px) {
   .library-card { aspect-ratio: 1.58 / 1 !important; }
