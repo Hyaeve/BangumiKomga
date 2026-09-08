@@ -39,6 +39,8 @@ createApp({
       logStats: { total: 0, today: 0, errors: 0, actions: 0 },
       tasks: [],
       editingTask: null,
+      taskFunctionPickerOpen: false,
+      taskLibraryPickerOpen: false,
       taskTypeOptions: [{ value: 'metadata_completion', label: '元数据补全' }],
       recordSearch: '',
       recordSortNewest: true,
@@ -171,7 +173,7 @@ createApp({
     async testBangumiSearch() {
       const query = this.bangumiTestQuery.trim();
       if (!query) { this.bangumiTestMessage = '请输入漫画或小说名称'; this.bangumiTestError = true; return; }
-      this.bangumiTestBusy = true; this.bangumiTestMessage = ''; this.bangumiTestError = false;
+      this.bangumiTestBusy = true; this.bangumiTestMessage = ''; this.bangumiTestError = false; this.bangumiTestResults = [];
       try {
         const data = await this.api(`/api/bangumi/search?q=${encodeURIComponent(query)}`);
         const items = data.items || []; this.bangumiTestResults = items;
@@ -193,8 +195,10 @@ createApp({
     async loadRecords() { try { const [records, stats] = await Promise.all([this.api('/api/scrape-records?limit=300'), this.api('/api/scrape-records/stats')]); this.records = records.items || []; this.recordStats = stats; } catch (error) { this.notify(error.message, true); } },
     async loadLogs() { try { const [logs, stats] = await Promise.all([this.api(`/api/runtime-logs?limit=200&q=${encodeURIComponent(this.logSearch)}`), this.api('/api/runtime-logs/stats')]); this.logs = logs.items || []; this.logStats = stats; } catch (error) { this.notify(error.message, true); } },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
-    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: ['title', 'summary'], card_ids: [], enabled: true }; },
-    editTask(task) { this.editingTask = { ...task, functions: [...(task.functions || (task.type ? [task.type] : []))], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])] }; },
+    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: ['title', 'summary'], card_ids: [], enabled: true }; this.taskFunctionPickerOpen = false; this.taskLibraryPickerOpen = false; },
+    editTask(task) { this.editingTask = { ...task, functions: [...(task.functions || (task.type ? [task.type] : []))], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])] }; this.taskFunctionPickerOpen = false; this.taskLibraryPickerOpen = false; },
+    toggleTaskFunctionPicker() { this.taskFunctionPickerOpen = !this.taskFunctionPickerOpen; },
+    toggleTaskLibraryPicker() { this.taskLibraryPickerOpen = !this.taskLibraryPickerOpen; },
     async saveTask() { if (!this.editingTask) return; if (!this.editingTask.name.trim()) { this.notify('请填写自定义任务名称', true); return; } if (!this.editingTask.functions.length) { this.notify('请至少选择一个任务功能', true); return; } if (this.editingTask.functions.includes('metadata_completion') && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
     async deleteTask(task) { try { const data = await this.api('/api/tasks/delete', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.tasks = data.items || []; this.notify('计划任务已删除'); } catch (error) { this.notify(error.message, true); } },
     async runTask(task) { try { await this.api('/api/tasks/run', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.notify('计划任务已开始执行'); } catch (error) { this.notify(error.message, true); } },
