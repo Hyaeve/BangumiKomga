@@ -353,6 +353,13 @@ def _cleanup_expired_records():
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
         return
+    try:
+        days = max(1, min(int(_read_state().get("RECORD_RETENTION_DAYS", 30)), 365))
+        with sqlite3.connect(db_file) as conn:
+            conn.execute("DELETE FROM scrape_records WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
+            conn.commit()
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return
 
 
 def _read_runtime_logs(limit=100, offset=0, search=""):
@@ -399,13 +406,6 @@ def _write_activity(action, detail, level="info", source="web"):
         conn.close()
     except Exception:
         pass
-    try:
-        days = max(1, min(int(_read_state().get("RECORD_RETENTION_DAYS", 30)), 365))
-        with sqlite3.connect(db_file) as conn:
-            conn.execute("DELETE FROM scrape_records WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
-            conn.commit()
-    except (OSError, sqlite3.Error, TypeError, ValueError):
-        return
 
 
 def _preview_items(server_id, library_id, force=False):
