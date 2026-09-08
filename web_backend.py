@@ -422,6 +422,29 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"items": _read_scrape_records(limit, offset)})
         elif path == "/api/scrape-records/stats":
             self._json(200, _read_scrape_stats())
+        elif path == "/api/bangumi/search":
+            query = parse_qs(urlparse(self.path).query).get("q", [""])[0].strip()
+            if not query:
+                self._json(400, {"error": "请输入搜索关键词"})
+            else:
+                try:
+                    from api.bangumi_api import BangumiDataSourceFactory
+                    state = _read_state()
+                    source = BangumiDataSourceFactory.create({
+                        "access_token": state.get("BANGUMI_ACCESS_TOKEN", ""),
+                        "use_local_archive": bool(state.get("USE_BANGUMI_ARCHIVE", False)),
+                        "local_archive_folder": state.get("ARCHIVE_FILES_DIR", "./archivedata/"),
+                    })
+                    results = source.search_subjects(query, int(state.get("FUZZ_SCORE_THRESHOLD", 80)), False) or []
+                    items = [{
+                        "id": item.get("id"),
+                        "name": item.get("name", ""),
+                        "name_cn": item.get("name_cn", ""),
+                        "type": item.get("type"),
+                    } for item in results[:8] if isinstance(item, dict)]
+                    self._json(200, {"items": items})
+                except Exception as exc:
+                    self._json(400, {"error": f"Bangumi 搜索失败：{exc}"})
         elif path == "/api/komga/previews":
             query = parse_qs(urlparse(self.path).query)
             server_id = query.get("server_id", [""])[0]
