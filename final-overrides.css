@@ -739,6 +739,93 @@
   .task-form-row { grid-template-columns: 1fr; gap: 0; }
 }
 
+/* Rotate the whole grid so the cover edges and gutters share one diagonal. */
+.library-card {
+  aspect-ratio: 1.78 / 1 !important;
+  min-height: 204px !important;
+  border-radius: 18px !important;
+  border: 1px solid rgba(255,255,255,.9) !important;
+  background: linear-gradient(110deg, hsl(var(--card-hue) 20% 96%), hsl(calc(var(--card-hue) + 20) 34% 92%)) !important;
+}
+.library-card .card-content {
+  position: absolute !important;
+  left: 20px !important;
+  right: 58% !important;
+  top: 20px !important;
+  bottom: 20px !important;
+  margin: 0 !important;
+  pointer-events: none;
+}
+.library-card .card-label {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 1;
+}
+.library-card .card-footer { width: 100% !important; bottom: 0 !important; }
+.library-card .card-library-name {
+  font-size: 22px !important;
+  line-height: 1.35 !important;
+  margin-bottom: 8px !important;
+  letter-spacing: 0 !important;
+}
+.library-card .card-meta {
+  margin-top: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  line-height: 1.5 !important;
+}
+.library-card .cover-collage {
+  inset: -40% auto auto 47% !important;
+  width: 66% !important;
+  height: 180% !important;
+  padding: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-template-rows: repeat(3, minmax(0, 1fr)) !important;
+  gap: 9px !important;
+  overflow: visible !important;
+  background: transparent !important;
+  mask-image: none !important;
+  transform: rotate(19deg) !important;
+  transform-origin: center !important;
+}
+.library-card .cover-collage img,
+.library-card .cover-collage img:nth-child(n) {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  object-fit: cover !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  transform: none !important;
+  box-shadow: none !important;
+  filter: saturate(.88) !important;
+  opacity: 1 !important;
+}
+.library-card .cover-collage img:nth-child(1) { grid-area: 2 / 1 !important; opacity: .8 !important; }
+.library-card .cover-collage img:nth-child(2) { grid-area: 2 / 2 !important; }
+.library-card .cover-collage img:nth-child(3) { grid-area: 1 / 1 !important; opacity: .55 !important; }
+.library-card .cover-collage img:nth-child(4) { grid-area: 1 / 2 !important; }
+.library-card .cover-collage img:nth-child(5) { grid-area: 1 / 3 !important; opacity: .6 !important; }
+.library-card .cover-collage img:nth-child(6) { grid-area: 2 / 3 !important; }
+.library-card .cover-collage img:nth-child(7) { grid-area: 3 / 1 !important; opacity: .25 !important; }
+.library-card .cover-collage img:nth-child(8) { grid-area: 3 / 2 !important; opacity: .55 !important; }
+@media (max-width: 760px) {
+  .library-card { min-height: 194px !important; }
+  .library-card .card-content { left: 18px !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .library-card { animation: none !important; transition: none !important; }
+}
+
 /* A single eased motion keeps the rail, content, and labels moving together. */
 .sidebar,
 .main,
