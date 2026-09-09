@@ -573,6 +573,100 @@
   .task-form-row { grid-template-columns: 1fr !important; }
   .bangumi-test-row > button { width: 88px !important; }
 }
+
+/* Use the outlined-field treatment from the reference: labels float over the
+   border instead of consuming a separate heading row. */
+.setting-card label,
+.modal label {
+  position: relative !important;
+  display: grid !important;
+  gap: 7px !important;
+  padding-top: 8px !important;
+}
+.field-label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  z-index: 2;
+  padding: 0 6px;
+  background: #fff;
+  color: #7b858d;
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.setting-card input,
+.setting-card select,
+.modal input,
+.modal select {
+  min-height: 44px !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,.9) !important;
+}
+.setting-card input:focus,
+.setting-card select:focus,
+.modal input:focus,
+.modal select:focus {
+  border-color: rgba(126,114,198,.65) !important;
+  box-shadow: 0 0 0 3px rgba(126,114,198,.1) !important;
+  outline: none;
+}
+
+/* Search and save each occupy half the Bangumi card below the query field. */
+.bangumi-test-row > button {
+  width: calc(50% - 5px) !important;
+  min-width: 0 !important;
+  justify-content: center !important;
+}
+
+/* Candidate choices open as a floating panel, leaving the form geometry fixed. */
+.task-modal { overflow: visible !important; }
+.task-modal-backdrop,
+.task-modal + * { overflow: visible; }
+.task-media-field { position: relative !important; z-index: 4; }
+.task-media-field.open { z-index: 50 !important; }
+.task-media-field.open .task-library-options {
+  position: absolute !important;
+  top: calc(100% + 8px) !important;
+  left: 10px !important;
+  right: 10px !important;
+  z-index: 80 !important;
+  max-height: min(42vh, 320px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 8px !important;
+  border: 1px solid rgba(126,114,198,.22) !important;
+  border-radius: 13px !important;
+  background: rgba(255,255,255,.98) !important;
+  box-shadow: 0 18px 34px rgba(59,71,83,.18) !important;
+}
+.task-media-field.open .task-library-options::-webkit-scrollbar,
+.task-modal::-webkit-scrollbar,
+.runtime-log-board::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.task-media-field.open .task-library-options::-webkit-scrollbar-thumb,
+.task-modal::-webkit-scrollbar-thumb,
+.runtime-log-board::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(112,126,136,.28);
+}
+.task-media-field.open .task-library-options,
+.task-modal,
+.runtime-log-board {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(112,126,136,.28) transparent;
+}
+.task-media-field.open .task-library-options .meta-option { background: rgba(126,114,198,.06) !important; }
+
+/* The two settings columns keep a shared lower edge without forcing fixed
+   heights on individual cards. */
+.settings-layout { align-items: stretch !important; }
+.settings-left,
+.settings-right { height: 100% !important; }
+.settings-left .strategy-card { flex: 1 1 auto !important; }
 @media (max-width: 620px) {
   .task-form-row { grid-template-columns: 1fr; gap: 0; }
 }
