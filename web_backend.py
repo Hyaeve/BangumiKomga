@@ -53,6 +53,7 @@ DEFAULTS = {
     "BANGUMI_KOMGA_SERVICE_POLL_INTERVAL": 20,
     "BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL": 10000,
     "RECORD_RETENTION_DAYS": 30,
+    "LOG_RETENTION_DAYS": 30,
     "METADATA_TASKS": [],
     "USE_BANGUMI_THUMBNAIL": False,
     "USE_BANGUMI_THUMBNAIL_FOR_BOOK": False,
@@ -171,6 +172,10 @@ def save_state(data: dict) -> dict:
         merged["RECORD_RETENTION_DAYS"] = max(1, min(int(merged.get("RECORD_RETENTION_DAYS", 30)), 365))
     except (TypeError, ValueError):
         merged["RECORD_RETENTION_DAYS"] = 30
+    try:
+        merged["LOG_RETENTION_DAYS"] = max(1, min(int(merged.get("LOG_RETENTION_DAYS", 30)), 365))
+    except (TypeError, ValueError):
+        merged["LOG_RETENTION_DAYS"] = 30
     servers = []
     for item in merged.get("KOMGA_SERVERS", []) or []:
         if not item.get("base_url") or not item.get("name"):
@@ -370,6 +375,12 @@ def _read_runtime_logs(limit=100, offset=0, search=""):
     try:
         conn = sqlite3.connect(db_file)
         conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
+        try:
+            days = max(1, min(int(_read_state().get("LOG_RETENTION_DAYS", 30)), 365))
+        except (TypeError, ValueError):
+            days = 30
+        conn.execute("DELETE FROM activity_logs WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
+        conn.commit()
         params = []
         where = ""
         if search:
@@ -390,6 +401,12 @@ def _runtime_log_stats():
     try:
         conn = sqlite3.connect(db_file)
         conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
+        try:
+            days = max(1, min(int(_read_state().get("LOG_RETENTION_DAYS", 30)), 365))
+        except (TypeError, ValueError):
+            days = 30
+        conn.execute("DELETE FROM activity_logs WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
+        conn.commit()
         today = __import__("datetime").date.today().isoformat()
         row = conn.execute("SELECT COUNT(*), SUM(CASE WHEN recorded_at LIKE ? THEN 1 ELSE 0 END), SUM(CASE WHEN level='error' THEN 1 ELSE 0 END), SUM(CASE WHEN action LIKE '按钮%' OR action LIKE '配置%' THEN 1 ELSE 0 END) FROM activity_logs", (today + "%",)).fetchone()
         conn.close()
