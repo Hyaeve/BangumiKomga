@@ -40,7 +40,10 @@ createApp({
       logStats: { total: 0, today: 0, errors: 0, actions: 0 },
       tasks: [],
       editingTask: null,
-      taskTypeOptions: [{ value: 'metadata_completion', label: '元数据补全' }],
+      taskTypeOptions: [
+        { value: 'metadata_completion', label: '元数据补全' },
+        { value: 'card_collage_refresh', label: '卡片拼贴刷新' }
+      ],
       cardFeatureOptions: [
         { value: 'isNovel', label: '仅匹配小说' },
         { value: 'translateSummary', label: '简介翻译' },
@@ -93,7 +96,7 @@ createApp({
     },
     currentNav() { return this.navItems.find(item => item.id === this.view) || this.navItems[0]; },
     activeServer() { return this.config.KOMGA_SERVERS && this.config.KOMGA_SERVERS[0]; },
-    lastRunText() { return this.status.last_result ? `最近完成：${this.status.last_result === 'full' ? '全量刮削' : '增量刮削'}` : '尚未执行刮削'; },
+    lastRunText() { if (!this.status.last_result) return '尚未执行刮削'; if (this.status.last_result === 'full') return '最近完成：全量刮削'; if (this.status.last_result.includes('card_collage')) return '最近完成：卡片拼贴刷新'; return '最近完成：增量刮削'; },
     credentialHint() { return this.loginForm.username || '已登录'; }
     ,filteredRecords() {
       const keyword = this.recordSearch.trim().toLocaleLowerCase();
