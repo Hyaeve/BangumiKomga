@@ -15,6 +15,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -46,6 +47,7 @@ DEFAULTS = {
     "KOMGA_SERVERS": [],
     "KOMGA_LIBRARY_LIST": [],
     "AI_RECOGNITION": False,
+    "SORT_VOLUMES": False,
     "KOMGA_COLLECTION_LIST": [],
     "USE_BANGUMI_ARCHIVE": False,
     "ARCHIVE_FILES_DIR": "./archivedata/",
@@ -85,6 +87,8 @@ PREVIEW_CACHE = {}
 PREVIEW_CACHE_FILE = DATA_DIR / "cover_collage_cache.json"
 PREVIEW_CACHE_LOCK = threading.RLock()
 PREVIEW_CACHE_LOADED = False
+TASK_SCHEDULER_STARTED = False
+TASK_LAST_RUN = {}
 
 
 def _preview_cache_disk_key(server_id, library_id):
@@ -267,6 +271,7 @@ def save_state(data: dict) -> dict:
             "OVERWRITE_FIELDS": list(item.get("OVERWRITE_FIELDS", []) or []),
             "TRANSLATE_SUMMARY_TO_ZH": bool(item.get("TRANSLATE_SUMMARY_TO_ZH", False)),
             "AI_RECOGNITION": bool(item.get("AI_RECOGNITION", False)),
+            "SORT_VOLUMES": bool(item.get("SORT_VOLUMES", False)),
         })
     merged["KOMGA_LIBRARY_LIST"] = libraries
     merged["KOMGA_COLLECTION_LIST"] = [
@@ -283,6 +288,8 @@ def save_state(data: dict) -> dict:
             "functions": [str(value) for value in (item.get("functions") or ([item.get("type")] if item.get("type") else []))],
             "fields": [str(field) for field in (item.get("fields") or [])],
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
+            "cron": str(item.get("cron") or "").strip(),
+            "schedule": str(item.get("schedule") or item.get("cron") or "").strip(),
             "enabled": bool(item.get("enabled", True)),
             "last_run": str(item.get("last_run") or ""),
         }
@@ -361,11 +368,18 @@ def _start_task(task):
 
     def worker():
         try:
+            from core.refresh_metadata import set_task_translation_override
+            has_summary_translation = "summary_translation" in functions
+            set_task_translation_override(has_summary_translation)
             result_labels = []
-            if "metadata_completion" in functions:
+            needs_metadata_refresh = bool({"metadata_completion", "summary_translation"} & functions)
+            if needs_metadata_refresh:
                 from core.refresh_metadata import refresh_partial_metadata
                 refresh_partial_metadata(library_ids=library_ids or None)
-                result_labels.append("incremental")
+                if "metadata_completion" in functions:
+                    result_labels.append("incremental")
+                if has_summary_translation:
+                    result_labels.append("summary_translation")
             if "card_collage_refresh" in functions:
                 _refresh_card_collages(library_ids)
                 result_labels.append("card_collage")
@@ -375,11 +389,116 @@ def _start_task(task):
             REFRESH_STATE["last_error"] = str(exc)
             _write_activity("计划任务：失败", f"计划任务 {task.get('name', '未命名任务')}：{exc}", level="error")
         finally:
+            try:
+                from core.refresh_metadata import set_task_translation_override
+                set_task_translation_override(None)
+            except Exception:
+                pass
             REFRESH_STATE["running"] = False
             REFRESH_LOCK.release()
 
     threading.Thread(target=worker, name="WebTask", daemon=True).start()
     return True
+
+
+def _cron_value(token, minimum, maximum):
+    token = token.strip().upper()
+    aliases = {"SUN": 0, "MON": 1, "TUE": 2, "WED": 3, "THU": 4, "FRI": 5, "SAT": 6}
+    if token in aliases:
+        return aliases[token]
+    value = int(token)
+    if not minimum <= value <= maximum:
+        raise ValueError("Cron 值超出范围")
+    return value
+
+
+def _cron_field_matches(value, expression, minimum, maximum):
+    expression = expression.strip()
+    if not expression:
+        return False
+    allowed = set()
+    for item in expression.split(","):
+        item = item.strip()
+        if not item:
+            return False
+        base, separator, step_text = item.partition("/")
+        try:
+            step = int(step_text) if separator else 1
+            if step <= 0:
+                return False
+            if base in ("", "*", "?"):
+                start, end = minimum, maximum
+            elif "-" in base:
+                start_text, end_text = base.split("-", 1)
+                start = _cron_value(start_text, minimum, maximum)
+                end = _cron_value(end_text, minimum, maximum)
+            else:
+                start = end = _cron_value(base, minimum, maximum)
+            if start > end:
+                return False
+            allowed.update(range(start, end + 1, step))
+        except (TypeError, ValueError):
+            return False
+    return value in allowed
+
+
+def _cron_matches(expression, now=None):
+    """Match a standard five-field local-time cron expression."""
+    parts = str(expression or "").split()
+    if len(parts) != 5:
+        return False
+    current = now or datetime.now()
+    minute, hour, day, month, weekday = parts
+    day_match = _cron_field_matches(current.day, day, 1, 31)
+    month_match = _cron_field_matches(current.month, month, 1, 12)
+    weekday_match = _cron_field_matches((current.weekday() + 1) % 7, weekday, 0, 7)
+    # Standard cron treats 0 and 7 as Sunday. Normalize 7 in the matcher.
+    if current.weekday() == 6 and _cron_field_matches(7, weekday, 0, 7):
+        weekday_match = current.weekday() == 6
+    day_of_month_wild = day.strip() in ("*", "?")
+    day_of_week_wild = weekday.strip() in ("*", "?")
+    if day_of_month_wild or day_of_week_wild:
+        day_match = day_match and weekday_match
+    else:
+        day_match = day_match or weekday_match
+    return (
+        _cron_field_matches(current.minute, minute, 0, 59)
+        and _cron_field_matches(current.hour, hour, 0, 23)
+        and month_match
+        and day_match
+    )
+
+
+def _task_scheduler_loop():
+    while True:
+        try:
+            now = datetime.now()
+            minute_key = now.strftime("%Y%m%d%H%M")
+            for task in _read_state().get("METADATA_TASKS", []) or []:
+                task_id = str(task.get("id") or "")
+                cron = str(task.get("cron") or "").strip()
+                functions = {str(value) for value in (task.get("functions") or [task.get("type") or "metadata_completion"])}
+                if not task_id or not task.get("enabled", True) or not cron or not _cron_matches(cron, now):
+                    continue
+                if TASK_LAST_RUN.get(task_id) == minute_key:
+                    continue
+                if _start_task(task):
+                    TASK_LAST_RUN[task_id] = minute_key
+                    _write_activity("计划任务：自动执行", f"按 Cron {cron} 执行计划任务 {task.get('name', '未命名任务')}")
+        except Exception as exc:  # pragma: no cover - scheduler is best effort
+            try:
+                _write_activity("计划任务：调度失败", str(exc), level="error")
+            except Exception:
+                pass
+        time.sleep(20)
+
+
+def _start_task_scheduler():
+    global TASK_SCHEDULER_STARTED
+    if TASK_SCHEDULER_STARTED:
+        return
+    TASK_SCHEDULER_STARTED = True
+    threading.Thread(target=_task_scheduler_loop, name="TaskScheduler", daemon=True).start()
 
 
 def _configured_library_context():
@@ -399,58 +518,82 @@ def _configured_library_context():
     }
 
 
-def _read_scrape_records(limit=100, offset=0):
+def _read_scrape_rows():
+    """Read raw events and include the newer series/volume marker."""
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
         return []
     try:
-        library_context = _configured_library_context()
-        configured_ids = list(library_context)
-        if not configured_ids:
+        context = _configured_library_context()
+        ids = list(context)
+        if not ids:
             return []
         _cleanup_expired_records()
         with sqlite3.connect(db_file) as conn:
-            placeholders = ",".join("?" for _ in configured_ids)
             columns = {row[1] for row in conn.execute("PRAGMA table_info(scrape_records)").fetchall()}
-            extra = ",source_title,matched_title,match_source" if {"source_title", "matched_title", "match_source"}.issubset(columns) else ",'' AS source_title,item_title AS matched_title,'' AS match_source"
-            rows = conn.execute("""SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at""" + extra + " FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC LIMIT ? OFFSET ?", (*configured_ids, limit, offset)).fetchall()
+            placeholders = ",".join("?" for _ in ids)
+            source_sql = ",source_title,matched_title,match_source" if {"source_title", "matched_title", "match_source"}.issubset(columns) else ",'' AS source_title,item_title AS matched_title,'' AS match_source"
+            kind_sql = ",event_kind" if "event_kind" in columns else ",'volume' AS event_kind"
+            rows = conn.execute("SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at" + source_sql + kind_sql + " FROM scrape_records WHERE library_id IN (" + placeholders + ") ORDER BY id DESC", ids).fetchall()
         return [{
-            "id": row[0], "item_type": row[1], "item_title": row[2],
-            "library_id": row[3], "library_name": row[4],
-            "server_id": library_context.get(str(row[3]), {}).get("server_id", ""),
-            "server_name": library_context.get(str(row[3]), {}).get("server_name", "默认 Komga 服务"),
-            "metadata_fields": [field for field in (row[5] or "").split(",") if field],
-            "status": row[6], "recorded_at": row[7], "source_title": row[8] or row[2],
-            "matched_title": row[9] or row[2], "match_source": row[10] or "",
+            "id": row[0], "item_type": row[1], "item_title": row[2], "library_id": row[3], "library_name": row[4],
+            "server_id": context.get(str(row[3]), {}).get("server_id", ""), "server_name": context.get(str(row[3]), {}).get("server_name", "默认 Komga 服务"),
+            "metadata_fields": [field for field in (row[5] or "").split(",") if field], "status": row[6], "recorded_at": row[7],
+            "source_title": row[8] or row[2], "matched_title": row[9] or row[2], "match_source": row[10] or "", "event_kind": row[11] or "volume",
         } for row in rows]
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error, IndexError):
         return []
 
 
+def _is_series_scrape_row(row):
+    if str(row.get("event_kind") or "").lower() == "series":
+        return True
+    # Fallback for records written before event_kind was added.
+    return bool(set(row.get("metadata_fields") or ()) & {
+        "publisher", "genres", "alternateTitles", "ageRating",
+        "totalBookCount", "language", "titleSort", "status",
+    })
+
+
+def _group_scrape_records(rows):
+    groups = {}
+    for row in rows:
+        title = str(row.get("source_title") or row.get("item_title") or "").strip()
+        key = (str(row.get("library_id") or ""), str(row.get("item_type") or ""), title.casefold())
+        groups.setdefault(key, []).append(row)
+    result = []
+    for rows_for_book in groups.values():
+        primary_index = next((i for i, row in enumerate(rows_for_book) if _is_series_scrape_row(row)), 0)
+        primary = dict(rows_for_book[primary_index])
+        details = [dict(row) for i, row in enumerate(rows_for_book) if i != primary_index]
+        fields = []
+        for row in rows_for_book:
+            for field in row.get("metadata_fields") or []:
+                if field not in fields:
+                    fields.append(field)
+        primary["id"] = f"book:{primary.get('library_id', '')}:{primary.get('id', '')}"
+        primary["recorded_at"] = max((str(row.get("recorded_at") or "") for row in rows_for_book), default=primary.get("recorded_at", ""))
+        primary["metadata_fields"] = fields
+        primary["volumes"] = [{
+            "id": row.get("id"), "item_title": row.get("item_title") or row.get("source_title") or "",
+            "matched_title": row.get("matched_title") or row.get("item_title") or "", "metadata_fields": row.get("metadata_fields") or [],
+            "status": row.get("status") or "success", "recorded_at": row.get("recorded_at") or "", "match_source": row.get("match_source") or "",
+        } for row in details]
+        primary["volume_count"] = len(primary["volumes"])
+        primary["record_count"] = len(rows_for_book)
+        result.append(primary)
+    return sorted(result, key=lambda row: str(row.get("recorded_at") or ""), reverse=True)
+
+
+def _read_scrape_records(limit=100, offset=0):
+    grouped = _group_scrape_records(_read_scrape_rows())
+    return grouped[offset:offset + limit]
+
+
 def _read_scrape_stats():
-    db_file = ROOT / "recordsRefreshed.db"
-    if not db_file.exists():
-        return {"total": 0, "today": 0, "comic": 0, "novel": 0}
-    try:
-        configured_ids = [str(item.get("LIBRARY")) for item in (_read_state().get("KOMGA_LIBRARY_LIST") or []) if item.get("LIBRARY")]
-        if not configured_ids:
-            return {"total": 0, "today": 0, "comic": 0, "novel": 0}
-        placeholders = ",".join("?" for _ in configured_ids)
-        _cleanup_expired_records()
-        with sqlite3.connect(db_file) as conn:
-            rows = conn.execute(
-                """SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at
-                   FROM scrape_records WHERE library_id IN (""" + placeholders + ") ORDER BY id DESC", configured_ids
-            ).fetchall()
-        today = __import__("datetime").date.today().isoformat()
-        return {
-            "total": len(rows),
-            "today": sum(1 for item in rows if str(item[7] or "").startswith(today)),
-            "comic": sum(1 for item in rows if str(item[1] or "") == "漫画"),
-            "novel": sum(1 for item in rows if str(item[1] or "") == "小说"),
-        }
-    except (OSError, sqlite3.Error):
-        return {"total": 0, "today": 0, "comic": 0, "novel": 0}
+    grouped = _group_scrape_records(_read_scrape_rows())
+    today = __import__("datetime").date.today().isoformat()
+    return {"total": len(grouped), "today": sum(1 for row in grouped if str(row.get("recorded_at") or "").startswith(today)), "comic": sum(1 for row in grouped if row.get("item_type") == "漫画"), "novel": sum(1 for row in grouped if row.get("item_type") == "小说")}
 
 
 def _cleanup_expired_records():
@@ -541,14 +684,22 @@ def _preview_items(server_id, library_id, force=False):
         # Komga returns this page in recent-first order. Pick a fresh subset
         # from that latest batch only when the user explicitly refreshes.
         latest_batch = list(items or [])[:20]
-        selected_items = random.sample(latest_batch, min(8, len(latest_batch)))
+        if latest_batch:
+            # Keep the collage full even when the latest page contains fewer
+            # than eight series. Shuffle once, then cycle through the available
+            # covers; an empty library remains an intentionally empty collage.
+            random.shuffle(latest_batch)
+            selected_items = [latest_batch[index % len(latest_batch)] for index in range(8)]
+        else:
+            selected_items = []
         version = f"{int(time.time() * 1000)}-{secrets.token_hex(3)}"
         result = []
-        for series in selected_items:
+        for index, series in enumerate(selected_items):
             series_id = series.get("id")
             if series_id:
                 result.append({
                     "id": series_id,
+                    "preview_id": f"{series_id}-{index}",
                     "title": series.get("name") or (series.get("metadata") or {}).get("title", ""),
                     "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}&v={version}",
                 })
@@ -815,6 +966,11 @@ class Handler(BaseHTTPRequestHandler):
                 task["type"] = task["functions"][0] if task["functions"] else "metadata_completion"
                 task["fields"] = list(task.get("fields") or [])
                 task["card_ids"] = list(task.get("card_ids") or [])
+                task["cron"] = str(task.get("cron") or "").strip()
+                if len(task["cron"].split()) != 5:
+                    self._json(400, {"error": "计划任务必须填写五段 Cron 表达式"})
+                    return
+                task["schedule"] = task["cron"]
                 task["enabled"] = bool(task.get("enabled", True))
                 tasks = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task["id"]]
                 tasks.append(task)
@@ -872,6 +1028,7 @@ class Handler(BaseHTTPRequestHandler):
 def start_web_server(port=PORT):
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     threading.Thread(target=server.serve_forever, name="WebServer", daemon=True).start()
+    _start_task_scheduler()
     return server
 
 

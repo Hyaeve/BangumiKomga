@@ -1,4 +1,5 @@
 import os
+import re
 from api.bangumi_model import SubjectRelation
 from tools.get_title import get_title_candidates
 from tools.title_recognition import recognize_title
@@ -8,6 +9,7 @@ from tools.get_number import get_number, NumberType
 from tools.env import *
 from tools.log import logger
 from tools.notification import send_notification
+from tools.summary_translation import translate_summary_to_zh
 from tools.db import init_sqlite3, record_series_status, record_book_status, record_scrape_event, record_activity_log
 from tools.cache_time import TimeCacheManager
 
@@ -17,6 +19,13 @@ bgm = env.bgm
 komga = env.komga
 cursor, conn = init_sqlite3()
 _library_name_cache = {}
+TASK_TRANSLATION_OVERRIDE = None
+
+
+def set_task_translation_override(enabled=None):
+    """Temporarily enable summary translation for a scheduled task."""
+    global TASK_TRANSLATION_OVERRIDE
+    TASK_TRANSLATION_OVERRIDE = enabled
 
 
 def _library_name(library_id):
@@ -59,9 +68,34 @@ def _overwrite_fields_for_library(library_id):
 
 
 def _translation_enabled_for_library(library_id):
+    if TASK_TRANSLATION_OVERRIDE is True:
+        return True
     for item in KOMGA_LIBRARY_LIST:
         if item.get("LIBRARY") == library_id:
             return bool(item.get("TRANSLATE_SUMMARY_TO_ZH", False))
+    return False
+
+
+def _volume_sort_enabled_for_library(library_id):
+    for item in KOMGA_LIBRARY_LIST:
+        if item.get("LIBRARY") == library_id:
+            return bool(item.get("SORT_VOLUMES", False))
+    return False
+
+
+def _metadata_field_locked(metadata, field):
+    metadata = metadata or {}
+    return bool(metadata.get(f"{field}Lock") or metadata.get(f"{field}Locked"))
+
+
+def _lock_metadata_field(kind, item_id, field):
+    """Ask Komga to lock a single metadata field when the API supports it."""
+    try:
+        lock_method = getattr(komga, "lock_metadata_field", None)
+        if lock_method:
+            return bool(lock_method(kind, item_id, field))
+    except Exception as exc:
+        logger.debug("锁定元数据失败 %s/%s: %s", item_id, field, exc)
     return False
 
 
@@ -82,8 +116,45 @@ def _metadata_write_payload(existing_metadata, matched_metadata, overwrite_field
     return {
         field: value
         for field, value in matched_metadata.items()
-        if field in overwrite_fields or _is_metadata_empty(existing_metadata.get(field))
+        if field in overwrite_fields
+        or _is_metadata_empty(existing_metadata.get(field))
+        # Summary translation has an explicit policy: once enabled it may
+        # replace an unlocked summary and persist the corresponding lock flag.
+        or (field == "summary" and matched_metadata.get("summaryLock"))
+        or (field.endswith("Lock") and value is True)
     }
+
+
+def _summary_is_chinese(value):
+    text = str(value or "").strip()
+    if not text:
+        return False
+    chinese = len(re.findall(r"[\u3400-\u9fff]", text))
+    letters = len(re.findall(r"[A-Za-z]", text))
+    return chinese >= 2 and chinese >= letters
+
+
+def _apply_summary_translation_policy(existing_metadata, matched_data, overwrite_fields, enabled):
+    """Translate only unlocked summaries and lock them after confirmation."""
+    existing = existing_metadata or {}
+    if not enabled:
+        return
+    if _metadata_field_locked(existing, "summary"):
+        matched_data.pop("summary", None)
+        return
+    summary = str(existing.get("summary") or "").strip()
+    if summary and _summary_is_chinese(summary):
+        matched_data.pop("summary", None)
+        matched_data["summaryLock"] = True
+        return
+    translated = str(matched_data.get("summary") or "").strip()
+    if translated and not _summary_is_chinese(translated):
+        translated = translate_summary_to_zh(translated, True)
+    if translated and _summary_is_chinese(translated):
+        matched_data["summary"] = translated
+        matched_data["summaryLock"] = True
+    else:
+        matched_data.pop("summary", None)
 
 
 def _series_needs_refresh(series, required_fields):
@@ -245,7 +316,10 @@ def refresh_metadata(series_list=None):
             logger.warning("无法获取元数据: %s", series_name)
             continue
 
-        process_metadata.set_translation_override(_translation_enabled_for_library(series.get("libraryId")))
+        # Summary translation is applied once below, after checking Komga's
+        # existing value and lock state. Keeping the metadata builder raw
+        # avoids sending the same summary through the AI endpoint twice.
+        process_metadata.set_translation_override(False)
         komga_metadata = process_metadata.set_komga_series_metadata(
             metadata, series_name, bgm
         )
@@ -278,6 +352,12 @@ def refresh_metadata(series_list=None):
             "titleSort": komga_metadata.titleSort,
         }
         overwrite_fields = _overwrite_fields_for_library(series.get("libraryId"))
+        _apply_summary_translation_policy(
+            series.get("metadata"),
+            matched_series_data,
+            overwrite_fields,
+            _translation_enabled_for_library(series.get("libraryId")),
+        )
         series_data = _metadata_write_payload(
             series.get("metadata"), matched_series_data, overwrite_fields
         )
@@ -337,6 +417,7 @@ def refresh_metadata(series_list=None):
                     source_title=series_name,
                     matched_title=komga_metadata.title or matched_search_title or series_name,
                     match_source=match_source,
+                    event_kind="series",
                 )
                 record_activity_log(conn, "刮削匹配", f"{series_name} → {komga_metadata.title or matched_search_title or series_name}（{match_source}）", source="scraper")
         else:
@@ -542,7 +623,9 @@ def refresh_partial_metadata(library_ids=None):
 
 def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None, source_title="", match_source=""):
     # Get the metadata for the book from bangumi
-    process_metadata.set_translation_override(_translation_enabled_for_library(library_id))
+    # Translation policy below decides whether the unlocked summary should be
+    # translated and locked; the metadata builder must return the source text.
+    process_metadata.set_translation_override(False)
     book_metadata = process_metadata.set_komga_book_metadata(
         related_subject["id"], number, book_name, bgm
     )
@@ -564,6 +647,15 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         "numberSort": book_metadata.numberSort,
     }
     overwrite_fields = _overwrite_fields_for_library(library_id)
+    if not _volume_sort_enabled_for_library(library_id):
+        matched_book_data.pop("number", None)
+        matched_book_data.pop("numberSort", None)
+    _apply_summary_translation_policy(
+        current_metadata,
+        matched_book_data,
+        overwrite_fields,
+        _translation_enabled_for_library(library_id),
+    )
     book_data = _metadata_write_payload(
         current_metadata, matched_book_data, overwrite_fields
     )
@@ -615,6 +707,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 source_title=source_title or book_name,
                 matched_title=book_metadata.title or book_name,
                 match_source=match_source or "卷匹配",
+                event_kind="volume",
             )
     else:
         record_book_status(
@@ -720,7 +813,9 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     break
         # 修正`话`序号
         if ep_flag:
-            book_data = {"number": book_number, "numberSort": book_number}
+            book_data = {"number": book_number, "numberSort": book_number} if _volume_sort_enabled_for_library(library_id) else {}
+            if not book_data:
+                continue
             number_updated = komga.update_book_metadata(book_id, book_data)
             record_book_status(
                 conn, book_id, None, 0, book_name, "Only update book number"
@@ -736,4 +831,5 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     source_title=source_title or book_name,
                     matched_title=matched_title or book_name,
                     match_source=match_source or "卷号修正",
+                    event_kind="volume",
                 )

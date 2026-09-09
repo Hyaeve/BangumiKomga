@@ -32,7 +32,8 @@ Web 层只通过保存动作生成原版可导入的 `config/config.py`，刮削
 - `GET /api/komga/previews?server_id=...&library_id=...`：读取指定库的封面拼贴选择；首次无缓存时生成，之后只读缓存，追加 `refresh=1` 才会重新读取最新系列
 - `GET /api/komga/cover?...`：鉴权代理 Komga 封面图片，优先转发已选缩略图原始字节
 - `POST /api/refresh`，请求体 `{ "full": false }` 为增量，`true` 为全量
-- `POST /api/tasks/run`：运行计划任务；任务功能支持元数据补全和卡片拼贴刷新
+- `POST /api/tasks`：保存计划任务；`functions` 支持元数据补全和卡片拼贴刷新，后者可设置五段 Cron 表达式 `cron`
+- `POST /api/tasks/run`：立即运行计划任务；后台调度器同时按本地时间 Cron 自动运行启用的任务
 
 封面拼贴缓存写入数据目录的 `cover_collage_cache.json`（默认位于已挂载的 `config` 目录），不属于 `config/config.py` 的业务配置；删除该文件会让对应媒体库在下次读取时重新生成初始拼贴。
 

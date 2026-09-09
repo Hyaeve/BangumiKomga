@@ -67,6 +67,9 @@ AI_RECOGNITION = False
 # @@info: 将使用 KOMGA 配置读取库列表。配置示例：[{"LIBRARY": "0BYYYYABE9EAV", "IS_NOVEL_ONLY": False}]
 # @@version: 0.18.0
 KOMGA_LIBRARY_LIST = []
+# Web UI managed per-card options are stored in each item when configured:
+# SERVER_ID, REQUIRED_FIELDS, OVERWRITE_FIELDS, TRANSLATE_SUMMARY_TO_ZH,
+# AI_RECOGNITION and SORT_VOLUMES (卷号排序，默认关闭).
 # @@name: KOMGA_COLLECTION_LIST
 # @@prompt: 配置 KOMGA 收藏
 # @@type: list
@@ -131,6 +134,10 @@ BANGUMI_KOMGA_SERVICE_POLL_INTERVAL = 20
 # @@info: 整数值, 指定多少次轮询后执行一次全量刷新
 # @@version: 0.15.0
 BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL = 10000
+
+# Web history retention (days, 1-365; default 30)
+RECORD_RETENTION_DAYS = 30
+LOG_RETENTION_DAYS = 30
 
 # @@name: USE_BANGUMI_THUMBNAIL
 # @@prompt: 是否使用 Bangumi 封面替换系列海报

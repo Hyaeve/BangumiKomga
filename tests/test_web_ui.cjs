@@ -124,8 +124,11 @@ async function main() {
     await page.getByRole('button', { name: '任务功能', exact: true }).press('ArrowDown');
     const taskFunctions = page.getByRole('dialog', { name: '任务功能候选项' });
     assert.equal(await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).count(), 1);
+    await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).check();
     await taskFunctions.getByLabel('元数据补全').check();
     await taskFunctions.getByLabel('元数据补全').press('Escape');
+    assert.equal(await page.locator('.cron-picker').count(), 1);
+    await page.locator('.cron-picker input').fill('0 3 * * *');
     assert.equal(await page.locator('#task-metadata .tag-picker-chip').count(), 0);
     const widths = await page.locator('.task-form-row').evaluate(row => [...row.children].map(el => el.getBoundingClientRect().width));
     assert(Math.abs(widths[0] - widths[1]) < 2);
