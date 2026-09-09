@@ -534,6 +534,45 @@
   .bangumi-test-row { grid-template-columns: minmax(0, 1fr) 72px 72px 72px !important; gap: 6px !important; }
   .bangumi-test-row button { padding-left: 7px !important; padding-right: 7px !important; font-size: 12px !important; }
 }
+
+/* Compact Bangumi panel: query field spans the card, actions sit beneath it. */
+.settings-left .bangumi-card {
+  flex-basis: auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 22px 20px 24px !important;
+}
+.settings-left .bangumi-card h3 { margin-bottom: 20px !important; }
+.bangumi-test-row {
+  display: block !important;
+  margin-top: 20px !important;
+}
+.bangumi-test-row .search-input-wrap,
+.bangumi-test-row .search-input-wrap input { width: 100% !important; }
+.bangumi-test-row .search-input-wrap input { height: 44px !important; }
+.bangumi-test-row > button { margin-top: 12px !important; }
+.bangumi-test-row > button:first-of-type { margin-left: 0 !important; }
+.bangumi-test-row > button:not(:first-of-type) { margin-left: 8px !important; }
+.bangumi-test-row { white-space: nowrap; }
+.bangumi-test-row > button { display: inline-flex !important; width: 96px !important; }
+
+/* Task fields share one grid track and long media-library lists scroll inside the modal. */
+.task-form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; align-items: stretch !important; }
+.task-form-row > label,
+.task-form-row > .task-media-field { width: 100% !important; min-width: 0 !important; }
+.task-modal { max-height: min(88vh, 760px) !important; overflow-y: auto !important; overscroll-behavior: contain; }
+.task-modal .task-media-field { overflow: visible !important; }
+.task-modal .task-media-field.open .task-library-options {
+  max-height: min(34vh, 300px) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+}
+.task-modal .task-media-field.open .task-library-options .meta-option { flex: 0 0 auto; }
+.task-modal .modal-rules.metadata-options { max-height: none !important; overflow: visible !important; }
+@media (max-width: 620px) {
+  .task-form-row { grid-template-columns: 1fr !important; }
+  .bangumi-test-row > button { width: 88px !important; }
+}
 @media (max-width: 620px) {
   .task-form-row { grid-template-columns: 1fr; gap: 0; }
 }

@@ -195,7 +195,7 @@ createApp({
     async loadRecords() { try { const [records, stats] = await Promise.all([this.api('/api/scrape-records?limit=300'), this.api('/api/scrape-records/stats')]); this.records = records.items || []; this.recordStats = stats; } catch (error) { this.notify(error.message, true); } },
     async loadLogs() { try { const [logs, stats] = await Promise.all([this.api(`/api/runtime-logs?limit=200&q=${encodeURIComponent(this.logSearch)}`), this.api('/api/runtime-logs/stats')]); this.logs = logs.items || []; this.logStats = stats; } catch (error) { this.notify(error.message, true); } },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
-    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: ['title', 'summary'], card_ids: [], enabled: true }; this.taskFunctionPickerOpen = false; this.taskLibraryPickerOpen = false; },
+    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], card_ids: [], enabled: true }; this.taskFunctionPickerOpen = false; this.taskLibraryPickerOpen = false; },
     editTask(task) { this.editingTask = { ...task, functions: [...(task.functions || (task.type ? [task.type] : []))], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])] }; this.taskFunctionPickerOpen = false; this.taskLibraryPickerOpen = false; },
     toggleTaskFunctionPicker() { this.taskFunctionPickerOpen = !this.taskFunctionPickerOpen; },
     toggleTaskLibraryPicker() { this.taskLibraryPickerOpen = !this.taskLibraryPickerOpen; },
