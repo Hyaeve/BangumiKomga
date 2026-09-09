@@ -847,10 +847,112 @@
 
 @media (max-width: 760px) {
   .task-card { grid-template-columns: 32px minmax(0,1fr) auto; }
-  .task-card > button { grid-row: 2; }
+  .task-card-actions { grid-column: 2 / -1; justify-content: flex-end; }
   .runtime-log-row { grid-template-columns: 1fr; gap: 4px; padding: 12px; }
   .log-toolbar { align-items: stretch; flex-direction: column; }
   .log-stats { justify-content: space-between; gap: 8px; }
   .preview-grid { grid-template-columns: 100px minmax(0,1fr); gap: 14px; }
   .preview-grid img { width: 100px; }
+}
+
+/* Scheduled task rows are editable from any non-button area. Keep the three
+   actions icon-only so the compact row remains easy to scan. */
+.task-card {
+  position: relative;
+  cursor: pointer;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.task-card:hover {
+  border-color: rgba(126, 114, 198, .28);
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 11px 28px rgba(79, 102, 103, .1);
+  transform: translateY(-1px);
+}
+.task-card:focus-visible {
+  outline: 2px solid rgba(126, 114, 198, .6);
+  outline-offset: 3px;
+}
+.task-card-icon svg,
+.task-icon-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.task-card-icon svg { fill: none; stroke: currentColor; width: 16px; height: 16px; }
+.task-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.task-icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(104, 125, 128, .16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .72);
+  color: #6f7f85;
+  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease;
+}
+.task-icon-button:hover,
+.task-icon-button:focus-visible {
+  border-color: rgba(126, 114, 198, .28);
+  background: #f0edf9;
+  color: #7063b5;
+  transform: translateY(-1px);
+}
+.task-icon-button.danger:hover,
+.task-icon-button.danger:focus-visible {
+  border-color: rgba(169, 102, 109, .3);
+  background: #f9ebed;
+  color: #a9666d;
+}
+.cron-picker {
+  min-width: 0;
+  margin: 18px 0 0;
+  padding: 9px 12px 12px;
+  border: 1.5px solid #b4a2e3;
+  border-radius: 12px;
+  background: #fff;
+}
+.cron-picker legend {
+  max-width: calc(100% - 20px);
+  padding: 0 6px;
+  color: #7560a7;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.cron-picker input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(104, 125, 128, .16);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, .92);
+  color: #3f555b;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: .02em;
+}
+.cron-picker input:focus-visible {
+  outline: 2px solid rgba(126, 114, 198, .38);
+  outline-offset: 2px;
+}
+.cron-picker small {
+  display: block;
+  margin-top: 7px;
+  color: #829094;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .task-card { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .task-card-actions { grid-column: 2 / -1; }
 }
