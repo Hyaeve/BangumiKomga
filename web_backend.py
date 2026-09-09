@@ -14,6 +14,7 @@ import random
 import secrets
 import sqlite3
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = ROOT / "config"
 WEB_DIR = ROOT / "web"
 WEB_STATE = CONFIG_DIR / "web_config.json"
-DATA_DIR = Path(os.getenv("BANGUMI_KOMGA_DATA_DIR", str(ROOT / "data")))
+DATA_DIR = Path(os.getenv("BANGUMI_KOMGA_DATA_DIR", str(CONFIG_DIR)))
 # Credentials intentionally live beside the generated config so the existing
 # /app/config volume is the single persistence boundary.
 AUTH_STATE = CONFIG_DIR / "web_auth.json"
@@ -81,7 +82,59 @@ REFRESH_LOCK = threading.Lock()
 REFRESH_STATE = {"running": False, "last_result": None, "last_error": None}
 SESSIONS = set()
 PREVIEW_CACHE = {}
-PREVIEW_CACHE_TTL = 24 * 60 * 60
+PREVIEW_CACHE_FILE = DATA_DIR / "cover_collage_cache.json"
+PREVIEW_CACHE_LOCK = threading.RLock()
+PREVIEW_CACHE_LOADED = False
+
+
+def _preview_cache_disk_key(server_id, library_id):
+    return json.dumps([str(server_id or ""), str(library_id or "")], ensure_ascii=False)
+
+
+def _load_preview_cache():
+    """Load collage selections once so a process restart does not refresh them."""
+    global PREVIEW_CACHE_LOADED
+    with PREVIEW_CACHE_LOCK:
+        if PREVIEW_CACHE_LOADED:
+            return
+        PREVIEW_CACHE_LOADED = True
+        try:
+            payload = json.loads(PREVIEW_CACHE_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        for disk_key, entry in payload.items():
+            try:
+                server_id, library_id = json.loads(disk_key)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(entry, dict) or not isinstance(entry.get("items"), list):
+                continue
+            items = [item for item in entry["items"] if isinstance(item, dict) and item.get("id") and item.get("url")]
+            # Keep an empty selection too: a library with no covers should not
+            # trigger a network refresh on every page load.
+            PREVIEW_CACHE[(str(server_id), str(library_id))] = {
+                "created": float(entry.get("created") or 0),
+                "version": str(entry.get("version") or ""),
+                "items": items,
+            }
+
+
+def _persist_preview_cache():
+    with PREVIEW_CACHE_LOCK:
+        payload = {
+            _preview_cache_disk_key(server_id, library_id): entry
+            for (server_id, library_id), entry in PREVIEW_CACHE.items()
+        }
+        try:
+            PREVIEW_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temporary = PREVIEW_CACHE_FILE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(PREVIEW_CACHE_FILE)
+        except OSError:
+            # A read-only data directory should not make preview requests fail.
+            pass
 
 
 def _password_hash(password):
@@ -226,7 +279,7 @@ def save_state(data: dict) -> dict:
         {
             "id": str(item.get("id") or secrets.token_hex(6)),
             "name": str(item.get("name") or "元数据补全"),
-            "type": "metadata_completion",
+            "type": str(item.get("type") or ((item.get("functions") or ["metadata_completion"])[0])),
             "functions": [str(value) for value in (item.get("functions") or ([item.get("type")] if item.get("type") else []))],
             "fields": [str(field) for field in (item.get("fields") or [])],
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
@@ -280,6 +333,52 @@ def _start_refresh(full=False, library_ids=None):
             REFRESH_LOCK.release()
 
     threading.Thread(target=worker, name="WebRefresh", daemon=True).start()
+    return True
+
+
+def _refresh_card_collages(library_ids):
+    context = _configured_library_context()
+    targets = []
+    for library_id in library_ids or []:
+        library_key = str(library_id)
+        item = context.get(library_key)
+        if item:
+            targets.append((library_key, item["server_id"]))
+    if not targets:
+        raise ValueError("计划任务没有可刷新的媒体库")
+    for library_id, server_id in targets:
+        _preview_items(server_id, library_id, force=True)
+        _write_activity("计划任务：拼贴刷新", f"刷新媒体库 {library_id} 的封面拼贴")
+
+
+def _start_task(task):
+    """Run the selected task functions under the same single-worker lock."""
+    if not REFRESH_LOCK.acquire(blocking=False):
+        return False
+    REFRESH_STATE.update({"running": True, "last_error": None})
+    functions = {str(value) for value in (task.get("functions") or [task.get("type") or "metadata_completion"])}
+    library_ids = [str(value) for value in (task.get("card_ids") or [])]
+
+    def worker():
+        try:
+            result_labels = []
+            if "metadata_completion" in functions:
+                from core.refresh_metadata import refresh_partial_metadata
+                refresh_partial_metadata(library_ids=library_ids or None)
+                result_labels.append("incremental")
+            if "card_collage_refresh" in functions:
+                _refresh_card_collages(library_ids)
+                result_labels.append("card_collage")
+            REFRESH_STATE["last_result"] = "+".join(result_labels) or "task"
+            _write_activity("计划任务：完成", f"计划任务 {task.get('name', '未命名任务')} 执行完成")
+        except Exception as exc:  # pragma: no cover - surfaced through API
+            REFRESH_STATE["last_error"] = str(exc)
+            _write_activity("计划任务：失败", f"计划任务 {task.get('name', '未命名任务')}：{exc}", level="error")
+        finally:
+            REFRESH_STATE["running"] = False
+            REFRESH_LOCK.release()
+
+    threading.Thread(target=worker, name="WebTask", daemon=True).start()
     return True
 
 
@@ -427,25 +526,35 @@ def _write_activity(action, detail, level="info", source="web"):
 
 
 def _preview_items(server_id, library_id, force=False):
-    key = (server_id or "", library_id or "")
-    cached = PREVIEW_CACHE.get(key)
-    now = __import__("time").time()
-    if cached and not force and now - cached["created"] < PREVIEW_CACHE_TTL:
-        return cached["items"]
-    komga = _load_komga(server_id)
-    payload = komga.get_latest_series(library_id=library_id, page=0)
-    items = payload.get("content", []) if isinstance(payload, dict) else payload
-    # Komga returns this page in recent-first order. Pick a fresh subset from
-    # that latest batch so each 24-hour preview has natural visual variety.
-    latest_batch = list(items or [])[:20]
-    selected_items = random.sample(latest_batch, min(8, len(latest_batch)))
-    result = []
-    for series in selected_items:
-        series_id = series.get("id")
-        if series_id:
-            result.append({"id": series_id, "title": series.get("name") or (series.get("metadata") or {}).get("title", ""), "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}"})
-    PREVIEW_CACHE[key] = {"created": now, "items": result}
-    return result
+    key = (str(server_id or ""), str(library_id or ""))
+    with PREVIEW_CACHE_LOCK:
+        _load_preview_cache()
+        cached = PREVIEW_CACHE.get(key)
+        # Collages stay stable across page loads and container restarts. Only
+        # an explicit refresh request (right-click or a scheduled task) may
+        # replace the selected series.
+        if cached and not force:
+            return cached["items"]
+        komga = _load_komga(server_id)
+        payload = komga.get_latest_series(library_id=library_id, page=0)
+        items = payload.get("content", []) if isinstance(payload, dict) else payload
+        # Komga returns this page in recent-first order. Pick a fresh subset
+        # from that latest batch only when the user explicitly refreshes.
+        latest_batch = list(items or [])[:20]
+        selected_items = random.sample(latest_batch, min(8, len(latest_batch)))
+        version = f"{int(time.time() * 1000)}-{secrets.token_hex(3)}"
+        result = []
+        for series in selected_items:
+            series_id = series.get("id")
+            if series_id:
+                result.append({
+                    "id": series_id,
+                    "title": series.get("name") or (series.get("metadata") or {}).get("title", ""),
+                    "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}&v={version}",
+                })
+        PREVIEW_CACHE[key] = {"created": time.time(), "version": version, "items": result}
+        _persist_preview_cache()
+        return result
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -583,26 +692,47 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 komga = _load_komga(query.get("server_id", [""])[0])
                 series_id = query.get("series_id", [""])[0]
+                image_headers = {"Accept": "image/avif,image/webp,image/jpeg,image/*"}
                 response = None
-                for suffix in ("/thumbnail", "/thumbnail?selected=true"):
-                    candidate = komga.r.get(f"{komga.base_url}/series/{series_id}{suffix}", headers={"Accept": "image/jpeg,image/*"}, timeout=30)
-                    if candidate.ok and candidate.content:
-                        response = candidate
-                        break
-                if response is None:
-                    thumbs = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails", timeout=30)
-                    thumbs.raise_for_status()
-                    thumb_items = thumbs.json() if isinstance(thumbs.json(), list) else []
+                # The selected thumbnail resource keeps the source bytes at
+                # the best resolution Komga has available. The convenience
+                # /thumbnail endpoint is retained as a compatibility fallback.
+                thumbs = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails", timeout=30)
+                if thumbs.ok:
+                    try:
+                        payload = thumbs.json()
+                    except ValueError:
+                        payload = []
+                    thumb_items = payload if isinstance(payload, list) else []
                     selected = next((item for item in thumb_items if item.get("selected")), None) or (thumb_items[0] if thumb_items else None)
                     if selected and selected.get("id"):
-                        candidate = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails/{selected['id']}", headers={"Accept": "image/jpeg,image/*"}, timeout=30)
+                        candidate = komga.r.get(
+                            f"{komga.base_url}/series/{series_id}/thumbnails/{selected['id']}",
+                            headers=image_headers,
+                            timeout=30,
+                        )
                         if candidate.ok and candidate.content:
                             response = candidate
+                if response is None:
+                    for suffix in ("/thumbnail?selected=true", "/thumbnail"):
+                        candidate = komga.r.get(
+                            f"{komga.base_url}/series/{series_id}{suffix}",
+                            headers=image_headers,
+                            timeout=30,
+                        )
+                        if candidate.ok and candidate.content:
+                            response = candidate
+                            break
                 if response is None:
                     raise ValueError("Komga 未返回封面")
                 self.send_response(200)
                 self.send_header("Content-Type", response.headers.get("Content-Type", "image/jpeg"))
-                self.send_header("Cache-Control", "public, max-age=86400")
+                # URLs include a new version after a manual refresh, so the
+                # browser can safely keep the high-quality bytes for a year.
+                self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                for header in ("ETag", "Last-Modified"):
+                    if response.headers.get(header):
+                        self.send_header(header, response.headers[header])
                 self.send_header("Content-Length", str(len(response.content)))
                 self.end_headers()
                 self.wfile.write(response.content)
@@ -681,8 +811,8 @@ class Handler(BaseHTTPRequestHandler):
                 task = dict(body or {})
                 task["id"] = str(task.get("id") or f"task-{secrets.token_hex(6)}")
                 task["name"] = str(task.get("name") or "元数据补全").strip()
-                task["type"] = "metadata_completion"
-                task["functions"] = [str(value) for value in (task.get("functions") or [task["type"]])]
+                task["functions"] = [str(value) for value in (task.get("functions") or [task.get("type", "metadata_completion")])]
+                task["type"] = task["functions"][0] if task["functions"] else "metadata_completion"
                 task["fields"] = list(task.get("fields") or [])
                 task["card_ids"] = list(task.get("card_ids") or [])
                 task["enabled"] = bool(task.get("enabled", True))
@@ -705,7 +835,7 @@ class Handler(BaseHTTPRequestHandler):
                 task = next((item for item in (_read_state().get("METADATA_TASKS") or []) if item.get("id") == task_id), None)
                 if not task:
                     self._json(404, {"error": "计划任务不存在"})
-                elif _start_refresh(False, library_ids=task.get("card_ids") or None):
+                elif _start_task(task):
                     _write_activity("计划任务：执行", f"执行计划任务 {task.get('name', '元数据补全')}")
                     self._json(202, {"started": True})
                 else:
