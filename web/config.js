@@ -95,8 +95,8 @@ createApp({
     }
   },
   watch: { view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(); if (value === 'logs') this.loadLogs(); if (value === 'tasks') this.loadTasks(); this.$nextTick(() => this.decorateFieldLabels()); } },
-  async mounted() { document.addEventListener('wheel', this.handleServerWheel, { passive: false }); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.$nextTick(() => this.decorateFieldLabels()); },
-  beforeUnmount() { document.removeEventListener('wheel', this.handleServerWheel); },
+  async mounted() { document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('click', this.handleMetadataPickerClick); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.$nextTick(() => this.decorateFieldLabels()); },
+  beforeUnmount() { document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('click', this.handleMetadataPickerClick); },
   methods: {
     decorateFieldLabels() {
       this.$el.querySelectorAll('label').forEach(label => {
@@ -109,6 +109,11 @@ createApp({
         textNode.remove();
         label.insertBefore(span, label.firstChild);
       });
+    },
+    handleMetadataPickerClick(event) {
+      const picker = event.target.closest && event.target.closest('.metadata-options');
+      document.querySelectorAll('.metadata-options.open').forEach(item => { if (item !== picker) item.classList.remove('open'); });
+      if (picker) picker.classList.add('open');
     },
     async api(path, options = {}) {
       const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });

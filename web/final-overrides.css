@@ -667,6 +667,74 @@
 .settings-left,
 .settings-right { height: 100% !important; }
 .settings-left .strategy-card { flex: 1 1 auto !important; }
+
+/* Keep record and log retention controls on one balanced row. */
+.settings-left .strategy-card label:nth-of-type(4),
+.settings-left .strategy-card label:nth-of-type(5) {
+  display: inline-grid !important;
+  vertical-align: top;
+  width: calc(50% - 6px) !important;
+  margin-right: 8px !important;
+}
+.settings-left .strategy-card label:nth-of-type(5) { margin-right: 0 !important; }
+
+/* Bangumi feedback is intentionally icon-only inside the query field. */
+.bangumi-card .search-result-text { display: none !important; }
+
+/* Metadata candidates use the same outlined, tag-based dropdown pattern as
+   the task function and media-library pickers. */
+.modal-rules.metadata-options {
+  position: relative;
+  display: flex !important;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px !important;
+  min-height: 50px;
+  max-height: 50px;
+  overflow: hidden;
+  padding: 8px 10px !important;
+  border: 1.5px solid rgba(126,114,198,.58) !important;
+  border-radius: 13px !important;
+  background: rgba(255,255,255,.72) !important;
+  cursor: pointer;
+}
+.modal-rules.metadata-options::before {
+  content: "请选择元数据";
+  color: #9aa3a8;
+  font-size: 12px;
+  pointer-events: none;
+}
+.modal-rules.metadata-options:not(.open) .meta-option:not(.selected) { display: none !important; }
+.modal-rules.metadata-options:not(.open) .meta-option.selected {
+  display: inline-flex !important;
+  flex: 0 0 auto;
+  padding: 6px 11px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #eeeaf8 !important;
+  color: #786b9e !important;
+  box-shadow: none !important;
+}
+.modal-rules.metadata-options:not(.open):has(.meta-option.selected)::before { display: none; }
+.modal-rules.metadata-options.open {
+  align-content: flex-start;
+  max-height: min(42vh, 320px) !important;
+  overflow-y: auto !important;
+  cursor: default;
+}
+.modal-rules.metadata-options.open::before { display: none; }
+.modal-rules.metadata-options .meta-option {
+  flex: 0 0 auto;
+  border-radius: 9px !important;
+}
+.modal-rules.metadata-options.open .meta-option.selected {
+  border-color: #7e72c6 !important;
+  background: #e8e5fa !important;
+  color: #5b50a1 !important;
+}
+.modal-rules.metadata-options::-webkit-scrollbar { width: 5px; height: 5px; }
+.modal-rules.metadata-options::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(112,126,136,.28); }
+.modal-rules.metadata-options { scrollbar-width: thin; scrollbar-color: rgba(112,126,136,.28) transparent; }
 @media (max-width: 620px) {
   .task-form-row { grid-template-columns: 1fr; gap: 0; }
 }
