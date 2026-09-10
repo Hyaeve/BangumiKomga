@@ -9,11 +9,13 @@
 
 ## 修改文件
 
-- `main.py`：先启动 Web 服务；首次安装没有 `config.py` 时不会阻塞在交互式配置生成器，而是等待页面保存配置。
+- `main.py`：先启动 Web 服务；首次安装没有 `config.py` 时等待页面保存配置；配置变化后自动重启独立刮削子进程，使运行模式与媒体库监听范围即时生效。
+- `services/runtime_service.py`：独立运行原版刮削服务，避免重载配置时影响 Web 页面。
+- `services/library_selection.py`：无副作用的媒体库卡片过滤函数，供多 Komga 实时监听和单元测试复用。
 - `services/service_runner.py`：移除启动时无条件全量刷新；`once` 模式保持进程常驻，避免 Docker 重启策略反复扫库。
 - `core/refresh_metadata.py`：复用 `recordsRefreshed.db` 的系列/书籍记录；已成功匹配的系列仅在媒体库卡片指定字段缺失时重新匹配；`OVERWRITE_FIELDS` 控制字段级覆盖，其他字段仅补充空值。
 - `tools/summary_translation.py`：可选的 OpenAI 兼容简介翻译适配层，不影响未启用翻译的原版流程。
-- `config/config.template.py`：默认服务模式调整为 `poll`。
+- `config/config.template.py`：默认服务模式调整为 `sse` 实时监控。
 - `Dockerfile`：声明容器端口 `15600`。
 
 ## 耦合与解耦

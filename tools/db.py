@@ -81,7 +81,7 @@ def init_sqlite3():
             recorded_at TEXT NOT NULL
         )"""
     )
-    for column, definition in (("source_title", "TEXT"), ("matched_title", "TEXT"), ("match_source", "TEXT"), ("event_kind", "TEXT")):
+    for column, definition in (("source_title", "TEXT"), ("matched_title", "TEXT"), ("match_source", "TEXT"), ("event_kind", "TEXT"), ("source_path", "TEXT")):
         try:
             cursor.execute(f"ALTER TABLE scrape_records ADD COLUMN {column} {definition}")
         except sqlite3.OperationalError:
@@ -105,13 +105,13 @@ def init_sqlite3():
 
 def record_scrape_event(conn, item_type, item_title, library_id, library_name,
                         metadata_fields, status="success", source_title="",
-                        matched_title="", match_source="", event_kind="volume"):
+                        matched_title="", match_source="", event_kind="volume", source_path=""):
     """Persist a compact, user-facing history entry for a metadata update."""
     with _record_lock:
         conn.execute(
             """INSERT INTO scrape_records
-            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at,source_title,matched_title,match_source,event_kind)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at,source_title,matched_title,match_source,event_kind,source_path)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item_type,
                 item_title,
@@ -124,6 +124,7 @@ def record_scrape_event(conn, item_type, item_title, library_id, library_name,
                 matched_title or item_title or "",
                 match_source or "",
                 event_kind or "volume",
+                source_path or "",
             ),
         )
         conn.commit()

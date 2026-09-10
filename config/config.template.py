@@ -115,7 +115,7 @@ ARCHIVE_UPDATE_INTERVAL = 168
 # @@info: 可选值：'once', 'poll', 'sse'
 # @@allowed_values: once, poll, sse
 # @@version: 0.15.0
-BANGUMI_KOMGA_SERVICE_TYPE = "poll"
+BANGUMI_KOMGA_SERVICE_TYPE = "sse"
 
 # @@name: BANGUMI_KOMGA_SERVICE_POLL_INTERVAL
 # @@prompt: 轮询服务轮询间隔

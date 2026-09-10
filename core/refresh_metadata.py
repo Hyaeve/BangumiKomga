@@ -621,7 +621,7 @@ def refresh_partial_metadata(library_ids=None):
     return
 
 
-def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None, source_title="", match_source=""):
+def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None, source_title="", match_source="", source_path=""):
     # Get the metadata for the book from bangumi
     # Translation policy below decides whether the unlocked summary should be
     # translated and locked; the metadata builder must return the source text.
@@ -708,6 +708,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 matched_title=book_metadata.title or book_name,
                 match_source=match_source or "卷匹配",
                 event_kind="volume",
+                source_path=source_path,
             )
     else:
         record_book_status(
@@ -745,6 +746,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
     for book in books["content"]:
         book_id = book["id"]
         book_name = book["name"]
+        source_path = str(book.get("url") or book.get("filePath") or book.get("path") or (book.get("media") or {}).get("filePath") or "")
 
         # Get the subject id from the Correct Bgm Link (CBL) if it exists
         for link in book["metadata"]["links"]:
@@ -755,7 +757,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     cbl_subject["name"] + cbl_subject["name_cn"])
                 update_book_metadata(
                     book_id, cbl_subject, book_name, number, library_id, is_novel,
-                    book.get("metadata"), source_title, match_source,
+                    book.get("metadata"), source_title, match_source, source_path,
                 )
                 break
 
@@ -807,7 +809,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
 
                     update_book_metadata(
                         book_id, related_subjects[i], book_name, number, library_id,
-                        is_novel, book.get("metadata"), source_title, match_source,
+                        is_novel, book.get("metadata"), source_title, match_source, source_path,
                     )
 
                     break
@@ -832,4 +834,5 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     matched_title=matched_title or book_name,
                     match_source=match_source or "卷号修正",
                     event_kind="volume",
+                    source_path=source_path,
                 )

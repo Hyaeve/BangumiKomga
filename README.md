@@ -299,11 +299,11 @@ $env:NO_PROXY="localhost,127.0.0.1"
 ## 服务运行方式
 
 - `BANGUMI_KOMGA_SERVICE_TYPE`：服务运行方式，可选值：'once', 'poll', 'sse'
-  - `'once'`：以单次任务方式启动。执行后程序自动退出。推荐使用
-  - `'sse'`：以事件服务方式启动。官方 API 支持，常驻后台，持续接收新变化。推荐有频繁更新需求的使用
-  - `'poll'`：以轮询服务方式启动。常驻后台，需搭配以下配置使用
+  - `'sse'`：默认及推荐模式。常驻监听已配置媒体库的系列新增、系列变化和新增卷册事件，变化后实时执行匹配
+  - `'poll'`：定时轮询增量模式。常驻后台，需搭配以下配置使用
     - `BANGUMI_KOMGA_SERVICE_POLL_INTERVAL`：后台增量更新轮询间隔，单位秒
     - `BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL`：多少次轮询后执行一次全量刷新
+  - `'once'`：仅手动执行，不自动扫描媒体库
 
 高级配置：[SSE 事件服务搭配 Nginx](docs/Nginx.md)
 

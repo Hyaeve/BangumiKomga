@@ -33,7 +33,9 @@ OpenAI 翻译是独立的可选集成：`tools/summary_translation.py` 使用既
 
 ## 增量运行
 
-`services/service_runner.py` 不再在容器启动时无条件执行全量扫描；`poll`/`sse` 模式由各自服务执行增量流程，Web 的“全量刮削”按钮才显式触发全量任务。刷新任务由 `web_backend.py` 的互斥锁限制为同时一个，避免 `restart: always` 造成重复扫描。
+`services/service_runner.py` 不再在容器启动时无条件执行全量扫描；`sse` 为默认模式，持续监听已创建刮削卡片对应媒体库的系列新增、系列变化和新增卷册事件并触发匹配；`poll` 按设置的秒数执行增量检查；`once` 仅响应 Web 手动执行。Web 的“全量刮削”按钮才显式触发全量任务。
+
+`main.py` 通过独立的 `services/runtime_service.py` 子进程运行刮削服务。每个已配置 Komga 服务使用一个监听实例，并只加载绑定到该服务的刮削卡片；离线 Bangumi 数据更新只在第一个实例运行。Web 保存运行模式、Komga 连接或媒体库卡片后，`config/config.py` 的变化会在约 2 秒内触发子进程重载，因此新增卡片或切换到 SSE 后不需要手动重启容器。Web 服务保持在线。
 
 ## 刮削记录
 

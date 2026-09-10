@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 from api.komga_sse_api import KomgaSseClient, KomgaSseApi, RefreshEventType
+from services.library_selection import is_configured_library
 
 
 # @unittest.skip("临时跳过测试")
@@ -244,6 +245,16 @@ class TestKomgaSseApi(unittest.TestCase):
             api.register_series_update_callback(test_callback)
             api.on_event("SeriesAdded", {"libraryId": "lib1"})
             self.assertEqual(len(callback_data), 0)
+
+
+class TestSseLibrarySelection(unittest.TestCase):
+    def test_configured_card_library_is_monitored(self):
+        libraries = [{"LIBRARY": "lib1"}]
+        self.assertTrue(is_configured_library(libraries, "lib1"))
+        self.assertFalse(is_configured_library(libraries, "lib2"))
+
+    def test_empty_card_list_does_not_monitor_unconfigured_libraries(self):
+        self.assertFalse(is_configured_library([], "lib1"))
 
 
 # @unittest.skip("临时跳过测试")

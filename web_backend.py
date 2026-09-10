@@ -52,7 +52,7 @@ DEFAULTS = {
     "USE_BANGUMI_ARCHIVE": False,
     "ARCHIVE_FILES_DIR": "./archivedata/",
     "ARCHIVE_UPDATE_INTERVAL": 168,
-    "BANGUMI_KOMGA_SERVICE_TYPE": "poll",
+    "BANGUMI_KOMGA_SERVICE_TYPE": "sse",
     "BANGUMI_KOMGA_SERVICE_POLL_INTERVAL": 20,
     "BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL": 10000,
     "RECORD_RETENTION_DAYS": 30,
@@ -288,8 +288,8 @@ def save_state(data: dict) -> dict:
             "functions": [str(value) for value in (item.get("functions") or ([item.get("type")] if item.get("type") else []))],
             "fields": [str(field) for field in (item.get("fields") or [])],
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
-            "cron": str(item.get("cron") or "").strip(),
-            "schedule": str(item.get("schedule") or item.get("cron") or "").strip(),
+            "cron": str(item.get("cron") or "0 6 * * *").strip(),
+            "schedule": str(item.get("schedule") or item.get("cron") or "0 6 * * *").strip(),
             "enabled": bool(item.get("enabled", True)),
             "last_run": str(item.get("last_run") or ""),
         }
@@ -476,7 +476,7 @@ def _task_scheduler_loop():
             minute_key = now.strftime("%Y%m%d%H%M")
             for task in _read_state().get("METADATA_TASKS", []) or []:
                 task_id = str(task.get("id") or "")
-                cron = str(task.get("cron") or "").strip()
+                cron = str(task.get("cron") or "0 6 * * *").strip()
                 functions = {str(value) for value in (task.get("functions") or [task.get("type") or "metadata_completion"])}
                 if not task_id or not task.get("enabled", True) or not cron or not _cron_matches(cron, now):
                     continue
@@ -534,12 +534,13 @@ def _read_scrape_rows():
             placeholders = ",".join("?" for _ in ids)
             source_sql = ",source_title,matched_title,match_source" if {"source_title", "matched_title", "match_source"}.issubset(columns) else ",'' AS source_title,item_title AS matched_title,'' AS match_source"
             kind_sql = ",event_kind" if "event_kind" in columns else ",'volume' AS event_kind"
-            rows = conn.execute("SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at" + source_sql + kind_sql + " FROM scrape_records WHERE library_id IN (" + placeholders + ") ORDER BY id DESC", ids).fetchall()
+            path_sql = ",source_path" if "source_path" in columns else ",'' AS source_path"
+            rows = conn.execute("SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at" + source_sql + kind_sql + path_sql + " FROM scrape_records WHERE library_id IN (" + placeholders + ") ORDER BY id DESC", ids).fetchall()
         return [{
             "id": row[0], "item_type": row[1], "item_title": row[2], "library_id": row[3], "library_name": row[4],
             "server_id": context.get(str(row[3]), {}).get("server_id", ""), "server_name": context.get(str(row[3]), {}).get("server_name", "默认 Komga 服务"),
             "metadata_fields": [field for field in (row[5] or "").split(",") if field], "status": row[6], "recorded_at": row[7],
-            "source_title": row[8] or row[2], "matched_title": row[9] or row[2], "match_source": row[10] or "", "event_kind": row[11] or "volume",
+            "source_title": row[8] or row[2], "matched_title": row[9] or row[2], "match_source": row[10] or "", "event_kind": row[11] or "volume", "source_path": row[12] or "",
         } for row in rows]
     except (OSError, sqlite3.Error, IndexError):
         return []
@@ -578,7 +579,9 @@ def _group_scrape_records(rows):
             "id": row.get("id"), "item_title": row.get("item_title") or row.get("source_title") or "",
             "matched_title": row.get("matched_title") or row.get("item_title") or "", "metadata_fields": row.get("metadata_fields") or [],
             "status": row.get("status") or "success", "recorded_at": row.get("recorded_at") or "", "match_source": row.get("match_source") or "",
+            "source_path": row.get("source_path") or "",
         } for row in details]
+        primary["source_path"] = primary.get("source_path") or next((row.get("source_path") for row in rows_for_book if row.get("source_path")), "")
         primary["volume_count"] = len(primary["volumes"])
         primary["record_count"] = len(rows_for_book)
         result.append(primary)
@@ -966,7 +969,7 @@ class Handler(BaseHTTPRequestHandler):
                 task["type"] = task["functions"][0] if task["functions"] else "metadata_completion"
                 task["fields"] = list(task.get("fields") or [])
                 task["card_ids"] = list(task.get("card_ids") or [])
-                task["cron"] = str(task.get("cron") or "").strip()
+                task["cron"] = str(task.get("cron") or "0 6 * * *").strip()
                 if len(task["cron"].split()) != 5:
                     self._json(400, {"error": "计划任务必须填写五段 Cron 表达式"})
                     return
@@ -1017,6 +1020,8 @@ class Handler(BaseHTTPRequestHandler):
             content_type = "text/css; charset=utf-8"
         elif target.suffix == ".ico":
             content_type = "image/x-icon"
+        elif target.suffix == ".png":
+            content_type = "image/png"
         raw = target.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)

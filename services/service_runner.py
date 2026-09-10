@@ -2,15 +2,17 @@ from tools.log import logger
 import threading
 
 
-def run_service():
+def run_service(include_archive=True):
     """
     启动 Bangumi Komga 服务
     """
     from config.config import BANGUMI_KOMGA_SERVICE_TYPE
     service_type = BANGUMI_KOMGA_SERVICE_TYPE.lower()
 
-    from bangumi_archive.periodic_archive_checker import periodical_archive_check_service
-    archive_thread = periodical_archive_check_service()
+    archive_thread = None
+    if include_archive:
+        from bangumi_archive.periodic_archive_checker import periodical_archive_check_service
+        archive_thread = periodical_archive_check_service()
 
     # A startup scrape used to be unconditional. That made Docker `once`
     # containers exit after a full scan and made restart policies repeat it.

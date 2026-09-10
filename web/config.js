@@ -40,6 +40,10 @@ createApp({
       logStats: { total: 0, today: 0, errors: 0, actions: 0 },
       tasks: [],
       editingTask: null,
+      deletingTask: null,
+      taskDragIndex: null,
+      taskDragMoved: false,
+      liveRefreshTimer: null,
       taskTypeOptions: [
         { value: 'metadata_completion', label: '元数据补全' },
         { value: 'summary_translation', label: '简介翻译' },
@@ -61,7 +65,7 @@ createApp({
       config: {
         BANGUMI_ACCESS_TOKEN: '', OPENAI_BASE_URL: '', OPENAI_API_KEY: '', OPENAI_MODEL: '', TRANSLATE_SUMMARY_TO_ZH: false,
         KOMGA_BASE_URL: '', KOMGA_EMAIL: '', KOMGA_EMAIL_PASSWORD: '', KOMGA_API_KEY: '',
-        KOMGA_SERVERS: [], KOMGA_LIBRARY_LIST: [], BANGUMI_KOMGA_SERVICE_TYPE: 'poll', BANGUMI_KOMGA_SERVICE_POLL_INTERVAL: 20,
+        KOMGA_SERVERS: [], KOMGA_LIBRARY_LIST: [], BANGUMI_KOMGA_SERVICE_TYPE: 'sse', BANGUMI_KOMGA_SERVICE_POLL_INTERVAL: 20,
         BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL: 10000
         ,RECORD_RETENTION_DAYS: 30, LOG_RETENTION_DAYS: 30, METADATA_TASKS: []
       },
@@ -104,7 +108,7 @@ createApp({
     ,filteredRecords() {
       const keyword = this.recordSearch.trim().toLocaleLowerCase();
       if (!keyword) return this.records;
-      return this.records.filter(record => [record.item_type, record.item_title, record.source_title, record.matched_title, record.match_source, record.library_name, record.server_name, ...(record.metadata_fields || []), ...((record.volumes || []).flatMap(volume => [volume.item_title, volume.matched_title, volume.match_source, ...(volume.metadata_fields || [])]))].some(value => String(value || '').toLocaleLowerCase().includes(keyword)));
+      return this.records.filter(record => [record.item_type, record.item_title, record.source_title, record.matched_title, record.match_source, record.source_path, record.library_name, record.server_name, ...(record.metadata_fields || []), ...((record.volumes || []).flatMap(volume => [volume.item_title, volume.matched_title, volume.match_source, volume.source_path, ...(volume.metadata_fields || [])]))].some(value => String(value || '').toLocaleLowerCase().includes(keyword)));
     },
     sortedRecords() {
       return [...this.filteredRecords].sort((a, b) => {
@@ -113,9 +117,9 @@ createApp({
       });
     }
   },
-  watch: { view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(); if (value === 'logs') this.loadLogs(); if (value === 'tasks') this.loadTasks(); this.$nextTick(() => this.decorateFieldLabels()); } },
-  async mounted() { document.addEventListener('wheel', this.handleServerWheel, { passive: false }); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.$nextTick(() => this.decorateFieldLabels()); },
-  beforeUnmount() { document.removeEventListener('wheel', this.handleServerWheel); },
+  watch: { view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); } },
+  async mounted() { document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
+  beforeUnmount() { document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
   methods: {
     decorateFieldLabels() {
       document.querySelectorAll('#app label').forEach(label => {
@@ -148,6 +152,9 @@ createApp({
       const config = await this.api('/api/config'); this.applyConfig(config);
       if (this.config.KOMGA_BASE_URL && (this.komgaAuthMode === 'key' ? this.config.KOMGA_API_KEY : (this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD))) await this.loadLibraries(false);
       await Promise.all(this.cards.filter(card => card.serverId && card.id).map(card => this.loadCardPreview(card)));
+      if (this.view === 'records') await this.loadRecords(true);
+      else if (this.view === 'logs') await this.loadLogs(true);
+      else if (this.view === 'tasks') await this.loadTasks();
       this.pollStatus();
     },
     applyConfig(config) { this.config = { ...this.config, ...config, KOMGA_SERVERS: (config.KOMGA_SERVERS || []).map(server => ({ auth_mode: server.auth_mode || (server.api_key ? 'key' : 'password'), ...server })) }; this.tasks = this.config.METADATA_TASKS || []; if (!this.config.KOMGA_SERVERS.length && this.config.KOMGA_BASE_URL) this.config.KOMGA_SERVERS = [{ id: 'legacy', name: '默认 Komga', base_url: this.config.KOMGA_BASE_URL, email: this.config.KOMGA_EMAIL, password: this.config.KOMGA_EMAIL_PASSWORD, api_key: this.config.KOMGA_API_KEY, auth_mode: this.config.KOMGA_API_KEY ? 'key' : 'password' }]; this.komgaAuthMode = this.config.KOMGA_API_KEY ? 'key' : 'password'; this.cards = (this.config.KOMGA_LIBRARY_LIST || []).map((item, index) => this.makeCard(item, index)); },
@@ -201,6 +208,7 @@ createApp({
     },
     collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.isNovel, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: card.translateSummary, AI_RECOGNITION: card.aiRecognition, SORT_VOLUMES: card.sortVolumes })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); return true; } catch (error) { this.notify(error.message, true); return false; } },
+    async saveServiceMode() { await this.save(); this.$nextTick(() => this.decorateFieldLabels()); },
     async testBangumiSearch() {
       const query = this.bangumiTestQuery.trim();
       if (!query) { this.bangumiTestMessage = '请输入漫画或小说名称'; this.bangumiTestError = true; return; }
@@ -223,14 +231,19 @@ createApp({
     async backupConfig() { try { const data = await this.api('/api/config/backup'); const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `bangumikomga-config-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); this.notify('配置备份已下载'); } catch (error) { this.notify(error.message, true); } },
     async restoreConfig(event) { const file = event.target.files && event.target.files[0]; event.target.value = ''; if (!file || !window.confirm('还原配置会覆盖当前系统设置，是否继续？')) return; try { const payload = JSON.parse(await file.text()); const restored = await this.api('/api/config/restore', { method: 'POST', body: JSON.stringify({ config: payload.config || payload }) }); this.applyConfig(restored); this.notify('配置已还原'); if (this.config.KOMGA_SERVERS.length) await this.loadLibraries(false); } catch (error) { this.notify(`还原失败：${error.message}`, true); } },
     async refresh(full) { try { await this.api('/api/refresh', { method: 'POST', body: JSON.stringify({ full }) }); this.notify(full ? '全量刮削已开始' : '增量刮削已开始'); } catch (error) { this.notify(error.message, true); } },
-    async loadRecords() { try { const [records, stats] = await Promise.all([this.api('/api/scrape-records?limit=300'), this.api('/api/scrape-records/stats')]); this.records = records.items || []; this.recordStats = stats; } catch (error) { this.notify(error.message, true); } },
-    async loadLogs() { try { const [logs, stats] = await Promise.all([this.api(`/api/runtime-logs?limit=200&q=${encodeURIComponent(this.logSearch)}`), this.api('/api/runtime-logs/stats')]); this.logs = logs.items || []; this.logStats = stats; } catch (error) { this.notify(error.message, true); } },
+    async loadRecords(showError = false) { try { const [records, stats] = await Promise.all([this.api('/api/scrape-records?limit=300'), this.api('/api/scrape-records/stats')]); this.records = records.items || []; this.recordStats = stats; } catch (error) { if (showError) this.notify(error.message, true); } },
+    async loadLogs(showError = false) { try { const [logs, stats] = await Promise.all([this.api(`/api/runtime-logs?limit=200&q=${encodeURIComponent(this.logSearch)}`), this.api('/api/runtime-logs/stats')]); this.logs = logs.items || []; this.logStats = stats; } catch (error) { if (showError) this.notify(error.message, true); } },
+    startLiveRefresh() { clearInterval(this.liveRefreshTimer); this.liveRefreshTimer = null; if (!this.authenticated || document.hidden || !['records', 'logs'].includes(this.view)) return; this.liveRefreshTimer = setInterval(() => { if (this.view === 'records') this.loadRecords(); else if (this.view === 'logs') this.loadLogs(); }, 4000); },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
-    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], card_ids: [], cron: '', enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
-    editTask(task) { this.editingTask = { ...task, cron: task.cron || '', functions: [...(task.functions || (task.type ? [task.type] : []))], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])] }; this.$nextTick(() => this.decorateFieldLabels()); },
+    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], card_ids: [], cron: '0 6 * * *', enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
+    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : []))], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])] }; this.$nextTick(() => this.decorateFieldLabels()); },
     validCronExpression(value) { const parts = String(value || '').trim().split(/\s+/); return parts.length === 5 && parts.every(part => /^[0-9A-Za-z*?,/\-]+$/.test(part)); },
     async saveTask() { if (!this.editingTask) return; if (!this.editingTask.name.trim()) { this.notify('请填写任务名称', true); return; } if (!this.editingTask.functions.length) { this.notify('请至少选择一个任务功能', true); return; } if (this.editingTask.functions.includes('metadata_completion') && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (!this.validCronExpression(this.editingTask.cron)) { this.notify('请输入有效的五段 Cron 表达式', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
-    async deleteTask(task) { try { const data = await this.api('/api/tasks/delete', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.tasks = data.items || []; this.notify('计划任务已删除'); } catch (error) { this.notify(error.message, true); } },
+    requestDeleteTask(task) { this.deletingTask = task; },
+    async deleteTask() { const task = this.deletingTask; if (!task) return; try { const data = await this.api('/api/tasks/delete', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.deletingTask = null; this.notify('计划任务已删除'); } catch (error) { this.notify(error.message, true); } },
+    async toggleTask(task) { task.enabled = !task.enabled; try { this.config.METADATA_TASKS = this.tasks; this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify(task.enabled ? '计划任务已启用' : '计划任务已停用'); } catch (error) { task.enabled = !task.enabled; this.notify(error.message, true); } },
+    taskDragStart(index, event) { this.taskDragIndex = index; this.taskDragMoved = false; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); },
+    async taskDrop(index) { if (this.taskDragIndex === null || this.taskDragIndex === index) return; const [task] = this.tasks.splice(this.taskDragIndex, 1); this.tasks.splice(index, 0, task); this.taskDragMoved = true; this.taskDragIndex = null; this.config.METADATA_TASKS = this.tasks; await this.save(); },
     async runTask(task) { try { await this.api('/api/tasks/run', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.notify('计划任务已开始执行'); } catch (error) { this.notify(error.message, true); } },
     handleServerWheel(event) { const grid = event.target && event.target.closest ? event.target.closest('.server-card-grid') : null; if (!grid || grid.scrollWidth <= grid.clientWidth) return; event.preventDefault(); grid.scrollLeft += Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX; },
     toggleRecordSort() { this.recordSortNewest = !this.recordSortNewest; },

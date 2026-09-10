@@ -34,6 +34,9 @@ class PreviewCacheTests(unittest.TestCase):
                 stable = web_backend._preview_items("server", "library")
                 refreshed = web_backend._preview_items("server", "library", force=True)
                 self.assertEqual(fake.calls, 2)
+                self.assertEqual(len(first), 8)
+                self.assertEqual(len({item["preview_id"] for item in first}), 8)
+                self.assertEqual(len({item["id"] for item in first}), 4)
                 self.assertEqual(first, stable)
                 self.assertNotEqual(stable, refreshed)
 
@@ -67,6 +70,50 @@ class CollageTaskTests(unittest.TestCase):
         }), patch.object(web_backend, "_preview_items", side_effect=lambda server, library, force=False: refreshed.append((server, library, force))), patch.object(web_backend, "_write_activity"):
             web_backend._refresh_card_collages(["library-a", "library-b"])
         self.assertEqual(refreshed, [("server-a", "library-a", True), ("server-b", "library-b", True)])
+
+
+class ScrapeRecordGroupingTests(unittest.TestCase):
+    def test_series_and_volumes_are_grouped_with_source_paths(self):
+        rows = [
+            {
+                "id": 13, "item_type": "漫画", "item_title": "第一卷",
+                "library_id": "library-a", "library_name": "国漫",
+                "server_id": "server-a", "server_name": "家庭 Komga",
+                "metadata_fields": ["number"], "status": "success",
+                "recorded_at": "2026-09-10T13:14:13", "source_title": "万古之王",
+                "matched_title": "万古之王", "match_source": "书名号",
+                "event_kind": "volume", "source_path": "/books/volume-1.cbz",
+            },
+            {
+                "id": 12, "item_type": "漫画", "item_title": "万古之王",
+                "library_id": "library-a", "library_name": "国漫",
+                "server_id": "server-a", "server_name": "家庭 Komga",
+                "metadata_fields": ["title", "summary"], "status": "success",
+                "recorded_at": "2026-09-10T13:13:00", "source_title": "万古之王",
+                "matched_title": "万古之王", "match_source": "书名号",
+                "event_kind": "series", "source_path": "",
+            },
+            {
+                "id": 11, "item_type": "漫画", "item_title": "第二卷",
+                "library_id": "library-a", "library_name": "国漫",
+                "server_id": "server-a", "server_name": "家庭 Komga",
+                "metadata_fields": ["numberSort"], "status": "success",
+                "recorded_at": "2026-09-10T13:12:00", "source_title": "万古之王",
+                "matched_title": "万古之王", "match_source": "书名号",
+                "event_kind": "volume", "source_path": "/books/volume-2.cbz",
+            },
+        ]
+
+        grouped = web_backend._group_scrape_records(rows)
+
+        self.assertEqual(len(grouped), 1)
+        self.assertEqual(grouped[0]["volume_count"], 2)
+        self.assertEqual(grouped[0]["source_path"], "/books/volume-1.cbz")
+        self.assertEqual(grouped[0]["metadata_fields"], ["number", "title", "summary", "numberSort"])
+        self.assertEqual(
+            [volume["source_path"] for volume in grouped[0]["volumes"]],
+            ["/books/volume-1.cbz", "/books/volume-2.cbz"],
+        )
 
 
 if __name__ == "__main__":
