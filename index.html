@@ -19,7 +19,7 @@
       <div v-if="loginBackground.length" class="login-backdrop" aria-hidden="true">
         <div class="login-backdrop-grid">
           <div v-for="(column,index) in loginBackgroundColumns" :key="index" class="login-cover-column">
-            <img v-for="(cover,coverIndex) in column" :key="coverIndex" :src="cover.url" alt="" @error="$event.target.style.visibility='hidden'">
+            <img v-for="(cover,coverIndex) in column" :key="`${coverIndex}-${cover.url}`" :src="cover.url" alt="" @load="$event.target.style.visibility='visible'" @error="$event.target.style.visibility='hidden'">
           </div>
         </div>
       </div>
@@ -738,7 +738,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260910-11">
+<script src="config.js?v=20260910-15">
 </script>
 </body>
 </html>
