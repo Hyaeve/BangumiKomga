@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260910-14">
+<link rel="stylesheet" href="final-overrides.css?v=20260910-16">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -560,6 +560,7 @@
 </div>
 <div v-if="!config.KOMGA_SERVERS.length" class="empty-inline">请添加至少一个 Komga 服务</div>
 </section>
+              <div class="settings-network-row">
               <section class="setting-card ai-card">
 <div class="ai-card-head">
 <h3>AI 配置</h3>
@@ -580,6 +581,17 @@
 <label>模型<input v-model.trim="config.OPENAI_MODEL" placeholder="例如：gpt-4o-mini">
 </label>
 </section>
+              <section class="setting-card proxy-card">
+<h3>代理配置</h3>
+<label>代理地址<input v-model.trim="config.OUTBOUND_PROXY_URL" placeholder="http://127.0.0.1:7890" autocomplete="off" @input="proxyMessage=''">
+</label>
+<div class="proxy-actions">
+<button class="secondary" :disabled="proxyTesting || proxySaving" @click="testProxy">{{proxyTesting?'测试中…':'测试'}}</button>
+<button class="primary" :disabled="proxySaving || proxyTesting" @click="saveProxy">{{proxySaving?'保存中…':'保存'}}</button>
+</div>
+<p v-if="proxyMessage" class="proxy-feedback" :class="{error:proxyError}" role="status">{{proxyMessage}}</p>
+</section>
+              </div>
             </div>
           </div>
         </section>
@@ -738,7 +750,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260910-15">
+<script src="config.js?v=20260910-16">
 </script>
 </body>
 </html>

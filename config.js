@@ -8,6 +8,10 @@ createApp({
       loginForm: { username: '', password: '' },
       showLoginPassword: false,
       loginBackground: [],
+      proxyTesting: false,
+      proxySaving: false,
+      proxyMessage: '',
+      proxyError: false,
       loginBackgroundTimer: null,
       credentialForm: { username: '', password: '' },
       showCredentialModal: false,
@@ -83,7 +87,7 @@ createApp({
       cardHues: [105, 270, 195, 35, 320, 155],
       status: { running: false, last_result: null, last_error: null },
       config: {
-        BANGUMI_ACCESS_TOKEN: '', OPENAI_BASE_URL: '', OPENAI_API_KEY: '', OPENAI_MODEL: '', TRANSLATE_SUMMARY_TO_ZH: false,
+        BANGUMI_ACCESS_TOKEN: '', OPENAI_BASE_URL: '', OPENAI_API_KEY: '', OPENAI_MODEL: '', OUTBOUND_PROXY_URL: '', TRANSLATE_SUMMARY_TO_ZH: false,
         KOMGA_BASE_URL: '', KOMGA_EMAIL: '', KOMGA_EMAIL_PASSWORD: '', KOMGA_API_KEY: '',
         KOMGA_SERVERS: [], KOMGA_LIBRARY_LIST: [], BANGUMI_KOMGA_SERVICE_TYPE: 'sse', BANGUMI_KOMGA_SERVICE_POLL_INTERVAL: 20,
         BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL: 10000
@@ -173,7 +177,7 @@ createApp({
       this.editingTask.include_locked = false;
       this.editingTask.lock_completed = false;
     },
-    view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
+    view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => { window.scrollTo({top:0,behavior:'instant'}); this.decorateFieldLabels(); }); },
     bangumiTestQuery() { this.resetBangumiSearch(); }
   },
   async mounted() { document.addEventListener('keydown', this.closeTopModal); document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
@@ -289,6 +293,19 @@ createApp({
     },
     collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.mediaType === 'book', MEDIA_TYPE: card.mediaType, SCRAPE_ENABLED: card.scrapeEnabled, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: false, AI_RECOGNITION: card.aiRecognition, SORT_VOLUMES: card.sortVolumes, LOGIN_BACKGROUND: card.loginBackground })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     stepRetention(key, step) { this.config[key] = Math.max(1, Math.min(365, Number(this.config[key] || 30) + step)); this.save(); },
+    async testProxy() {
+      const url = this.config.OUTBOUND_PROXY_URL;
+      this.proxyTesting = true; this.proxyMessage = '';
+      try { const result = await this.api('/api/proxy/test', {method:'POST',body:JSON.stringify({url})}); if (url === this.config.OUTBOUND_PROXY_URL) { this.proxyError = false; this.proxyMessage = result.message; } }
+      catch (error) { if (url === this.config.OUTBOUND_PROXY_URL) { this.proxyError = true; this.proxyMessage = error.message; } }
+      finally { this.proxyTesting = false; }
+    },
+    async saveProxy() {
+      this.proxySaving = true; this.proxyMessage = '';
+      try { await this.api('/api/proxy', {method:'POST',body:JSON.stringify({url:this.config.OUTBOUND_PROXY_URL})}); this.proxyError = false; this.proxyMessage = '代理配置已保存'; }
+      catch (error) { this.proxyError = true; this.proxyMessage = error.message; }
+      finally { this.proxySaving = false; }
+    },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); return true; } catch (error) { this.notify(error.message, true); return false; } },
     async saveServiceMode() { await this.save(); this.$nextTick(() => this.decorateFieldLabels()); },
     async testBangumiSearch() {
