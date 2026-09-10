@@ -6,14 +6,17 @@ from tools.title_rules import explicit_title
 from tools.title_recognition import recognize_title
 from tools.komga_path import item_path
 from tools.execution_outcomes import record_outcome
+from tools.task_lock_policy import locked
 
 FIELDS = {"title", "summary", "publisher", "authors"}
 OPERATIONS = {"simplify", "extract_title", "include_locked"}
 
 
-def correct_library(komga, library_id, settings, on_update, on_log, fields, operations, only_novel=False):
+def correct_library(komga, library_id, settings, on_update, on_log, fields, operations, only_novel=False,
+                    include_locked=False, lock_completed=False):
     selected = list(dict.fromkeys(fields))
     options = set(operations)
+    include_locked = include_locked or "include_locked" in options
     if not selected or not set(selected) <= FIELDS:
         raise ValueError("请选择有效的修正元数据")
     if not options <= OPERATIONS or not options & {"simplify", "extract_title"}:
@@ -43,8 +46,7 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
             if title:
                 result = title
             else:
-                on_log("标题提取失败或未配置 AI，保留当前标题", "warning")
-                return value
+                raise ValueError("标题提取失败或未配置 AI，保留当前标题且不锁定")
         if "simplify" in options:
             result = convert(result, "zh-cn")
         return result
@@ -54,12 +56,16 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
         payload = {}
         for field in selected:
             value = original.get(field)
-            if not value or (original.get(field + "Lock") and "include_locked" not in options):
+            if not value or (locked(original, field) and not include_locked):
+                continue
+            if "simplify" not in options and field != "title":
                 continue
             try:
                 result = corrected(value, field)
                 if result != value:
                     payload[field] = result
+                if lock_completed and not locked(original, field):
+                    payload[field + "Lock"] = True
             except ValueError as exc:
                 record_outcome(kind, item["id"], failed=True)
                 counts["failed"] += 1
@@ -69,9 +75,9 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
             return
         latest = (komga.get_specific_series if kind == "series" else komga.get_specific_book)(item["id"])
         current = latest.get("metadata") or {}
-        payload = {field: value for field, value in payload.items()
-                   if current.get(field) == original.get(field)
-                   and (not current.get(field + "Lock") or "include_locked" in options)}
+        payload = {key: value for key, value in payload.items()
+                   if current.get(key[:-4] if key.endswith("Lock") else key) == original.get(key[:-4] if key.endswith("Lock") else key)
+                   and (not locked(current, key[:-4] if key.endswith("Lock") else key) or include_locked)}
         if not payload:
             counts["skipped"] += 1
             return

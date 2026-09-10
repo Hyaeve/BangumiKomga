@@ -120,7 +120,8 @@ def search_metadata(name, fields, settings, only_novel=False, context="", on_log
         return {}
 
 
-def complete_unmatched(komga, series, fields, settings, only_novel, on_update, on_log):
+def complete_unmatched(komga, series, fields, settings, only_novel, on_update, on_log,
+                       include_locked=False, lock_completed=False):
     """Fill only selected empty/unlocked fields after normal matching failed."""
     if "thumbnail" in fields:
         on_log("AI补全不会生成或下载封面；未匹配到封面时保留原图", "warning")
@@ -129,7 +130,7 @@ def complete_unmatched(komga, series, fields, settings, only_novel, on_update, o
         metadata = item.get("metadata") or {}
         missing = [field for field in fields if field in allowed
                    and metadata.get(field) in (None, "", [], {})
-                   and not metadata.get(field + "Lock")]
+                   and (include_locked or not metadata.get(field + "Lock"))]
         if not missing:
             return
         candidates = search_metadata(item.get("name") or "", missing, settings, only_novel,
@@ -138,8 +139,9 @@ def complete_unmatched(komga, series, fields, settings, only_novel, on_update, o
             return
         detail = (komga.get_specific_series if kind == "series" else komga.get_specific_book)(item["id"])
         current = detail.get("metadata") or {}
-        payload = {field: value for field, value in candidates.items()
-                   if current.get(field) in (None, "", [], {}) and not current.get(field + "Lock")}
+        from tools.task_lock_policy import completion_payload
+        eligible = [field for field in missing if current.get(field) == metadata.get(field)]
+        payload = completion_payload(current, candidates, eligible, include_locked, lock_completed)
         if payload and (komga.update_series_metadata if kind == "series" else komga.update_book_metadata)(item["id"], payload):
             from tools.komga_path import item_path
             on_update({**item, "url": item_path(detail) or item_path(item)}, kind, list(payload))

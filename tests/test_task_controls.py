@@ -10,6 +10,7 @@ from unittest.mock import patch
 import web_backend as backend
 from tools.db import init_sqlite3, record_scrape_event
 from tools.execution_outcomes import record_outcome
+from services.task_execution import TaskExecutor
 
 
 def wait_until(predicate):
@@ -21,14 +22,20 @@ def wait_until(predicate):
 
 
 class TaskControlTests(unittest.TestCase):
+    def setUp(self):
+        self.executor = TaskExecutor(Path(__file__).resolve().parents[1])
+        self.patcher = patch.object(backend, "TASK_EXECUTOR", self.executor)
+        self.patcher.start()
+
     def tearDown(self):
-        backend.EXECUTION_STOP.clear()
-        backend.REFRESH_STATE.update(running=False, task_id=None, stopping=False)
+        for key in self.executor.snapshot()["tasks"]:
+            self.executor.stop(key)
+        wait_until(lambda: not self.executor.snapshot()["running"])
+        self.patcher.stop()
 
     def test_real_worker_terminates_without_followup_write(self):
         with tempfile.TemporaryDirectory() as folder:
             started, finished = Path(folder) / "started", Path(folder) / "finished"
-            backend._begin_execution("task-a")
             errors = []
 
             def work():
@@ -37,20 +44,17 @@ class TaskControlTests(unittest.TestCase):
                         "started": str(started), "finished": str(finished)})
                 except backend.TaskStopped:
                     errors.append("stopped")
-            thread = threading.Thread(target=work)
-            thread.start()
+            self.executor.submit("task-a", ["library"], work)
             try:
                 wait_until(started.exists)
                 self.assertFalse(backend._stop_task("other-task"))
                 self.assertTrue(backend._stop_task("task-a"))
-                thread.join(5)
-                self.assertFalse(thread.is_alive())
+                wait_until(lambda: not self.executor.snapshot()["running"])
                 self.assertEqual(errors, ["stopped"])
-                self.assertIsNone(backend.EXECUTION_PROCESS)
                 self.assertFalse(finished.exists())
             finally:
                 backend._stop_task("task-a")
-                thread.join(5)
+                wait_until(lambda: not self.executor.snapshot()["running"])
 
     def test_all_task_types_publish_identity_and_release_lock_after_stop(self):
         for function in ("metadata_completion", "summary_translation", "metadata_correction", "card_collage_refresh"):
@@ -59,7 +63,7 @@ class TaskControlTests(unittest.TestCase):
 
                 def run(*args, **kwargs):
                     entered.set()
-                    self.assertTrue(backend.EXECUTION_STOP.wait(5))
+                    self.assertTrue(self.executor.local.job["stop"].wait(5))
                     raise backend.TaskStopped()
 
                 with patch.object(backend, "_run_managed", side_effect=run), \
@@ -69,15 +73,46 @@ class TaskControlTests(unittest.TestCase):
                     task = dict(id=function, name=function, functions=[function], fields=["summary"], card_ids=["s::l"])
                     self.assertTrue(backend._start_task(task))
                     self.assertTrue(entered.wait(5))
-                    self.assertEqual(backend.REFRESH_STATE["task_id"], function)
+                    self.assertEqual(self.executor.snapshot()["tasks"][function]["state"], "running")
                     self.assertFalse(backend._start_task(task))
                     self.assertTrue(backend._stop_task(function))
-                    wait_until(lambda: not backend.REFRESH_STATE["running"])
-                    self.assertEqual(backend.REFRESH_STATE["last_result"], "stopped")
-                    self.assertFalse(backend.REFRESH_STATE["stopping"])
-                    self.assertIsNone(backend.REFRESH_STATE["task_id"])
-                    self.assertTrue(backend.REFRESH_LOCK.acquire(timeout=2))
-                    backend.REFRESH_LOCK.release()
+                    wait_until(lambda: not self.executor.snapshot()["running"])
+                    self.assertEqual(self.executor.snapshot()["last_result"], "stopped")
+
+    def test_different_libraries_run_concurrently_and_overlap_waits_fifo(self):
+        release = threading.Event()
+        first = threading.Event()
+        separate = threading.Event()
+        order = []
+        def work_first():
+            first.set()
+            release.wait(5)
+            order.append("first")
+        self.executor.submit("first", ["a"], work_first)
+        self.assertTrue(first.wait(3))
+        self.executor.submit("second", ["a", "b"], lambda: order.append("second"))
+        self.executor.submit("third", ["b"], lambda: order.append("third"))
+        self.executor.submit("separate", ["c"], separate.set)
+        self.assertTrue(separate.wait(3))
+        self.assertEqual(self.executor.snapshot()["tasks"]["second"]["state"], "queued")
+        self.assertEqual(self.executor.snapshot()["tasks"]["third"]["state"], "queued")
+        self.assertEqual(order, [])
+        release.set()
+        wait_until(lambda: not self.executor.snapshot()["running"])
+        self.assertEqual(order, ["first", "second", "third"])
+
+    def test_queued_task_can_be_cancelled_without_executing(self):
+        entered = threading.Event()
+        called = []
+        def blocking():
+            entered.set()
+            self.executor.local.job["stop"].wait(5)
+        self.executor.submit("blocking", ["a"], blocking)
+        self.assertTrue(entered.wait(3))
+        self.executor.submit("queued", ["a"], lambda: called.append(True))
+        self.assertTrue(self.executor.stop("queued"))
+        wait_until(lambda: "queued" not in self.executor.snapshot()["tasks"])
+        self.assertEqual(called, [])
 
 
 class PagedHistoryTests(unittest.TestCase):
@@ -149,10 +184,14 @@ class PagedHistoryTests(unittest.TestCase):
             record_outcome("series", "b", conn=self.conn)
         with patch.dict(os.environ, {"BANGUMI_EXECUTION_ID": "scheduled-1", "BANGUMI_EXECUTION_SERVER": "s"}):
             record_outcome("series", "a", conn=self.conn)
+        from tools.db import record_activity_log
+        record_activity_log(self.conn, "计划任务：AI翻译", "field failed", "error")
+        record_activity_log(self.conn, "手动刮削：失败", "request failed", "error")
+        record_activity_log(self.conn, "配置保存", "not a task failure", "error")
         stats = backend._runtime_log_stats()
-        self.assertEqual(stats["total"], 230)
+        self.assertEqual(stats["total"], 233)
         self.assertEqual(stats["success"], 2)
-        self.assertEqual(stats["failed"], 1)
+        self.assertEqual(stats["failed"], 2)
 
 
 if __name__ == "__main__":

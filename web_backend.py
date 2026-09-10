@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -15,8 +16,6 @@ import secrets
 import sqlite3
 import threading
 import time
-import subprocess
-import sys
 from contextlib import closing
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +23,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from tools.komga_path import item_path
 from services.media_policy import media_type, scrape_enabled
+from services.task_execution import TaskExecutor, TaskStopped
+from tools.task_lock_policy import task_lock_options
 
 
 ROOT = Path(__file__).resolve().parent
@@ -85,64 +86,16 @@ DEFAULTS = {
 }
 
 STATE_LOCK = threading.RLock()
-REFRESH_LOCK = threading.Lock()
-REFRESH_STATE = {"running": False, "last_result": None, "last_error": None}
-EXECUTION_GUARD = threading.RLock()
-EXECUTION_STOP = threading.Event()
-EXECUTION_PROCESS = None
-
-
-class TaskStopped(Exception):
-    pass
+TASK_EXECUTOR = TaskExecutor(ROOT)
+LOGIN_BACKGROUND_SECRET = secrets.token_bytes(32)
 
 
 def _run_managed(module, payload):
-    """Keep one killable worker process; never hold the guard while waiting."""
-    global EXECUTION_PROCESS
-    with EXECUTION_GUARD:
-        if EXECUTION_STOP.is_set():
-            raise TaskStopped()
-        env = dict(os.environ, BANGUMI_EXECUTION_ID=REFRESH_STATE.get("execution_id", ""),
-                   BANGUMI_EXECUTION_SERVER=str(payload.get("server_id") or ""))
-        process = subprocess.Popen(
-            [sys.executable, "-m", module], stdin=subprocess.PIPE,
-            text=True, encoding="utf-8", cwd=ROOT, env=env,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-        EXECUTION_PROCESS = process
-    try:
-        try:
-            process.communicate(json.dumps(payload))
-        except (BrokenPipeError, OSError):
-            if EXECUTION_STOP.is_set():
-                process.wait()
-                raise TaskStopped()
-            raise
-        if EXECUTION_STOP.is_set():
-            raise TaskStopped()
-        if process.returncode:
-            raise subprocess.CalledProcessError(process.returncode, process.args)
-    finally:
-        with EXECUTION_GUARD:
-            if EXECUTION_PROCESS is process:
-                EXECUTION_PROCESS = None
+    TASK_EXECUTOR.run_process(module, payload)
 
 
 def _stop_task(task_id):
-    with EXECUTION_GUARD:
-        if not REFRESH_STATE.get("running") or REFRESH_STATE.get("task_id") != task_id:
-            return False
-        EXECUTION_STOP.set()
-        REFRESH_STATE["stopping"] = True
-        if EXECUTION_PROCESS is not None and EXECUTION_PROCESS.poll() is None:
-            EXECUTION_PROCESS.terminate()
-    return True
-
-
-def _begin_execution(task_id=None):
-    with EXECUTION_GUARD:
-        EXECUTION_STOP.clear()
-        REFRESH_STATE.update(running=True, stopping=False, task_id=task_id,
-                             execution_id=secrets.token_hex(12), last_error=None)
+    return TASK_EXECUTOR.stop(task_id)
 SESSIONS = set()
 PREVIEW_CACHE = {}
 PREVIEW_CACHE_FILE = DATA_DIR / "cover_collage_cache.json"
@@ -188,17 +141,22 @@ def _load_preview_cache():
             }
 
 
-def _persist_preview_cache():
+def _persist_preview_cache(changed_key):
+    from tools.file_lock import exclusive_file_lock
     with PREVIEW_CACHE_LOCK:
-        payload = {
-            _preview_cache_disk_key(server_id, library_id): entry
-            for (server_id, library_id), entry in PREVIEW_CACHE.items()
-        }
         try:
             PREVIEW_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            temporary = PREVIEW_CACHE_FILE.with_suffix(".tmp")
-            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-            temporary.replace(PREVIEW_CACHE_FILE)
+            with exclusive_file_lock(PREVIEW_CACHE_FILE.with_suffix(".lock")):
+                try:
+                    payload = json.loads(PREVIEW_CACHE_FILE.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    payload = {}
+                if not isinstance(payload, dict):
+                    payload = {}
+                payload[_preview_cache_disk_key(*changed_key)] = PREVIEW_CACHE[changed_key]
+                temporary = PREVIEW_CACHE_FILE.with_suffix(".tmp")
+                temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+                temporary.replace(PREVIEW_CACHE_FILE)
         except OSError:
             # A read-only data directory should not make preview requests fail.
             pass
@@ -332,6 +290,7 @@ def save_state(data: dict) -> dict:
             "IS_NOVEL_ONLY": media_type(item) == "book",
             "MEDIA_TYPE": media_type(item),
             "SCRAPE_ENABLED": scrape_enabled(item),
+            "LOGIN_BACKGROUND": bool(item.get("LOGIN_BACKGROUND", False)),
             "REQUIRED_FIELDS": list(item.get("REQUIRED_FIELDS", []) or []),
             "OVERWRITE_FIELDS": list(item.get("OVERWRITE_FIELDS", []) or []),
             "TRANSLATE_SUMMARY_TO_ZH": False,
@@ -352,8 +311,9 @@ def save_state(data: dict) -> dict:
             "type": str(item.get("type") or ((item.get("functions") or ["metadata_completion"])[0])),
             "functions": [str(value) for value in (item.get("functions") or ([item.get("type")] if item.get("type") else []))],
             "fields": [str(field) for field in (item.get("fields") or [])],
-            "operations": [str(value) for value in (item.get("operations") or [])],
+            "operations": [str(value) for value in (item.get("operations") or []) if value != "include_locked"],
             "ai_completion": bool(item.get("ai_completion", False)),
+            **task_lock_options(item),
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
             "cron": str(item.get("cron") or "0 6 * * *").strip(),
             "schedule": str(item.get("schedule") or item.get("cron") or "0 6 * * *").strip(),
@@ -406,23 +366,17 @@ def _start_refresh(full=False, library_ids=None, target_id=None):
         targets = [key for key in targets if context[key]["library_id"] in library_ids]
     if not targets or any(key not in context for key in targets):
         raise ValueError("所选媒体卡片不存在")
-    if not REFRESH_LOCK.acquire(blocking=False):
-        return False
-    _begin_execution()
-
     def worker():
         try:
             _manual_refresh_targets(targets, full)
-            REFRESH_STATE["last_result"] = "full" if full else "incremental"
+            return "full" if full else "incremental"
+        except TaskStopped:
+            _write_activity("手动刮削：停止", "手动刮削已停止")
+            raise
         except Exception as exc:  # pragma: no cover - surfaced through API
-            REFRESH_STATE["last_error"] = str(exc)
             _write_activity("手动刮削：失败", str(exc), level="error")
-        finally:
-            REFRESH_STATE["running"] = False
-            REFRESH_LOCK.release()
-
-    threading.Thread(target=worker, name="WebRefresh", daemon=True).start()
-    return True
+            raise
+    return TASK_EXECUTOR.submit("manual:" + "|".join(sorted(targets)), targets, worker)
 
 
 def _refresh_card_collages(library_ids):
@@ -459,13 +413,9 @@ def _task_library_ids(target_ids):
 
 
 def _start_task(task):
-    """Run the selected task functions under the same single-worker lock."""
-    if not REFRESH_LOCK.acquire(blocking=False):
-        return False
-    _begin_execution(str(task.get("id") or ""))
+    """Different libraries run concurrently; overlapping targets queue FIFO."""
     functions = {str(value) for value in (task.get("functions") or [task.get("type") or "metadata_completion"])}
     target_ids = [str(value) for value in (task.get("card_ids") or [])]
-    library_ids = _task_library_ids(target_ids)
 
     def worker():
         try:
@@ -486,23 +436,18 @@ def _start_task(task):
                     PREVIEW_CACHE.clear()
                     PREVIEW_CACHE_LOADED = False
                 result_labels.append("card_collage")
-            if EXECUTION_STOP.is_set():
-                raise TaskStopped()
-            REFRESH_STATE["last_result"] = "+".join(result_labels) or "task"
             _write_activity("计划任务：完成", f"计划任务 {task.get('name', '未命名任务')} 执行完成")
+            return "+".join(result_labels) or "task"
         except TaskStopped:
-            REFRESH_STATE["last_result"] = "stopped"
             _write_activity("计划任务：停止", f"计划任务 {task.get('name', '未命名任务')} 已停止")
+            raise
         except Exception as exc:  # pragma: no cover - surfaced through API
-            REFRESH_STATE["last_error"] = str(exc)
             _write_activity("计划任务：失败", f"计划任务 {task.get('name', '未命名任务')}：{exc}", level="error")
-        finally:
-            with EXECUTION_GUARD:
-                REFRESH_STATE.update(running=False, stopping=False, task_id=None)
-            REFRESH_LOCK.release()
-
-    threading.Thread(target=worker, name="WebTask", daemon=True).start()
-    return True
+            raise
+    context = _configured_library_context()
+    targets = [f"{context[key]['server_id']}::{context[key]['library_id']}"
+               if key in context else key for key in target_ids]
+    return TASK_EXECUTOR.submit(str(task["id"]), targets, worker)
 
 
 def _complete_task_libraries(target_ids, task):
@@ -519,12 +464,13 @@ def _complete_task_libraries(target_ids, task):
         raise ValueError("请选择应用媒体库")
     for server_id, library_ids in grouped.items():
         request = {"server_id": server_id, "library_ids": library_ids,
-                   "fields": task["fields"], "ai_completion": bool(task.get("ai_completion"))}
+                   "fields": task["fields"], "ai_completion": bool(task.get("ai_completion")),
+                   **task_lock_options(task)}
         # Isolate imported scraper configuration between Komga services.
         _run_managed("services.metadata_task", request)
 
 
-def _translate_task_libraries(target_ids, fields=None, correction=None):
+def _translate_task_libraries(target_ids, fields=None, correction=None, include_locked=False, lock_completed=None):
     from tools.translation_task import translate_library
     from tools.db import init_sqlite3, record_scrape_event
     action = "元数据修正" if correction is not None else "AI翻译"
@@ -565,9 +511,12 @@ def _translate_task_libraries(target_ids, fields=None, correction=None):
                 if correction is not None:
                     from tools.correction_task import correct_library
                     counts = correct_library(komga, library_id, state, record, log, fields, correction,
-                                             only_novel=media_type(card))
+                                             only_novel=media_type(card), include_locked=include_locked,
+                                             lock_completed=bool(lock_completed))
                 else:
-                    counts = translate_library(komga, library_id, state, record, log, fields=fields)
+                    counts = translate_library(komga, library_id, state, record, log, fields=fields,
+                                               include_locked=include_locked,
+                                               lock_completed=True if lock_completed is None else lock_completed)
             finally:
                 komga.r.close()
             failures += counts["failed"]
@@ -1052,9 +1001,12 @@ def _runtime_log_stats():
         ensure_table(conn)
         conn.execute("DELETE FROM execution_outcomes WHERE datetime(recorded_at)<datetime('now',?)", (f"-{days} days",))
         outcomes = conn.execute("SELECT SUM(failed=0),SUM(failed=1) FROM execution_outcomes").fetchone()
+        failures = conn.execute("""SELECT COUNT(*) FROM activity_logs WHERE LOWER(level) IN ('error','critical')
+            AND (action LIKE '计划任务%' OR action LIKE '手动刮削%' OR action='刮削匹配'
+                 OR source IN ('scheduler','manual','task','scraper'))""").fetchone()[0]
         conn.commit()
         conn.close()
-        return {"total": row[0] or 0, "today": row[1] or 0, "success": outcomes[0] or 0, "failed": outcomes[1] or 0}
+        return {"total": row[0] or 0, "today": row[1] or 0, "success": outcomes[0] or 0, "failed": failures}
     except sqlite3.Error:
         return {"total": 0, "today": 0, "success": 0, "failed": 0}
 
@@ -1106,8 +1058,49 @@ def _preview_items(server_id, library_id, force=False):
                     "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}&v={version}",
                 })
         PREVIEW_CACHE[key] = {"created": time.time(), "version": version, "items": result}
-        _persist_preview_cache()
+        _persist_preview_cache(key)
         return result
+
+
+def _login_background_entries():
+    """Expose only opaque handles for explicitly opted-in, cached covers."""
+    state = _read_state()
+    result = {}
+    with PREVIEW_CACHE_LOCK:
+        _load_preview_cache()
+        for card in state.get("KOMGA_LIBRARY_LIST", []):
+            if not card.get("LOGIN_BACKGROUND"):
+                continue
+            server, library = str(card.get("SERVER_ID") or ""), str(card.get("LIBRARY") or "")
+            for item in PREVIEW_CACHE.get((server, library), {}).get("items", []):
+                series = str(item.get("id") or "")
+                if not series:
+                    continue
+                identity = json.dumps([server, library, series], ensure_ascii=False).encode("utf-8")
+                token = hmac.new(LOGIN_BACKGROUND_SECRET, identity, hashlib.sha256).hexdigest()
+                result[token] = (server, library, series)
+    return result
+
+
+def _login_cover(token):
+    entry = _login_background_entries().get(token)
+    if entry is None:
+        raise ValueError("Background cover unavailable")
+    komga = _load_komga(entry[0])
+    try:
+        with komga.r.get(f"{komga.base_url}/series/{entry[2]}/thumbnail", stream=True, timeout=(5, 20)) as response:
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "").split(";")[0]
+            if content_type not in {"image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"}:
+                raise ValueError("Invalid cover type")
+            data = bytearray()
+            for chunk in response.iter_content(65536):
+                data.extend(chunk)
+                if len(data) > 16 * 1024 * 1024:
+                    raise ValueError("Cover too large")
+            return bytes(data), content_type
+    finally:
+        komga.r.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1148,7 +1141,23 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         path = urlparse(self.path).path
         if path == "/api/auth/session":
-            self._json(200, {"authenticated": self._authorized(), "username": _read_auth()["username"]})
+            self._json(200, {"authenticated": self._authorized(), "username": _read_auth()["username"] if self._authorized() else ""})
+        elif path == "/api/login-background":
+            entries = list(_login_background_entries())
+            self._json(200, {"items": [{"url": "/api/login-background/cover?token=" + token}
+                                      for token in entries[:36]]})
+        elif path == "/api/login-background/cover":
+            try:
+                token = parse_qs(urlparse(self.path).query).get("token", [""])[0]
+                content, content_type = _login_cover(token)
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception:
+                self._json(404, {"error": "封面不可用"})
         elif path.startswith("/api/") and not self._authorized():
             self._json(401, {"error": "请先登录"})
         elif path == "/api/config":
@@ -1156,7 +1165,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/config/backup":
             self._json(200, {"config": _read_state(), "format": "bangumikomga-config-v1"})
         elif path == "/api/status":
-            self._json(200, REFRESH_STATE)
+            self._json(200, TASK_EXECUTOR.snapshot())
         elif path == "/api/scrape-records":
             query = parse_qs(urlparse(self.path).query)
             try:
@@ -1387,6 +1396,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 task["operations"] = list(task.get("operations") or [])
                 task["ai_completion"] = bool(task.get("ai_completion", False))
+                task.update(task_lock_options(task))
+                task["operations"] = [value for value in task["operations"] if value != "include_locked"]
                 if task["type"] in ("summary_translation", "metadata_correction"):
                     if not task["fields"] or any(field not in ("title", "summary", "publisher", "authors") for field in task["fields"]):
                         self._json(400, {"error": "请选择元数据：标题、简介、出版商或作者"})
@@ -1413,6 +1424,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"items": result.get("METADATA_TASKS", [])})
             elif path == "/api/tasks/delete" and self._require_auth():
                 task_id = str(self._body().get("id", ""))
+                if task_id in TASK_EXECUTOR.snapshot()["tasks"]:
+                    self._json(409, {"error": "请先停止正在执行或排队的任务，再删除"})
+                    return
                 state = _read_state()
                 state["METADATA_TASKS"] = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task_id]
                 result = save_state(state)
@@ -1421,6 +1435,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/tasks/stop" and self._require_auth():
                 task_id = str(self._body().get("id", ""))
                 stopped = _stop_task(task_id)
+                if stopped:
+                    _write_activity("计划任务：停止请求", f"停止执行或取消排队：{task_id}")
                 self._json(202 if stopped else 409, {"stopping": stopped, "error": "" if stopped else "任务已结束或不是当前运行任务"})
             elif path == "/api/tasks/run" and self._require_auth():
                 body = self._body()
@@ -1432,7 +1448,7 @@ class Handler(BaseHTTPRequestHandler):
                     _write_activity("计划任务：执行", f"执行计划任务 {task.get('name', '元数据补全')}")
                     self._json(202, {"started": True})
                 else:
-                    self._json(409, {"started": False, "error": "已有刷新任务正在运行"})
+                    self._json(409, {"started": False, "error": "此任务已在执行或排队"})
             else:
                 self._json(404, {"error": "not found"})
         except Exception as exc:

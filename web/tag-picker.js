@@ -90,6 +90,7 @@ const TagPicker = {
       const selected = this.single ? [] : this.modelValue.filter(item => item !== value);
       if (checked) selected.push(value);
       this.$emit('update:modelValue', selected);
+      if (this.single && checked) this.close(true);
     },
     selectAll() { this.$emit('update:modelValue', this.allSelected ? [] : this.options.map(option => option.value)); },
     async focusOption(last = false) {

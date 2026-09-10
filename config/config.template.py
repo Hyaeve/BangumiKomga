@@ -70,6 +70,7 @@ KOMGA_LIBRARY_LIST = []
 # Web UI managed per-card options are stored in each item when configured:
 # SERVER_ID, REQUIRED_FIELDS, OVERWRITE_FIELDS, MEDIA_TYPE (comic/book/mixed),
 # SCRAPE_ENABLED (default True; automatic monitoring only),
+# LOGIN_BACKGROUND (default False; exposes selected covers on the public login page),
 # AI_RECOGNITION and SORT_VOLUMES (卷号排序，默认关闭).
 # @@name: KOMGA_COLLECTION_LIST
 # @@prompt: 配置 KOMGA 收藏

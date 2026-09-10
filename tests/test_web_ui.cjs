@@ -25,8 +25,8 @@ const tasks = [
 const scrapeRecords = [{
   id: 'book:lib-0:1', item_type: '漫画', item_title: '万古之王', source_title: '《万古之王》[若鸿文化]', matched_title: '万古之王',
   library_id: 'lib-0', library_name: '国漫', server_id: 'fixture', server_name: '家庭书库', source_path: '/data/comics/万古之王/第一卷.cbz',
-  metadata_fields: ['title', 'summary', 'numberSort'], match_source: '书名号内容', recorded_at: '2026-09-10T13:14:13', volume_count: 1,
-  volumes: [{ id: 2, item_title: '第一卷', source_path: '/data/comics/万古之王/第一卷.cbz', metadata_fields: ['numberSort'], match_source: '卷号排序', recorded_at: '2026-09-10T13:14:13' }]
+  metadata_fields: ['title', 'summary', 'numberSort', 'publisher', 'authors', 'tags', 'genres'], match_source: '书名号内容', recorded_at: '2026-09-10T13:14:13', volume_count: 1,
+  volumes: [{ id: 2, item_title: '第一卷：用于验证省略显示与完整信息悬浮文本框的长标题', source_path: '/data/comics/万古之王/第一卷.cbz', metadata_fields: ['numberSort'], match_source: '卷号排序', recorded_at: '2026-09-10T13:14:13' }]
 }];
 const runtimeLogs = [{ id: 1, level: 'info', action: '计划任务：自动执行', detail: '按 Cron 0 6 * * * 执行计划任务 每日元数据补全', source: 'scheduler', recorded_at: '2026-09-10T06:00:00' }];
 const libraries = state.KOMGA_LIBRARY_LIST.map((item, index) => ({
@@ -35,7 +35,8 @@ const libraries = state.KOMGA_LIBRARY_LIST.map((item, index) => ({
 let covers = [fs.readFileSync(path.join(web, 'logo-icon.png'))];
 const apiCalls = [];
 const refreshRequests = [];
-let executionStatus = { running: false, task_id: null, stopping: false };
+let executionStatus = { running: false, tasks: {} };
+let sessionAuthenticated = true;
 
 async function main() {
   if (process.env.BK_REFERENCE_IMAGE) {
@@ -60,15 +61,19 @@ async function main() {
         body = JSON.parse(raw || '{}');
       }
       let result = {};
-      if (url.pathname === '/api/auth/session') result = { authenticated: true, username: 'fixture' };
+      if (url.pathname === '/api/auth/session') result = { authenticated: sessionAuthenticated, username: 'fixture' };
+      else if (url.pathname === '/api/auth/login') { sessionAuthenticated = true; result = {ok:true}; }
+      else if (url.pathname === '/api/auth/logout') { sessionAuthenticated = false; result = {ok:true}; }
+      else if (url.pathname === '/api/login-background') result = {items:state.KOMGA_LIBRARY_LIST.some(card=>card.LOGIN_BACKGROUND) ? Array.from({length:12}, (_,i)=>({url:`/test-cover/${i}`})) : []};
       else if (url.pathname === '/api/status') result = executionStatus;
       else if (url.pathname === '/api/tasks/run') {
-        executionStatus = { running: true, task_id: body.id, stopping: false };
+        executionStatus = { running: true, tasks: {...executionStatus.tasks,[body.id]:{state:'running',stopping:false}} };
         result = { started: true };
       }
       else if (url.pathname === '/api/tasks/stop') {
-        assert.equal(body.id, executionStatus.task_id);
-        executionStatus = { running: false, task_id: null, stopping: false };
+        assert(executionStatus.tasks[body.id]);
+        delete executionStatus.tasks[body.id];
+        executionStatus.running = Object.keys(executionStatus.tasks).length > 0;
         result = { stopping: true };
       }
       else if (url.pathname === '/api/bangumi/search') result = { items: [{ id: 123, name_cn: '测试漫画' }] };
@@ -122,6 +127,9 @@ async function main() {
     assert.equal(await page.locator('.nav-item').first().innerText(), '媒体卡片');
     assert.equal(await page.getByText('服务在线', { exact: true }).count(), 0);
     assert.match(await page.locator('.sidebar-logout').innerText(), /退出登录/);
+    const navIcon = await page.locator('.nav-icon').first().boundingBox();
+    const logoutIcon = await page.locator('.sidebar-logout svg').boundingBox();
+    assert(Math.abs(navIcon.x-logoutIcon.x) < 1, 'logout icon aligns with navigation icons');
     const mediaAddRect = await page.locator('.hero-actions button').boundingBox();
     await page.waitForFunction(() => [...document.querySelectorAll('.library-card:first-child img')].every(img => img.complete && img.naturalWidth));
     await page.screenshot({ path: path.join(output, 'cards-desktop.png') });
@@ -144,18 +152,19 @@ async function main() {
     assert.equal(await features.getByLabel('简介翻译').count(), 0);
     assert.equal(await features.getByLabel('仅匹配小说').count(), 0);
     assert.equal(await features.getByLabel('刮削匹配').isChecked(), true);
+    assert.equal(await features.getByLabel('登录背景', {exact:false}).isChecked(), false);
     await features.getByLabel('AI 识别').check();
     await page.screenshot({ path: path.join(output, 'feature-picker-desktop.png') });
     assert.equal(await features.count(), 1);
     assert.equal(await page.locator('#card-features .tag-picker-chip').count(), 2);
     await features.getByLabel('刮削匹配').uncheck();
+    await features.getByLabel('登录背景', {exact:false}).check();
     await features.getByLabel('AI 识别').press('Escape');
     await page.getByRole('button', { name: '媒体类型', exact: true }).click();
     const mediaTypes = page.getByRole('dialog', { name: '媒体类型候选项' });
     assert.equal(await mediaTypes.getByRole('radio').count(), 3);
-    await mediaTypes.getByLabel('混合匹配', { exact: true }).check();
-    assert.equal(await mediaTypes.getByLabel('漫画匹配', { exact: true }).isChecked(), false);
-    await mediaTypes.getByLabel('混合匹配', { exact: true }).press('Escape');
+    await mediaTypes.getByLabel('混合匹配', { exact: true }).click();
+    assert.equal(await mediaTypes.count(), 0);
     await page.getByRole('heading', { name: '配置媒体库' }).click();
     assert.equal(await page.locator('.tag-picker-panel').count(), 0);
     await page.getByRole('button', { name: '缺失元数据', exact: true }).click();
@@ -180,6 +189,7 @@ async function main() {
     assert.equal(state.KOMGA_LIBRARY_LIST[0].TRANSLATE_SUMMARY_TO_ZH, false);
     assert.equal(state.KOMGA_LIBRARY_LIST[0].MEDIA_TYPE, 'mixed');
     assert.equal(state.KOMGA_LIBRARY_LIST[0].SCRAPE_ENABLED, false);
+    assert.equal(state.KOMGA_LIBRARY_LIST[0].LOGIN_BACKGROUND, true);
     assert.equal(state.KOMGA_LIBRARY_LIST[0].AI_RECOGNITION, true);
     assert(state.KOMGA_LIBRARY_LIST[0].REQUIRED_FIELDS.includes('summary'));
     assert(state.KOMGA_LIBRARY_LIST[0].OVERWRITE_FIELDS.includes('thumbnail'));
@@ -223,8 +233,11 @@ async function main() {
     await firstTask.getByRole('button', { name: '停止执行', exact: true }).click();
     await firstTask.getByRole('button', { name: '立即执行', exact: true }).waitFor();
     // Scheduler execution is observed via status polling, without clicking Run.
-    executionStatus = { running: true, task_id: 'task-b', stopping: false };
+    executionStatus = { running: true, tasks: {'task-b':{state:'running',stopping:false}} };
     await page.locator('.task-card').nth(1).getByRole('button', { name: '停止执行', exact: true }).waitFor();
+    assert.equal(await firstTask.getByRole('button', {name:'立即执行',exact:true}).isEnabled(), true);
+    await firstTask.getByRole('button', {name:'立即执行',exact:true}).click();
+    await firstTask.getByRole('button', {name:'停止执行',exact:true}).click();
     await page.locator('.task-card').nth(1).getByRole('button', { name: '停止执行', exact: true }).click();
     await page.locator('.task-card').first().getByRole('button', { name: '删除' }).click();
     assert.equal(await page.getByRole('heading', { name: '删除计划任务？' }).count(), 1);
@@ -233,8 +246,8 @@ async function main() {
     assert.equal(await page.locator('.tag-picker-panel').count(), 0);
     await page.getByRole('button', { name: '任务功能', exact: true }).press('ArrowDown');
     const taskFunctions = page.getByRole('dialog', { name: '任务功能候选项' });
-    await taskFunctions.getByLabel('AI翻译', { exact: true }).check();
-    await taskFunctions.getByLabel('AI翻译', { exact: true }).press('Escape');
+    await taskFunctions.getByLabel('AI翻译', { exact: true }).click();
+    assert.equal(await taskFunctions.count(), 0);
     await page.getByRole('button', { name: '元数据候选', exact: true }).click();
     const translationFields = page.getByRole('dialog', { name: '元数据候选候选项' });
     assert.equal(await translationFields.getByRole('checkbox').count(), 5);
@@ -247,11 +260,11 @@ async function main() {
     await page.screenshot({ path: path.join(output, 'ai-translation-task.png') });
     await page.getByRole('button', { name: '任务功能', exact: true }).click();
     assert.equal(await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).count(), 1);
-    await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).check();
-    await taskFunctions.getByLabel('元数据补全').check();
-    assert.equal(await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).isChecked(), false);
+    await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).click();
+    await page.getByRole('button', { name: '任务功能', exact: true }).click();
+    await taskFunctions.getByLabel('元数据补全').click();
     assert.equal(await page.locator('#task-functions .tag-picker-chip').count(), 1);
-    await taskFunctions.getByLabel('元数据补全').press('Escape');
+    assert.match(await page.locator('#task-functions .tag-picker-chip').innerText(), /元数据补全/);
     assert.equal(await page.locator('.cron-picker').count(), 1);
     assert.equal(await page.locator('.cron-picker input').inputValue(), '0 6 * * *');
     assert.equal(await page.getByText('五段格式：分 时 日 月 周，按本地时间执行').count(), 0);
@@ -317,7 +330,10 @@ async function main() {
     assert.match(await page.locator('.floating-tooltip').innerText(), /简介/);
     await page.screenshot({path:path.join(output,'records-tooltip.png')});
     await page.locator('.record-volume:not(.record-volume-head) b').hover();
-    assert.match(await page.locator('.floating-tooltip').innerText(), /卷号排序/);
+    assert.equal(await page.locator('.floating-tooltip').isVisible(), false);
+    await page.locator('.record-volume:not(.record-volume-head) > span').first().hover();
+    await page.locator('.floating-tooltip:not([hidden])').waitFor();
+    assert.match(await page.locator('.floating-tooltip').innerText(), /长标题/);
     await page.locator('.nav-item').nth(3).click();
     await page.locator('.runtime-log-row').first().waitFor();
     assert.match(await page.locator('.log-hero-controls').innerText(), /成功/);
@@ -342,6 +358,22 @@ async function main() {
     await page.locator('.nav-item').nth(4).click();
     await page.setViewportSize({ width: 1440, height: 1000 });
     assert.equal(await page.locator('.bangumi-card-head a').innerText(), '创建令牌 ↗');
+    const backupRect = await page.locator('.settings-hero-actions').boundingBox();
+    assert(Math.abs(backupRect.y-taskAddRect.y) < 1, 'settings actions align with task actions');
+    const serverForm = page.locator('.server-form');
+    await serverForm.getByRole('button', {name:'API 密钥',exact:true}).click();
+    assert.equal(await serverForm.locator(':scope > label > .field-label').innerText(), 'API 密钥');
+    await serverForm.getByRole('button', {name:'账号密码',exact:true}).click();
+    assert.equal(await serverForm.locator('.server-form-grid').last().locator(':scope > label > .field-label').count(), 2);
+    assert.deepEqual(await page.locator('.retention-fields .field-label').allTextContents(), ['记录保留','日志保留']);
+    await page.locator('.retention-fields label').first().hover();
+    assert.equal(await page.locator('.retention-fields .day-unit').first().evaluate(el=>getComputedStyle(el).opacity), '0');
+    await page.getByRole('button', {name:'增加记录保留天数',exact:true}).click();
+    assert.equal(await page.locator('.retention-fields input').first().inputValue(), '31');
+    await page.getByRole('button', {name:'减少记录保留天数',exact:true}).click();
+    await page.getByRole('button', {name:'减少记录保留天数',exact:true}).evaluate(el=>el.blur());
+    await page.locator('.hero-head h1').hover();
+    assert.equal(await page.locator('.retention-fields .day-unit').first().evaluate(el=>getComputedStyle(el).opacity), '1');
     await page.locator('.bangumi-card input[placeholder="漫画&小说"]').fill('测试漫画');
     await page.locator('.bangumi-card').getByRole('button', { name: '搜索', exact: true }).click();
     await page.locator('.bangumi-card').getByRole('button', { name: '预览', exact: true }).click();
@@ -355,7 +387,9 @@ async function main() {
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.bangumi-card > label > .field-label').innerText(), '访问密钥');
     assert.equal(await page.locator('.strategy-card').getByText('轮询间隔（秒）').count(), 0);
-    await page.locator('.strategy-card select').selectOption('poll');
+    await page.getByRole('button', {name:'运行模式',exact:true}).click();
+    await page.getByRole('dialog', {name:'运行模式候选项'}).getByLabel('定时轮询增量').click();
+    assert.equal(await page.getByRole('dialog', {name:'运行模式候选项'}).count(), 0);
     await page.locator('.strategy-card input[type=number]').first().waitFor();
     await page.waitForFunction(() => [...document.querySelectorAll('.strategy-card .field-label')].some(node => node.textContent === '轮询间隔（秒）'));
     assert.equal(await page.locator('.strategy-card .field-label').allTextContents().then(values => values.includes('轮询间隔（秒）')), true);
@@ -384,15 +418,15 @@ async function main() {
     await page.locator('.nav-item').nth(2).click();
     await page.getByRole('button', { name: /新建任务/ }).click();
     await page.getByRole('button', { name: '任务功能', exact: true }).click();
-    await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据修正', { exact: true }).check();
-    await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据修正', { exact: true }).press('Escape');
-    await page.getByRole('button', { name: '副功能', exact: true }).click();
-    const corrections = page.getByRole('dialog', { name: '副功能候选项' });
-    assert.equal(await corrections.getByRole('checkbox').count(), 3);
-    assert.equal(await corrections.getByLabel('包含锁定项').isChecked(), false);
-    await corrections.getByLabel('繁转简', { exact: true }).check();
-    await corrections.getByLabel('标题提取', { exact: true }).check();
-    await corrections.getByLabel('标题提取', { exact: true }).press('Escape');
+    assert.match(await page.getByRole('dialog', {name:'任务功能候选项'}).locator('.tag-picker-option').first().innerText(), /元数据修正/);
+    await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据修正', { exact: true }).click();
+    assert.equal(await page.getByRole('switch').count(), 4);
+    assert.equal(await page.getByRole('switch', {name:'包含锁定',exact:true}).getAttribute('aria-checked'), 'false');
+    assert.equal(await page.getByRole('switch', {name:'完成锁定',exact:true}).getAttribute('aria-checked'), 'false');
+    await page.getByRole('switch', {name:'繁转简',exact:true}).click();
+    await page.getByRole('switch', {name:'标题提取',exact:true}).click();
+    await page.getByRole('switch', {name:'包含锁定',exact:true}).click();
+    await page.getByRole('switch', {name:'完成锁定',exact:true}).click();
     await page.getByRole('button', { name: '元数据候选', exact: true }).click();
     await page.getByRole('dialog', { name: '元数据候选候选项' }).getByLabel('全选', { exact: true }).check();
     await page.getByRole('dialog', { name: '元数据候选候选项' }).getByLabel('标题', { exact: true }).press('Escape');
@@ -403,6 +437,8 @@ async function main() {
     await page.locator('.task-modal').getByRole('button', { name: '保存', exact: true }).click();
     await page.locator('.task-card.metadata_correction').waitFor();
     assert.deepEqual(tasks.at(-1).operations, ['simplify', 'extract_title']);
+    assert.equal(tasks.at(-1).include_locked, true);
+    assert.equal(tasks.at(-1).lock_completed, true);
     assert.deepEqual(tasks.at(-1).fields, ['title', 'summary', 'publisher', 'authors']);
     assert(tasks.at(-1).card_ids[0].includes('::'));
     assert.equal(tasks.at(-1).name, '元数据修正');
@@ -421,10 +457,12 @@ async function main() {
     }));
     await page.screenshot({ path: path.join(output, 'correction-task-cards.png') });
     await page.locator('.task-card.metadata_correction').click();
-    assert.equal(await page.locator('#task-operations .tag-picker-chip').count(), 2);
+    assert.equal(await page.getByRole('switch', {name:'繁转简',exact:true}).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.getByRole('switch', {name:'完成锁定',exact:true}).getAttribute('aria-checked'), 'true');
     await page.getByRole('button', { name: '任务功能', exact: true }).click();
-    await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据补全').check();
-    await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据补全').press('Escape');
+    await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据补全').click();
+    assert.equal(await page.getByRole('switch').count(), 2);
+    assert.equal(await page.getByRole('switch', {name:'包含锁定',exact:true}).getAttribute('aria-checked'), 'false');
     const aiCompletion = page.getByRole('button', { name: 'AI补全', exact: true });
     assert.equal(await aiCompletion.getAttribute('aria-pressed'), 'false');
     await aiCompletion.click();
@@ -432,6 +470,25 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: path.join(output, 'ai-completion-mobile.png') });
     await page.locator('.task-modal').getByRole('button', { name: '取消', exact: true }).click();
+    await page.locator('.sidebar-logout').click();
+    await page.locator('.login-card').waitFor();
+    assert.equal(await page.getByRole('textbox', {name:'用户名',exact:true}).inputValue(), '');
+    assert.equal(await page.locator('.login-input input').last().inputValue(), '');
+    await page.waitForFunction(() => [...document.querySelectorAll('.login-backdrop img')].length > 0 &&
+      [...document.querySelectorAll('.login-backdrop img')].every(img=>img.complete&&img.naturalWidth));
+    assert.equal(await page.locator('.login-input > svg').count(), 2);
+    assert.equal(await page.locator('.login-input input').last().getAttribute('type'), 'password');
+    await page.getByRole('button', {name:'显示密码',exact:true}).click();
+    assert.equal(await page.locator('.login-input input').last().getAttribute('type'), 'text');
+    await page.getByRole('button', {name:'隐藏密码',exact:true}).click();
+    await page.screenshot({path:path.join(output,'login-mobile.png')});
+    await page.setViewportSize({width:1440,height:1000});
+    await page.screenshot({path:path.join(output,'login-desktop.png')});
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    const driftStart = await page.locator('.login-cover-column').first().evaluate(el=>getComputedStyle(el).transform);
+    await page.waitForTimeout(300);
+    const driftEnd = await page.locator('.login-cover-column').first().evaluate(el=>getComputedStyle(el).transform);
+    assert.notEqual(driftStart, driftEnd);
     assert.deepEqual(errors, []);
     // Empty selections must remain empty when configuration is reloaded.
     const context = { Vue: { createApp: options => ({ mount: () => { context.options = options; } }) }, TagPicker: {} };

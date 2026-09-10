@@ -15,6 +15,15 @@
   function show(event) {
     const target = event.target.closest?.('[data-tooltip]');
     if (!target?.dataset.tooltip) { hide(); return; }
+    if (target.matches('.tooltip-cell, .tag-picker-chip')) {
+      const clipped = [target, ...target.querySelectorAll('*')].some(node => {
+        const style = getComputedStyle(node);
+        return node.clientWidth > 0 && (
+          node.scrollWidth > node.clientWidth + 1 ||
+          (['hidden','clip'].includes(style.overflowY) && node.scrollHeight > node.clientHeight + 1));
+      });
+      if (!clipped) { hide(); return; }
+    }
     if (active === target) return;
     hide();
     active = target;

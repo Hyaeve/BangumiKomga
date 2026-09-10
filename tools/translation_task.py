@@ -4,11 +4,13 @@ from copy import deepcopy
 from tools.summary_translation import summary_is_chinese, translate_summary_to_zh
 from tools.komga_path import item_path
 from tools.execution_outcomes import record_outcome
+from tools.task_lock_policy import locked
 
 TRANSLATION_FIELDS = {"title": "标题", "summary": "简介", "publisher": "出版商", "authors": "作者"}
 
 
-def translate_library(komga, library_id, settings, on_update, on_log, fields=None):
+def translate_library(komga, library_id, settings, on_update, on_log, fields=None,
+                      include_locked=False, lock_completed=True):
     if not all(settings.get(key) for key in ("OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL")):
         raise ValueError("请先保存完整的 AI URL、密钥和模型")
     selected = list(dict.fromkeys(["summary"] if fields is None else fields))
@@ -47,7 +49,7 @@ def translate_library(komga, library_id, settings, on_update, on_log, fields=Non
         changed_fields = []
         for field in selected:
             value = metadata.get(field)
-            if metadata.get(field + "Lock") or not value:
+            if (locked(metadata, field) and not include_locked) or not value:
                 continue
             try:
                 translated = translated_value(value, field)
@@ -58,7 +60,8 @@ def translate_library(komga, library_id, settings, on_update, on_log, fields=Non
                 continue
             if translated != value:
                 payload[field] = translated
-            payload[field + "Lock"] = True
+            if lock_completed and not locked(metadata, field):
+                payload[field + "Lock"] = True
             changed_fields.append(field)
         if not payload:
             counts["skipped"] += 1
@@ -67,7 +70,7 @@ def translate_library(komga, library_id, settings, on_update, on_log, fields=Non
         latest = komga.get_specific_series(item["id"]) if kind == "series" else komga.get_specific_book(item["id"])
         current = latest.get("metadata") or {}
         for field in changed_fields[:]:
-            if current.get(field + "Lock") or current.get(field) != metadata.get(field):
+            if (locked(current, field) and not include_locked) or current.get(field) != metadata.get(field):
                 payload.pop(field, None)
                 payload.pop(field + "Lock", None)
                 changed_fields.remove(field)
@@ -83,7 +86,7 @@ def translate_library(komga, library_id, settings, on_update, on_log, fields=Non
         counts["updated"] += 1
         record_outcome(kind, item["id"])
         on_update({**item, "url": item_path(latest) or item_path(item)}, kind, series_name, changed_fields)
-        on_log(f"{item.get('name', item['id'])}：已处理并锁定 {'、'.join(TRANSLATION_FIELDS[field] for field in changed_fields)}", "info")
+        on_log(f"{item.get('name', item['id'])}：已处理{'并锁定' if lock_completed else ''} {'、'.join(TRANSLATION_FIELDS[field] for field in changed_fields)}", "info")
 
     def process(item, kind, series_name):
         try:

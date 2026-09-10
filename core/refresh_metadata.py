@@ -26,6 +26,8 @@ _library_name_cache = {}
 TASK_TRANSLATION_OVERRIDE = None
 TASK_COMPLETION_FIELDS = None
 TASK_AI_COMPLETION = False
+TASK_INCLUDE_LOCKED = False
+TASK_LOCK_COMPLETED = False
 
 
 def _complete_unmatched_with_ai(series, only_novel):
@@ -45,7 +47,8 @@ def _complete_unmatched_with_ai(series, only_novel):
         record_activity_log(conn, "计划任务：AI补全", detail, level=level, source="scheduler")
         logger.log(30 if level == "warning" else 40 if level == "error" else 20, detail)
 
-    complete_unmatched(komga, series, TASK_COMPLETION_FIELDS or [], vars(config), only_novel, record, log)
+    complete_unmatched(komga, series, TASK_COMPLETION_FIELDS or [], vars(config), only_novel, record, log,
+                       include_locked=TASK_INCLUDE_LOCKED, lock_completed=TASK_LOCK_COMPLETED)
 
 
 def _record_server_id(library_id):
@@ -152,9 +155,10 @@ def _metadata_write_payload(existing_metadata, matched_metadata, overwrite_field
     """Keep populated Komga values unless a card explicitly permits overwrite."""
     existing_metadata = existing_metadata or {}
     if TASK_COMPLETION_FIELDS is not None:
-        return {field: value for field, value in matched_metadata.items()
-                if field in TASK_COMPLETION_FIELDS and _is_metadata_empty(existing_metadata.get(field))
-                and not _metadata_field_locked(existing_metadata, field) and not _is_metadata_empty(value)}
+        from tools.task_lock_policy import completion_payload
+        return completion_payload(existing_metadata, matched_metadata, TASK_COMPLETION_FIELDS,
+                                  globals().get("TASK_INCLUDE_LOCKED", False),
+                                  globals().get("TASK_LOCK_COMPLETED", False))
     return {
         field: value
         for field, value in matched_metadata.items()
@@ -399,6 +403,8 @@ def refresh_metadata(series_list=None):
             overwrite_fields,
             _translation_enabled_for_library(series.get("libraryId")),
         )
+        if TASK_COMPLETION_FIELDS is not None:
+            series["metadata"] = komga.get_specific_series(series_id).get("metadata") or {}
         series_data = _metadata_write_payload(
             series.get("metadata"), matched_series_data, overwrite_fields
         )
@@ -701,6 +707,8 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         overwrite_fields,
         _translation_enabled_for_library(library_id),
     )
+    if TASK_COMPLETION_FIELDS is not None:
+        current_metadata = komga.get_specific_book(book_id).get("metadata") or {}
     book_data = _metadata_write_payload(
         current_metadata, matched_book_data, overwrite_fields
     )

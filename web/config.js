@@ -6,6 +6,9 @@ createApp({
     return {
       authenticated: false,
       loginForm: { username: '', password: '' },
+      showLoginPassword: false,
+      loginBackground: [],
+      loginBackgroundTimer: null,
       credentialForm: { username: '', password: '' },
       showCredentialModal: false,
       showCredentialConfirm: false,
@@ -47,15 +50,21 @@ createApp({
       taskDragMoved: false,
       liveRefreshTimer: null,
       taskTypeOptions: [
+        { value: 'metadata_correction', label: '元数据修正' },
         { value: 'metadata_completion', label: '元数据补全' },
         { value: 'summary_translation', label: 'AI翻译' },
-        { value: 'metadata_correction', label: '元数据修正' },
         { value: 'card_collage_refresh', label: '卡片拼贴刷新' }
       ],
       cardFeatureOptions: [
         { value: 'scrapeEnabled', label: '刮削匹配' },
         { value: 'aiRecognition', label: 'AI 识别' },
-        { value: 'sortVolumes', label: '卷号排序' }
+        { value: 'sortVolumes', label: '卷号排序' },
+        { value: 'loginBackground', label: '登录背景', detail: '允许未登录访客查看该媒体库封面' }
+      ],
+      serviceModeOptions: [
+        { value: 'sse', label: '实时监控（SSE，推荐）' },
+        { value: 'poll', label: '定时轮询增量' },
+        { value: 'once', label: '仅手动执行' }
       ],
       mediaTypeOptions: [
         { value: 'comic', label: '漫画匹配' },
@@ -64,8 +73,7 @@ createApp({
       ],
       correctionOptions: [
         { value: 'simplify', label: '繁转简' },
-        { value: 'extract_title', label: '标题提取' },
-        { value: 'include_locked', label: '包含锁定项' }
+        { value: 'extract_title', label: '标题提取' }
       ],
       recordSearch: '',
       recordSortNewest: true,
@@ -104,6 +112,15 @@ createApp({
     };
   },
   computed: {
+    loginBackgroundColumns() {
+      if (!this.loginBackground.length) return [];
+      return Array.from({length:6}, (_, column) => Array.from({length:6}, (_, row) =>
+        this.loginBackground[(column*6+row)%this.loginBackground.length]));
+    },
+    serviceModeChoice: {
+      get() { return [this.config.BANGUMI_KOMGA_SERVICE_TYPE]; },
+      set(values) { if (values[0]) { this.config.BANGUMI_KOMGA_SERVICE_TYPE = values[0]; this.saveServiceMode(); } }
+    },
     editingMediaType: {
       get() { return [this.editingCard?.mediaType || 'comic']; },
       set(values) { if (values.length) this.editingCard.mediaType = values[0]; }
@@ -145,6 +162,7 @@ createApp({
     }
   },
   watch: {
+    authenticated(value) { clearInterval(this.loginBackgroundTimer); if (!value) this.loadLoginBackground(); else this.loginBackground = []; },
     recordSearch() { this.recordPage = 1; this.loadRecords(); },
     logSearch() { this.logPage = 1; this.loadLogs(); },
     'editingTask.functions'(values, previous) {
@@ -152,6 +170,8 @@ createApp({
       this.editingTask.fields = [];
       this.editingTask.operations = [];
       this.editingTask.ai_completion = false;
+      this.editingTask.include_locked = false;
+      this.editingTask.lock_completed = false;
     },
     view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
     bangumiTestQuery() { this.resetBangumiSearch(); }
@@ -194,13 +214,19 @@ createApp({
     },
     notify(text, error = false) { this.message = text; this.messageError = error; if (text) setTimeout(() => { this.message = ''; }, 3500); },
     async checkSession() {
-      try { const session = await this.api('/api/auth/session'); this.authenticated = session.authenticated; this.loginForm.username = session.username || ''; this.credentialForm.username = session.username || ''; if (this.authenticated) await this.loadApp(); } catch (_) { this.authenticated = false; }
+      try { const session = await this.api('/api/auth/session'); this.authenticated = session.authenticated; this.credentialForm.username = session.authenticated ? session.username || '' : ''; if (this.authenticated) await this.loadApp(); else await this.loadLoginBackground(); } catch (_) { this.authenticated = false; await this.loadLoginBackground(); }
+    },
+    async loadLoginBackground() {
+      if (this.authenticated) return;
+      try { const data = await this.api('/api/login-background'); if (!this.authenticated) this.loginBackground = data.items || []; } catch (_) { this.loginBackground = []; }
+      clearInterval(this.loginBackgroundTimer);
+      if (!this.authenticated) this.loginBackgroundTimer = setInterval(() => this.loadLoginBackground(), 60000);
     },
     async login() {
       try { await this.api('/api/auth/login', { method: 'POST', body: JSON.stringify(this.loginForm) }); this.authenticated = true; this.credentialForm.username = this.loginForm.username; this.loginForm.password = ''; await this.loadApp(); }
       catch (error) { this.notify(error.message, true); }
     },
-    async logout() { await this.api('/api/auth/logout', { method: 'POST', body: '{}' }); this.authenticated = false; },
+    async logout() { await this.api('/api/auth/logout', { method: 'POST', body: '{}' }); this.loginForm = {username:'',password:''}; this.showLoginPassword = false; this.authenticated = false; },
     async loadApp() {
       const config = await this.api('/api/config'); this.applyConfig(config);
       if (this.config.KOMGA_BASE_URL && (this.komgaAuthMode === 'key' ? this.config.KOMGA_API_KEY : (this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD))) await this.loadLibraries(false);
@@ -211,7 +237,7 @@ createApp({
       this.pollStatus();
     },
     applyConfig(config) { this.config = { ...this.config, ...config, KOMGA_SERVERS: (config.KOMGA_SERVERS || []).map(server => ({ auth_mode: server.auth_mode || (server.api_key ? 'key' : 'password'), ...server })) }; this.tasks = this.config.METADATA_TASKS || []; if (!this.config.KOMGA_SERVERS.length && this.config.KOMGA_BASE_URL) this.config.KOMGA_SERVERS = [{ id: 'legacy', name: '默认 Komga', base_url: this.config.KOMGA_BASE_URL, email: this.config.KOMGA_EMAIL, password: this.config.KOMGA_EMAIL_PASSWORD, api_key: this.config.KOMGA_API_KEY, auth_mode: this.config.KOMGA_API_KEY ? 'key' : 'password' }]; this.komgaAuthMode = this.config.KOMGA_API_KEY ? 'key' : 'password'; this.cards = (this.config.KOMGA_LIBRARY_LIST || []).map((item, index) => this.makeCard(item, index)); },
-    makeCard(item = {}, index = 0) { const defaultOverwriteFields = this.overwriteFieldOptions.map(field => field.value); return { uid: `${Date.now()}-${Math.random()}`, id: item.LIBRARY || '', serverId: item.SERVER_ID || '', name: '', path: '', covers: [], mediaType: ['comic','book','mixed'].includes(item.MEDIA_TYPE) ? item.MEDIA_TYPE : item.IS_NOVEL_ONLY ? 'book' : 'comic', scrapeEnabled: item.SCRAPE_ENABLED !== false, rules: item.REQUIRED_FIELDS || [], overwriteFields: Array.isArray(item.OVERWRITE_FIELDS) ? item.OVERWRITE_FIELDS : defaultOverwriteFields, aiRecognition: !!item.AI_RECOGNITION, sortVolumes: !!item.SORT_VOLUMES, hue: this.cardHues[index % this.cardHues.length] }; },
+    makeCard(item = {}, index = 0) { const defaultOverwriteFields = this.overwriteFieldOptions.map(field => field.value); return { uid: `${Date.now()}-${Math.random()}`, id: item.LIBRARY || '', serverId: item.SERVER_ID || '', name: '', path: '', covers: [], mediaType: ['comic','book','mixed'].includes(item.MEDIA_TYPE) ? item.MEDIA_TYPE : item.IS_NOVEL_ONLY ? 'book' : 'comic', scrapeEnabled: item.SCRAPE_ENABLED !== false, rules: item.REQUIRED_FIELDS || [], overwriteFields: Array.isArray(item.OVERWRITE_FIELDS) ? item.OVERWRITE_FIELDS : defaultOverwriteFields, aiRecognition: !!item.AI_RECOGNITION, sortVolumes: !!item.SORT_VOLUMES, loginBackground: !!item.LOGIN_BACKGROUND, hue: this.cardHues[index % this.cardHues.length] }; },
     mediaTypeLabel(card) { return {comic:'漫画媒体库',book:'书籍媒体库',mixed:'混合媒体库'}[card.mediaType] || '漫画媒体库'; },
     addCard() { const card = this.makeCard({}, this.cards.length); this.cards.push(card); this.openCardSettings(card, true); },
     resetServerDraft() { this.serverDraft = { id: '', name: '', base_url: '', email: '', password: '', api_key: '', auth_mode: 'password' }; this.showServerDraftSecret = false; },
@@ -260,7 +286,8 @@ createApp({
         this.notify(`${server.name || 'Komga 服务'} 连接成功，读取到 ${this.libraries.length} 个媒体库`);
       } catch (error) { this.notify(`连接失败：${error.message}`, true); }
     },
-    collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.mediaType === 'book', MEDIA_TYPE: card.mediaType, SCRAPE_ENABLED: card.scrapeEnabled, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: false, AI_RECOGNITION: card.aiRecognition, SORT_VOLUMES: card.sortVolumes })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
+    collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.mediaType === 'book', MEDIA_TYPE: card.mediaType, SCRAPE_ENABLED: card.scrapeEnabled, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: false, AI_RECOGNITION: card.aiRecognition, SORT_VOLUMES: card.sortVolumes, LOGIN_BACKGROUND: card.loginBackground })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
+    stepRetention(key, step) { this.config[key] = Math.max(1, Math.min(365, Number(this.config[key] || 30) + step)); this.save(); },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); return true; } catch (error) { this.notify(error.message, true); return false; } },
     async saveServiceMode() { await this.save(); this.$nextTick(() => this.decorateFieldLabels()); },
     async testBangumiSearch() {
@@ -318,8 +345,9 @@ createApp({
     changePage(kind, delta) { if (kind === 'records') { this.recordPage += delta; this.expandedRecordIds = []; this.loadRecords(true); } else { this.logPage += delta; this.loadLogs(true); } },
     startLiveRefresh() { clearInterval(this.liveRefreshTimer); this.liveRefreshTimer = null; if (!this.authenticated || document.hidden || !['records', 'logs'].includes(this.view)) return; this.liveRefreshTimer = setInterval(() => { if (this.view === 'records') this.loadRecords(); else if (this.view === 'logs') this.loadLogs(); }, 4000); },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
-    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], operations: [], ai_completion: false, card_ids: [], cron: '0 6 * * *', enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
-    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, operations: [...(task.operations || [])], ai_completion: !!task.ai_completion, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields?.length ? task.fields : this.taskType(task) === 'summary_translation' ? ['summary'] : [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
+    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], operations: [], ai_completion: false, include_locked: false, lock_completed: false, card_ids: [], cron: '0 6 * * *', enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
+    toggleTaskOperation(value) { const values = this.editingTask.operations; this.editingTask.operations = values.includes(value) ? values.filter(item=>item!==value) : [...values,value]; },
+    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, operations: (task.operations || []).filter(value=>value!=='include_locked'), include_locked: task.include_locked ?? (task.operations || []).includes('include_locked'), lock_completed: task.lock_completed ?? this.taskType(task)==='summary_translation', ai_completion: !!task.ai_completion, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields?.length ? task.fields : this.taskType(task) === 'summary_translation' ? ['summary'] : [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
     validCronExpression(value) { const parts = String(value || '').trim().split(/\s+/); return parts.length === 5 && parts.every(part => /^[0-9A-Za-z*?,/\-]+$/.test(part)); },
     async saveTask() { if (!this.editingTask) return; this.editingTask.functions = this.editingTask.functions.slice(0, 1); if (!this.editingTask.functions.length) { this.notify('请选择任务功能', true); return; } if (this.editingTask.functions[0] !== 'card_collage_refresh' && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (this.editingTask.functions.includes('metadata_correction')) { const ops = this.editingTask.operations || []; if (!ops.some(value => ['simplify','extract_title'].includes(value))) { this.notify('请选择繁转简或标题提取', true); return; } if (!ops.includes('simplify') && !this.editingTask.fields.includes('title')) { this.notify('标题提取需要选择标题元数据', true); return; } } if (!this.validCronExpression(this.editingTask.cron)) { this.notify('请输入有效的五段 Cron 表达式', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } if (!this.editingTask.name.trim()) this.editingTask.name = this.uniqueTaskName(this.taskTypeLabel(this.editingTask.functions[0]), this.editingTask.id); try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
     requestDeleteTask(task) { this.deletingTask = task; },
@@ -327,7 +355,8 @@ createApp({
     async toggleTask(task) { task.enabled = !task.enabled; try { this.config.METADATA_TASKS = this.tasks; this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify(task.enabled ? '计划任务已启用' : '计划任务已停用'); } catch (error) { task.enabled = !task.enabled; this.notify(error.message, true); } },
     taskDragStart(index, event) { this.taskDragIndex = index; this.taskDragMoved = false; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); },
     async taskDrop(index) { if (this.taskDragIndex === null || this.taskDragIndex === index) return; const [task] = this.tasks.splice(this.taskDragIndex, 1); this.tasks.splice(index, 0, task); this.taskDragMoved = true; this.taskDragIndex = null; this.config.METADATA_TASKS = this.tasks; await this.save(); },
-    taskRunning(task) { return this.status.running && this.status.task_id === task.id; },
+    taskStatus(task) { return this.status.tasks?.[task.id] || {}; },
+    taskRunning(task) { return !!this.taskStatus(task).state; },
     async runTask(task) { const stopping = this.taskRunning(task); try { await this.api(stopping ? '/api/tasks/stop' : '/api/tasks/run', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.status = await this.api('/api/status'); this.notify(stopping ? '正在停止任务' : '计划任务已开始执行'); } catch (error) { this.notify(error.message, true); } },
     handleServerWheel(event) { const grid = event.target && event.target.closest ? event.target.closest('.server-card-grid') : null; if (!grid || grid.scrollWidth <= grid.clientWidth) return; event.preventDefault(); grid.scrollLeft += Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX; },
     toggleRecordSort() { this.recordSortNewest = !this.recordSortNewest; this.recordPage = 1; this.loadRecords(true); },

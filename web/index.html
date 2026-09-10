@@ -10,23 +10,36 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260910-9">
+<link rel="stylesheet" href="final-overrides.css?v=20260910-11">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
   <div id="app" v-cloak>
     <section v-if="!authenticated" class="login-screen">
-      <div class="login-orbit orbit-a">
-</div>
-<div class="login-orbit orbit-b">
-</div>
+      <div v-if="loginBackground.length" class="login-backdrop" aria-hidden="true">
+        <div class="login-backdrop-grid">
+          <div v-for="(column,index) in loginBackgroundColumns" :key="index" class="login-cover-column">
+            <img v-for="(cover,coverIndex) in column" :key="coverIndex" :src="cover.url" alt="" @error="$event.target.style.visibility='hidden'">
+          </div>
+        </div>
+      </div>
       <form class="login-card" @submit.prevent="login">
         <h1>BangumiKomga</h1>
 <p>管理媒体库刮削与运行策略</p>
-        <label>账号<input v-model.trim="loginForm.username" autocomplete="username" autofocus>
-</label>
-        <label>密码<input v-model="loginForm.password" type="password" autocomplete="current-password">
-</label>
+        <label class="login-input">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M4.5 20v-2a7.5 5 0 0 1 15 0v2Z"/></svg>
+          <input v-model.trim="loginForm.username" placeholder="用户名" aria-label="用户名" autocomplete="off" autofocus>
+        </label>
+        <label class="login-input">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>
+          <input v-model="loginForm.password" :type="showLoginPassword?'text':'password'" placeholder="密码" aria-label="密码" autocomplete="off">
+          <button type="button" class="login-eye" @click="showLoginPassword=!showLoginPassword" :aria-label="showLoginPassword?'隐藏密码':'显示密码'">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <template v-if="showLoginPassword"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></template>
+              <template v-else><path d="m3 3 18 18M10 6.2a11 11 0 0 1 2-.2c6.5 0 10 6 10 6a18 18 0 0 1-3 3.5M6.3 6.8A19 19 0 0 0 2 12s3.5 6 10 6a12 12 0 0 0 4.4-.8M10 10a2.8 2.8 0 0 0 4 4"/></template>
+            </svg>
+          </button>
+        </label>
         <button class="primary login-button" type="submit">进入后台 <span>→</span>
 </button>
       </form>
@@ -212,7 +225,7 @@
 </label>
 </div>
 </div>
-<div v-else-if="view==='settings'" class="settings-hero-actions">
+<div v-else-if="view==='settings'" class="hero-controls settings-controls"><div class="hero-actions settings-hero-actions">
 <button class="secondary backup-button" @click="backupConfig">
 <svg viewBox="0 0 24 24" aria-hidden="true">
 <path d="M12 3v12m0 0-4-4m4 4 4-4M5 20h14"/>
@@ -226,7 +239,7 @@
 <span>还原</span>
 <input type="file" accept="application/json,.json" @change="restoreConfig">
 </label>
-</div>
+</div></div>
 </header>
 
         <section v-if="view==='scrape'" class="view-stack">
@@ -374,9 +387,10 @@
 <div class="task-card-main">
 <strong>{{task.name}}</strong>
 <span>{{taskTypeLabel(taskType(task))}} · {{(task.fields||[]).length}} 项字段 · {{(task.card_ids||[]).length}} 个媒体库 · Cron {{task.cron || '0 6 * * *'}}</span>
+<small v-if="taskStatus(task).state==='queued'" class="task-queue-state">等待媒体库中的前序任务完成</small>
 </div>
 <div class="task-card-actions">
-<button type="button" class="task-icon-button" :class="{running:taskRunning(task)}" @click.stop="runTask(task)" :disabled="taskRunning(task) ? status.stopping : status.running" :aria-label="taskRunning(task)?'停止执行':'立即执行'">
+<button type="button" class="task-icon-button" :class="{running:taskRunning(task)}" @click.stop="runTask(task)" :disabled="taskStatus(task).stopping" :aria-label="taskRunning(task)?'停止执行':'立即执行'">
 <svg viewBox="0 0 24 24" aria-hidden="true">
 <rect v-if="taskRunning(task)" x="5" y="5" width="14" height="14" rx="3"/>
 <path v-else d="M6 4.8 19 12 6 19.2V4.8Z"/>
@@ -458,12 +472,7 @@
 </section>
               <section class="setting-card strategy-card">
 <h3>基本设置</h3>
-<label>运行模式<select v-model="config.BANGUMI_KOMGA_SERVICE_TYPE" @change="saveServiceMode">
-<option value="sse">实时监控（SSE，推荐）</option>
-<option value="poll">定时轮询增量</option>
-<option value="once">仅手动执行</option>
-</select>
-</label>
+<tag-picker id="service-mode" label="运行模式" v-model="serviceModeChoice" :options="serviceModeOptions" :single="true"></tag-picker>
 <template v-if="config.BANGUMI_KOMGA_SERVICE_TYPE==='poll'">
 <label>轮询间隔（秒）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_INTERVAL" type="number" min="5" @change="save">
 </label>
@@ -471,9 +480,15 @@
 </label>
 </template>
 <div class="retention-fields">
-<label>刮削记录保留（天）<input v-model.number="config.RECORD_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
+<label class="retention-input"><span class="field-label">记录保留</span><input v-model.number="config.RECORD_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
+<span class="day-unit">天</span><span class="day-stepper">
+<button type="button" @click.prevent="stepRetention('RECORD_RETENTION_DAYS',1)" aria-label="增加记录保留天数"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+<button type="button" @click.prevent="stepRetention('RECORD_RETENTION_DAYS',-1)" aria-label="减少记录保留天数"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span>
 </label>
-<label>日志保留（天）<input v-model.number="config.LOG_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
+<label class="retention-input"><span class="field-label">日志保留</span><input v-model.number="config.LOG_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
+<span class="day-unit">天</span><span class="day-stepper">
+<button type="button" @click.prevent="stepRetention('LOG_RETENTION_DAYS',1)" aria-label="增加日志保留天数"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+<button type="button" @click.prevent="stepRetention('LOG_RETENTION_DAYS',-1)" aria-label="减少日志保留天数"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span>
 </label>
 </div>
 <small class="settings-note">默认 30 天，最大 365 天，过期记录和日志自动删除。</small>
@@ -498,9 +513,9 @@
 <button type="button" :class="{active:serverDraft.auth_mode==='key'}" @click="serverDraft.auth_mode='key';serverDraft.email='';serverDraft.password=''">API 密钥</button>
 </div>
 <div class="server-form-grid" v-if="serverDraft.auth_mode==='password'">
-<label>账号<input v-model.trim="serverDraft.email" type="email">
+<label><span class="field-label">账号</span><input v-model.trim="serverDraft.email" type="email">
 </label>
-<label>密码<div class="secret-input">
+<label><span class="field-label">密码</span><div class="secret-input">
 <input v-model="serverDraft.password" :type="showServerDraftSecret?'text':'password'">
 <button type="button" class="eye-button" @click="showServerDraftSecret=!showServerDraftSecret" aria-label="显示或隐藏 Komga 密码">
 <svg viewBox="0 0 24 24">
@@ -511,7 +526,7 @@
 </div>
 </label>
 </div>
-<label v-else>API 密钥<div class="secret-input">
+<label v-else><span class="field-label">API 密钥</span><div class="secret-input">
 <input v-model.trim="serverDraft.api_key" :type="showServerDraftSecret?'text':'password'">
 <button type="button" class="eye-button" @click="showServerDraftSecret=!showServerDraftSecret" aria-label="显示或隐藏 Komga API 密钥">
 <svg viewBox="0 0 24 24">
@@ -620,8 +635,16 @@
 <legend>Cron 表达式</legend>
 <input v-model.trim="editingTask.cron" inputmode="text" spellcheck="false" placeholder="0 6 * * *" aria-label="Cron 表达式">
 </fieldset>
-<tag-picker v-if="editingTask.functions.includes('metadata_correction')" id="task-operations" label="副功能" v-model="editingTask.operations" :options="correctionOptions" placeholder="请选择副功能">
-</tag-picker>
+<div v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" class="task-option-switches">
+<template v-if="editingTask.functions.includes('metadata_correction')">
+<button v-for="option in correctionOptions" :key="option.value" type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.operations.includes(option.value)}" :aria-checked="editingTask.operations.includes(option.value)" @click="toggleTaskOperation(option.value)">
+<span aria-hidden="true" class="task-toggle-switch"></span>{{option.label}}</button>
+</template>
+<button type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.include_locked}" :aria-checked="editingTask.include_locked" @click="editingTask.include_locked=!editingTask.include_locked">
+<span aria-hidden="true" class="task-toggle-switch"></span>包含锁定</button>
+<button type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.lock_completed}" :aria-checked="editingTask.lock_completed" @click="editingTask.lock_completed=!editingTask.lock_completed">
+<span aria-hidden="true" class="task-toggle-switch"></span>完成锁定</button>
+</div>
 <button v-if="editingTask.functions.includes('metadata_completion')" type="button" class="task-ai-toggle" :class="{active:editingTask.ai_completion}" :aria-pressed="editingTask.ai_completion" @click="editingTask.ai_completion=!editingTask.ai_completion">
 <span aria-hidden="true" class="task-toggle-switch">
 </span>AI补全</button>
@@ -697,12 +720,12 @@
 <button type="button" :class="{active:editingServer.auth_mode==='key'}" @click="editingServer.auth_mode='key';editingServer.email='';editingServer.password=''">API 密钥</button>
 </div>
 <template v-if="editingServer.auth_mode==='password'">
-<label>账号<input v-model.trim="editingServer.email" type="email">
+<label><span class="field-label">账号</span><input v-model.trim="editingServer.email" type="email">
 </label>
-<label>密码<input v-model="editingServer.password" type="password">
+<label><span class="field-label">密码</span><input v-model="editingServer.password" type="password">
 </label>
 </template>
-<label v-else>API 密钥<input v-model.trim="editingServer.api_key" type="password">
+<label v-else><span class="field-label">API 密钥</span><input v-model.trim="editingServer.api_key" type="password">
 </label>
 <div class="modal-actions">
 <button type="button" class="secondary" @click="editingServer=null">取消</button>
@@ -713,11 +736,11 @@
   </div>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js">
 </script>
-<script src="tag-picker.js?v=20260910-7">
+<script src="tag-picker.js?v=20260910-10">
 </script>
-<script src="floating-tooltip.js?v=1">
+<script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260910-9">
+<script src="config.js?v=20260910-11">
 </script>
 </body>
 </html>

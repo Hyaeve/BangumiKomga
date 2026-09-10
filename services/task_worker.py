@@ -1,6 +1,7 @@
 """Isolated task worker: stopping it also stops pending AI/Komga requests."""
 import json
 import sys
+from tools.task_lock_policy import task_lock_options
 
 
 def main():
@@ -13,9 +14,9 @@ def main():
         web_backend._refresh_card_collages(targets)
     elif function == "metadata_correction":
         web_backend._translate_task_libraries(targets, task.get("fields", []),
-                                             correction=task.get("operations", []))
+                                             correction=[value for value in task.get("operations", []) if value != "include_locked"], **task_lock_options(task))
     elif function == "summary_translation":
-        web_backend._translate_task_libraries(targets, task.get("fields") or ["summary"])
+        web_backend._translate_task_libraries(targets, task.get("fields") or ["summary"], **task_lock_options(task))
     else:
         raise ValueError("Unknown task function")
 

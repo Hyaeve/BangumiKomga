@@ -192,7 +192,9 @@ class TaskConfigPersistenceTests(unittest.TestCase):
                 # Force loading only config.py, as after a backup restore.
                 (root / "state.json").unlink()
                 tasks = web_backend._read_state()["METADATA_TASKS"]
-                self.assertEqual(tasks[0]["operations"], ["simplify", "extract_title", "include_locked"])
+                self.assertEqual(tasks[0]["operations"], ["simplify", "extract_title"])
+                self.assertTrue(tasks[0]["include_locked"])
+                self.assertFalse(tasks[0]["lock_completed"])
                 self.assertEqual(tasks[0]["fields"], ["title", "summary"])
                 self.assertTrue(tasks[1]["ai_completion"])
 
