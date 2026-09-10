@@ -15,12 +15,15 @@ import secrets
 import sqlite3
 import threading
 import time
+import subprocess
+import sys
 from contextlib import closing
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from tools.komga_path import item_path
+from services.media_policy import media_type, scrape_enabled
 
 
 ROOT = Path(__file__).resolve().parent
@@ -84,6 +87,62 @@ DEFAULTS = {
 STATE_LOCK = threading.RLock()
 REFRESH_LOCK = threading.Lock()
 REFRESH_STATE = {"running": False, "last_result": None, "last_error": None}
+EXECUTION_GUARD = threading.RLock()
+EXECUTION_STOP = threading.Event()
+EXECUTION_PROCESS = None
+
+
+class TaskStopped(Exception):
+    pass
+
+
+def _run_managed(module, payload):
+    """Keep one killable worker process; never hold the guard while waiting."""
+    global EXECUTION_PROCESS
+    with EXECUTION_GUARD:
+        if EXECUTION_STOP.is_set():
+            raise TaskStopped()
+        env = dict(os.environ, BANGUMI_EXECUTION_ID=REFRESH_STATE.get("execution_id", ""),
+                   BANGUMI_EXECUTION_SERVER=str(payload.get("server_id") or ""))
+        process = subprocess.Popen(
+            [sys.executable, "-m", module], stdin=subprocess.PIPE,
+            text=True, encoding="utf-8", cwd=ROOT, env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        EXECUTION_PROCESS = process
+    try:
+        try:
+            process.communicate(json.dumps(payload))
+        except (BrokenPipeError, OSError):
+            if EXECUTION_STOP.is_set():
+                process.wait()
+                raise TaskStopped()
+            raise
+        if EXECUTION_STOP.is_set():
+            raise TaskStopped()
+        if process.returncode:
+            raise subprocess.CalledProcessError(process.returncode, process.args)
+    finally:
+        with EXECUTION_GUARD:
+            if EXECUTION_PROCESS is process:
+                EXECUTION_PROCESS = None
+
+
+def _stop_task(task_id):
+    with EXECUTION_GUARD:
+        if not REFRESH_STATE.get("running") or REFRESH_STATE.get("task_id") != task_id:
+            return False
+        EXECUTION_STOP.set()
+        REFRESH_STATE["stopping"] = True
+        if EXECUTION_PROCESS is not None and EXECUTION_PROCESS.poll() is None:
+            EXECUTION_PROCESS.terminate()
+    return True
+
+
+def _begin_execution(task_id=None):
+    with EXECUTION_GUARD:
+        EXECUTION_STOP.clear()
+        REFRESH_STATE.update(running=True, stopping=False, task_id=task_id,
+                             execution_id=secrets.token_hex(12), last_error=None)
 SESSIONS = set()
 PREVIEW_CACHE = {}
 PREVIEW_CACHE_FILE = DATA_DIR / "cover_collage_cache.json"
@@ -270,10 +329,12 @@ def save_state(data: dict) -> dict:
         libraries.append({
             "LIBRARY": str(item["LIBRARY"]),
             "SERVER_ID": str(item.get("SERVER_ID", "")),
-            "IS_NOVEL_ONLY": bool(item.get("IS_NOVEL_ONLY", False)),
+            "IS_NOVEL_ONLY": media_type(item) == "book",
+            "MEDIA_TYPE": media_type(item),
+            "SCRAPE_ENABLED": scrape_enabled(item),
             "REQUIRED_FIELDS": list(item.get("REQUIRED_FIELDS", []) or []),
             "OVERWRITE_FIELDS": list(item.get("OVERWRITE_FIELDS", []) or []),
-            "TRANSLATE_SUMMARY_TO_ZH": bool(item.get("TRANSLATE_SUMMARY_TO_ZH", False)),
+            "TRANSLATE_SUMMARY_TO_ZH": False,
             "AI_RECOGNITION": bool(item.get("AI_RECOGNITION", False)),
             "SORT_VOLUMES": bool(item.get("SORT_VOLUMES", False)),
         })
@@ -291,6 +352,8 @@ def save_state(data: dict) -> dict:
             "type": str(item.get("type") or ((item.get("functions") or ["metadata_completion"])[0])),
             "functions": [str(value) for value in (item.get("functions") or ([item.get("type")] if item.get("type") else []))],
             "fields": [str(field) for field in (item.get("fields") or [])],
+            "operations": [str(value) for value in (item.get("operations") or [])],
+            "ai_completion": bool(item.get("ai_completion", False)),
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
             "cron": str(item.get("cron") or "0 6 * * *").strip(),
             "schedule": str(item.get("schedule") or item.get("cron") or "0 6 * * *").strip(),
@@ -322,23 +385,38 @@ def _load_komga(server_id=None):
     return KomgaApi(state["KOMGA_BASE_URL"], state.get("KOMGA_EMAIL", ""), state.get("KOMGA_EMAIL_PASSWORD", ""), state.get("KOMGA_API_KEY") or None)
 
 
-def _start_refresh(full=False, library_ids=None):
+def _manual_refresh_targets(target_ids, full):
+    context = _configured_library_context()
+    grouped = {}
+    for key in target_ids:
+        target = context.get(str(key))
+        if not target:
+            raise ValueError("所选媒体卡片不存在")
+        grouped.setdefault(target["server_id"], set()).add(target["library_id"])
+    if not grouped:
+        raise ValueError("请先添加媒体卡片")
+    for server_id, libraries in grouped.items():
+        _run_managed("services.media_refresh", {"server_id": server_id, "library_ids": sorted(libraries), "full": full})
+
+
+def _start_refresh(full=False, library_ids=None, target_id=None):
+    context = _configured_library_context()
+    targets = [target_id] if target_id else [key for key in context if "::" in key]
+    if library_ids and not target_id:
+        targets = [key for key in targets if context[key]["library_id"] in library_ids]
+    if not targets or any(key not in context for key in targets):
+        raise ValueError("所选媒体卡片不存在")
     if not REFRESH_LOCK.acquire(blocking=False):
         return False
-    REFRESH_STATE.update({"running": True, "last_error": None})
+    _begin_execution()
 
     def worker():
         try:
-            # Import only after config.py exists and in the worker so the web UI
-            # remains available even on a fresh installation.
-            from core.refresh_metadata import refresh_metadata, refresh_partial_metadata
-            if full:
-                refresh_metadata()
-            else:
-                refresh_partial_metadata(library_ids=library_ids)
+            _manual_refresh_targets(targets, full)
             REFRESH_STATE["last_result"] = "full" if full else "incremental"
         except Exception as exc:  # pragma: no cover - surfaced through API
             REFRESH_STATE["last_error"] = str(exc)
+            _write_activity("手动刮削：失败", str(exc), level="error")
         finally:
             REFRESH_STATE["running"] = False
             REFRESH_LOCK.release()
@@ -358,7 +436,14 @@ def _refresh_card_collages(library_ids):
     if not targets:
         raise ValueError("计划任务没有可刷新的媒体库")
     for library_id, server_id in targets:
-        _preview_items(server_id, library_id, force=True)
+        from tools.execution_outcomes import record_outcome
+        os.environ["BANGUMI_EXECUTION_SERVER"] = server_id
+        try:
+            _preview_items(server_id, library_id, force=True)
+            record_outcome("collage", library_id)
+        except Exception:
+            record_outcome("collage", library_id, failed=True)
+            raise
         _write_activity("计划任务：拼贴刷新", f"刷新媒体库 {library_id} 的封面拼贴")
 
 
@@ -377,7 +462,7 @@ def _start_task(task):
     """Run the selected task functions under the same single-worker lock."""
     if not REFRESH_LOCK.acquire(blocking=False):
         return False
-    REFRESH_STATE.update({"running": True, "last_error": None})
+    _begin_execution(str(task.get("id") or ""))
     functions = {str(value) for value in (task.get("functions") or [task.get("type") or "metadata_completion"])}
     target_ids = [str(value) for value in (task.get("card_ids") or [])]
     library_ids = _task_library_ids(target_ids)
@@ -386,31 +471,63 @@ def _start_task(task):
         try:
             result_labels = []
             if "metadata_completion" in functions:
-                from core.refresh_metadata import refresh_partial_metadata
-                refresh_partial_metadata(library_ids=library_ids or None)
+                _complete_task_libraries(target_ids, task)
                 result_labels.append("incremental")
+            if "metadata_correction" in functions:
+                _run_managed("services.task_worker", {"function": "metadata_correction", "task": task})
+                result_labels.append("metadata_correction")
             if "summary_translation" in functions:
-                _translate_task_libraries(target_ids)
+                _run_managed("services.task_worker", {"function": "summary_translation", "task": task})
                 result_labels.append("summary_translation")
             if "card_collage_refresh" in functions:
-                _refresh_card_collages(target_ids)
+                _run_managed("services.task_worker", {"function": "card_collage_refresh", "task": task})
+                with PREVIEW_CACHE_LOCK:
+                    global PREVIEW_CACHE_LOADED
+                    PREVIEW_CACHE.clear()
+                    PREVIEW_CACHE_LOADED = False
                 result_labels.append("card_collage")
+            if EXECUTION_STOP.is_set():
+                raise TaskStopped()
             REFRESH_STATE["last_result"] = "+".join(result_labels) or "task"
             _write_activity("计划任务：完成", f"计划任务 {task.get('name', '未命名任务')} 执行完成")
+        except TaskStopped:
+            REFRESH_STATE["last_result"] = "stopped"
+            _write_activity("计划任务：停止", f"计划任务 {task.get('name', '未命名任务')} 已停止")
         except Exception as exc:  # pragma: no cover - surfaced through API
             REFRESH_STATE["last_error"] = str(exc)
             _write_activity("计划任务：失败", f"计划任务 {task.get('name', '未命名任务')}：{exc}", level="error")
         finally:
-            REFRESH_STATE["running"] = False
+            with EXECUTION_GUARD:
+                REFRESH_STATE.update(running=False, stopping=False, task_id=None)
             REFRESH_LOCK.release()
 
     threading.Thread(target=worker, name="WebTask", daemon=True).start()
     return True
 
 
-def _translate_task_libraries(target_ids):
+def _complete_task_libraries(target_ids, task):
+    context = _configured_library_context()
+    grouped = {}
+    if not task.get("fields"):
+        raise ValueError("请选择补全元数据")
+    for key in target_ids:
+        target = context.get(str(key))
+        if not target:
+            raise ValueError(f"计划任务的媒体库不存在：{key}")
+        grouped.setdefault(target["server_id"], []).append(target["library_id"])
+    if not grouped:
+        raise ValueError("请选择应用媒体库")
+    for server_id, library_ids in grouped.items():
+        request = {"server_id": server_id, "library_ids": library_ids,
+                   "fields": task["fields"], "ai_completion": bool(task.get("ai_completion"))}
+        # Isolate imported scraper configuration between Komga services.
+        _run_managed("services.metadata_task", request)
+
+
+def _translate_task_libraries(target_ids, fields=None, correction=None):
     from tools.translation_task import translate_library
     from tools.db import init_sqlite3, record_scrape_event
+    action = "元数据修正" if correction is not None else "AI翻译"
 
     state = _read_state()
     context = _configured_library_context()
@@ -427,6 +544,8 @@ def _translate_task_libraries(target_ids):
     try:
         for target in targets:
             library_id, server_id = target["library_id"], target["server_id"]
+            if os.environ.get("BANGUMI_EXECUTION_ID"):
+                os.environ["BANGUMI_EXECUTION_SERVER"] = server_id
             komga = _load_komga(server_id)
             libraries = komga.list_libraries()
             library_name = next((item.get("name") for item in libraries if str(item.get("id")) == library_id), library_id)
@@ -436,21 +555,27 @@ def _translate_task_libraries(target_ids):
                 record_scrape_event(
                     conn, "小说" if card.get("IS_NOVEL_ONLY") else "漫画",
                     item.get("name") or "", library_id, library_name, fields,
-                    source_title=source_title, match_source="计划任务：简介翻译",
+                    source_title=source_title, match_source=f"计划任务：{action}",
                     event_kind=kind, source_path=str(item.get("url") or ""),
                     komga_id=item["id"], server_id=server_id,
                 )
 
-            counts = translate_library(
-                komga, library_id, state, record,
-                lambda detail, level: _write_activity("计划任务：简介翻译", detail, level=level),
-            )
+            log = lambda detail, level: _write_activity(f"计划任务：{action}", detail, level=level)
+            try:
+                if correction is not None:
+                    from tools.correction_task import correct_library
+                    counts = correct_library(komga, library_id, state, record, log, fields, correction,
+                                             only_novel=media_type(card))
+                else:
+                    counts = translate_library(komga, library_id, state, record, log, fields=fields)
+            finally:
+                komga.r.close()
             failures += counts["failed"]
-            _write_activity("计划任务：简介翻译", f"{target['server_name']} / {library_name}：更新 {counts['updated']}，跳过 {counts['skipped']}，失败 {counts['failed']}")
+            _write_activity(f"计划任务：{action}", f"{target['server_name']} / {library_name}：更新 {counts['updated']} 项目，跳过 {counts['skipped']} 项目，失败 {counts['failed']} 字段")
     finally:
         conn.close()
     if failures:
-        raise ValueError(f"{failures} 项简介翻译或写入失败，已保留原文，详见运行日志")
+        raise ValueError(f"{failures} 项元数据翻译或写入失败，已保留原文，详见运行日志")
 
 
 def _cron_value(token, minimum, maximum):
@@ -582,7 +707,7 @@ def _configured_library_context():
     return result
 
 
-def _read_scrape_rows():
+def _read_scrape_rows(record_ids=None):
     """Read raw events and include the newer series/volume marker."""
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
@@ -600,7 +725,13 @@ def _read_scrape_rows():
             kind_sql = ",event_kind" if "event_kind" in columns else ",'volume' AS event_kind"
             path_sql = ",source_path" if "source_path" in columns else ",'' AS source_path"
             identity_sql = (",komga_id" if "komga_id" in columns else ",''") + (",server_id" if "server_id" in columns else ",''")
-            rows = conn.execute("SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at" + source_sql + kind_sql + path_sql + identity_sql + " FROM scrape_records WHERE library_id IN (" + placeholders + ") ORDER BY id DESC", ids).fetchall()
+            selection = ""
+            if record_ids is not None:
+                if not record_ids:
+                    return []
+                selection = " AND id IN (" + ",".join("?" for _ in record_ids) + ")"
+                ids.extend(record_ids)
+            rows = conn.execute("SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at" + source_sql + kind_sql + path_sql + identity_sql + " FROM scrape_records WHERE library_id IN (" + placeholders + ")" + selection + " ORDER BY id DESC", ids).fetchall()
         return [{
             "id": row[0], "item_type": row[1], "item_title": row[2], "library_id": row[3], "library_name": row[4],
             "server_id": row[14] or context.get(str(row[3]), {}).get("server_id", ""),
@@ -657,11 +788,94 @@ def _group_scrape_records(rows):
     return sorted(result, key=lambda row: str(row.get("recorded_at") or ""), reverse=True)
 
 
-def _read_scrape_records(limit=100, offset=0):
-    grouped = _group_scrape_records(_read_scrape_rows())
-    visible = grouped[offset:offset + limit]
+def _scrape_page_query(search=""):
+    """Group and filter in SQLite, not in the web server's Python heap."""
+    context = {key: value for key, value in _configured_library_context().items() if "::" in key}
+    if not context:
+        return None, []
+    conn = sqlite3.connect(ROOT / "recordsRefreshed.db")
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(scrape_records)")}
+    finally:
+        conn.close()
+    if not columns:
+        return None, []
+    params = []
+    for item in context.values():
+        params.extend([item["server_id"], item["library_id"], item["server_name"]])
+    server = "COALESCE(r.server_id,'')" if "server_id" in columns else "''"
+    title = "COALESCE(NULLIF(r.source_title,''),r.item_title)" if "source_title" in columns else "r.item_title"
+    path = "COALESCE(r.source_path,'')" if "source_path" in columns else "''"
+    kind = "r.event_kind" if "event_kind" in columns else "''"
+    query = f"""WITH configured(sid,lid,sname) AS (VALUES {','.join('(?,?,?)' for _ in context)}),
+        base AS (
+            SELECT r.id,r.item_type,r.recorded_at,r.metadata_fields,r.library_name,
+                c.sid,c.lid,c.sname,{title} AS title,{path} AS path,{kind} AS kind,
+                ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY c.sid) AS duplicate
+            FROM scrape_records r JOIN configured c ON r.library_id=c.lid
+                AND ({server}='' OR {server}=c.sid)
+        ), unique_rows AS (SELECT * FROM base WHERE duplicate=1),
+        grouped AS (
+            SELECT sid,lid,item_type,LOWER(title) AS title_key,MAX(recorded_at) AS recorded_at,
+                MAX(id) AS latest_id,COUNT(*) AS record_count
+            FROM unique_rows GROUP BY sid,lid,item_type,LOWER(title)
+            HAVING MAX(CASE WHEN title LIKE ? OR library_name LIKE ? OR sname LIKE ?
+                OR path LIKE ? OR metadata_fields LIKE ? THEN 1 ELSE 0 END)=1
+        ) """
+    params.extend([f"%{search}%"] * 5)
+    return query, params
+
+
+def _read_scrape_records(limit=50, offset=0, search="", newest=True, with_total=False):
+    limit = max(1, min(int(limit), 50))
+    offset = max(0, int(offset))
+    _cleanup_expired_records()
+    query, params = _scrape_page_query(search)
+    if not query:
+        return {"items": [], "total": 0} if with_total else []
+    direction = "DESC" if newest else "ASC"
+    with closing(sqlite3.connect(ROOT / "recordsRefreshed.db")) as conn:
+        total = conn.execute(query + "SELECT COUNT(*) FROM grouped", params).fetchone()[0]
+        page_groups = conn.execute(query + f"""SELECT sid,lid,item_type,title_key,recorded_at,record_count
+            FROM grouped ORDER BY recorded_at {direction},latest_id {direction} LIMIT ? OFFSET ?""",
+                                   [*params, limit, offset]).fetchall()
+        # Bound expanded details as well as top-level rows. Older details are
+        # available through their own per-book paging endpoint.
+        rows = conn.execute(query + f""", page AS (
+            SELECT * FROM grouped ORDER BY recorded_at {direction},latest_id {direction} LIMIT ? OFFSET ?
+        ), ranked AS (
+            SELECT u.id,ROW_NUMBER() OVER (
+                PARTITION BY u.sid,u.lid,u.item_type,LOWER(u.title)
+                ORDER BY (u.kind='series') DESC,u.id DESC) AS position
+            FROM unique_rows u JOIN page p ON u.sid=p.sid AND u.lid=p.lid
+                AND u.item_type=p.item_type AND LOWER(u.title)=p.title_key
+        ) SELECT id FROM ranked WHERE position<=51""", [*params, limit, offset]).fetchall()
+    visible = _group_scrape_records(_read_scrape_rows([row[0] for row in rows]))
+    for record in visible:
+        key = (record["server_id"], record["library_id"], record["item_type"], record["source_title"].lower())
+        group = next((item for item in page_groups if item[:4] == key), None)
+        if group:
+            record.update(recorded_at=group[4], record_count=group[5], volume_count=group[5]-1, volume_offset=0)
+    visible.sort(key=lambda row: (row["recorded_at"], row["id"]), reverse=newest)
     _schedule_path_backfill(visible)
-    return visible
+    return {"items": visible, "total": total} if with_total else visible
+
+
+def _read_record_details(record_id, offset=0):
+    query, params = _scrape_page_query()
+    if not query:
+        return {"items": [], "total": 0}
+    primary_id = int(str(record_id).rsplit(":", 1)[-1])
+    with closing(sqlite3.connect(ROOT / "recordsRefreshed.db")) as conn:
+        clause = """ FROM unique_rows u JOIN unique_rows p ON p.id=?
+            AND u.sid=p.sid AND u.lid=p.lid AND u.item_type=p.item_type
+            AND LOWER(u.title)=LOWER(p.title) WHERE u.id<>p.id"""
+        total = conn.execute(query + "SELECT COUNT(*)" + clause, [*params, primary_id]).fetchone()[0]
+        rows = conn.execute(query + "SELECT u.id" + clause + " ORDER BY u.id DESC LIMIT 50 OFFSET ?",
+                            [*params, primary_id, max(0, offset)]).fetchall()
+    items = _read_scrape_rows([row[0] for row in rows])
+    _schedule_path_backfill(items)
+    return {"items": items, "total": total}
 
 
 def _backfill_source_paths(records):
@@ -767,9 +981,14 @@ def _schedule_path_backfill(records):
 
 
 def _read_scrape_stats():
-    grouped = _group_scrape_records(_read_scrape_rows())
-    today = __import__("datetime").date.today().isoformat()
-    return {"total": len(grouped), "today": sum(1 for row in grouped if str(row.get("recorded_at") or "").startswith(today)), "comic": sum(1 for row in grouped if row.get("item_type") == "漫画"), "novel": sum(1 for row in grouped if row.get("item_type") == "小说")}
+    query, params = _scrape_page_query()
+    if not query:
+        return dict(total=0, today=0, comic=0, novel=0)
+    with closing(sqlite3.connect(ROOT / "recordsRefreshed.db")) as conn:
+        row = conn.execute(query + """SELECT COUNT(*),
+            SUM(recorded_at LIKE ?),SUM(item_type='漫画'),SUM(item_type='小说') FROM grouped""",
+                           [*params, datetime.now().strftime("%Y-%m-%d") + "%"]).fetchone()
+    return dict(zip(("total", "today", "comic", "novel"), [value or 0 for value in row]))
 
 
 def _cleanup_expired_records():
@@ -786,10 +1005,10 @@ def _cleanup_expired_records():
         return
 
 
-def _read_runtime_logs(limit=100, offset=0, search=""):
+def _read_runtime_logs(limit=100, offset=0, search="", with_total=False):
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
-        return []
+        return {"items": [], "total": 0} if with_total else []
     try:
         conn = sqlite3.connect(db_file)
         conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
@@ -805,17 +1024,19 @@ def _read_runtime_logs(limit=100, offset=0, search=""):
             where = "WHERE action LIKE ? OR detail LIKE ? OR source LIKE ?"
             needle = f"%{search}%"
             params.extend([needle, needle, needle])
-        rows = conn.execute(f"SELECT id,level,action,detail,source,recorded_at FROM activity_logs {where} ORDER BY id DESC LIMIT ? OFFSET ?", (*params, limit, offset)).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) FROM activity_logs {where}", params).fetchone()[0]
+        rows = conn.execute(f"SELECT id,level,action,detail,source,recorded_at FROM activity_logs {where} ORDER BY id DESC LIMIT ? OFFSET ?", (*params, max(1, min(limit, 100)), max(0, offset))).fetchall()
         conn.close()
-        return [{"id": r[0], "level": r[1], "action": r[2], "detail": r[3], "source": r[4], "recorded_at": r[5]} for r in rows]
+        items = [{"id": r[0], "level": r[1], "action": r[2], "detail": r[3], "source": r[4], "recorded_at": r[5]} for r in rows]
+        return {"items": items, "total": total} if with_total else items
     except sqlite3.Error:
-        return []
+        return {"items": [], "total": 0} if with_total else []
 
 
 def _runtime_log_stats():
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
-        return {"total": 0, "today": 0, "plans": 0, "manual": 0}
+        return {"total": 0, "today": 0, "success": 0, "failed": 0}
     try:
         conn = sqlite3.connect(db_file)
         conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
@@ -826,11 +1047,16 @@ def _runtime_log_stats():
         conn.execute("DELETE FROM activity_logs WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
         conn.commit()
         today = __import__("datetime").date.today().isoformat()
-        row = conn.execute("SELECT COUNT(*), SUM(CASE WHEN recorded_at LIKE ? THEN 1 ELSE 0 END), SUM(CASE WHEN action LIKE '计划任务%' THEN 1 ELSE 0 END), SUM(CASE WHEN action LIKE '按钮：手动%' OR action LIKE '%手动执行%' THEN 1 ELSE 0 END) FROM activity_logs", (today + "%",)).fetchone()
+        row = conn.execute("SELECT COUNT(*), SUM(recorded_at LIKE ?) FROM activity_logs", (today + "%",)).fetchone()
+        from tools.execution_outcomes import ensure_table
+        ensure_table(conn)
+        conn.execute("DELETE FROM execution_outcomes WHERE datetime(recorded_at)<datetime('now',?)", (f"-{days} days",))
+        outcomes = conn.execute("SELECT SUM(failed=0),SUM(failed=1) FROM execution_outcomes").fetchone()
+        conn.commit()
         conn.close()
-        return {"total": row[0] or 0, "today": row[1] or 0, "plans": row[2] or 0, "manual": row[3] or 0}
+        return {"total": row[0] or 0, "today": row[1] or 0, "success": outcomes[0] or 0, "failed": outcomes[1] or 0}
     except sqlite3.Error:
-        return {"total": 0, "today": 0, "plans": 0, "manual": 0}
+        return {"total": 0, "today": 0, "success": 0, "failed": 0}
 
 
 def _write_activity(action, detail, level="info", source="web"):
@@ -932,23 +1158,30 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/status":
             self._json(200, REFRESH_STATE)
         elif path == "/api/scrape-records":
-            query = dict(item.split("=", 1) for item in urlparse(self.path).query.split("&") if "=" in item)
+            query = parse_qs(urlparse(self.path).query)
             try:
-                limit = max(20, min(int(query.get("limit", 100)), 200))
-                offset = max(0, int(query.get("offset", 0)))
+                limit = max(1, min(int(query.get("limit", [50])[0]), 50))
+                offset = max(0, int(query.get("offset", [0])[0]))
             except ValueError:
-                limit, offset = 100, 0
-            self._json(200, {"items": _read_scrape_records(limit, offset)})
+                limit, offset = 50, 0
+            self._json(200, _read_scrape_records(limit, offset, query.get("q", [""])[0],
+                                               query.get("sort", ["newest"])[0] != "oldest", True))
         elif path == "/api/scrape-records/stats":
             self._json(200, _read_scrape_stats())
+        elif path == "/api/scrape-records/details":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                self._json(200, _read_record_details(query.get("id", [""])[0], int(query.get("offset", [0])[0])))
+            except ValueError:
+                self._json(400, {"error": "记录分页参数无效"})
         elif path == "/api/runtime-logs":
             query = parse_qs(urlparse(self.path).query)
             try:
-                limit = max(20, min(int(query.get("limit", [100])[0]), 200))
+                limit = max(1, min(int(query.get("limit", [100])[0]), 100))
                 offset = max(0, int(query.get("offset", [0])[0]))
             except ValueError:
                 limit, offset = 100, 0
-            self._json(200, {"items": _read_runtime_logs(limit, offset, query.get("q", [""])[0].strip())})
+            self._json(200, _read_runtime_logs(limit, offset, query.get("q", [""])[0].strip(), True))
         elif path == "/api/runtime-logs/stats":
             self._json(200, _runtime_log_stats())
         elif path == "/api/tasks":
@@ -1120,7 +1353,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, save_state(payload))
             elif path == "/api/refresh" and self._require_auth():
                 body = self._body()
-                if _start_refresh(bool(body.get("full", False))):
+                if _start_refresh(bool(body.get("full", False)), target_id=body.get("target_id")):
                     _write_activity("按钮：手动刮削", "启动" + ("全量" if body.get("full", False) else "增量") + "刮削")
                     self._json(202, {"started": True})
                 else:
@@ -1132,7 +1365,10 @@ class Handler(BaseHTTPRequestHandler):
                 task["id"] = str(task.get("id") or f"task-{secrets.token_hex(6)}")
                 task["functions"] = [str(value) for value in (task.get("functions") or [task.get("type", "metadata_completion")])][:1]
                 task["type"] = task["functions"][0] if task["functions"] else "metadata_completion"
-                labels = {"metadata_completion": "元数据补全", "summary_translation": "简介翻译", "card_collage_refresh": "卡片拼贴刷新"}
+                labels = {"metadata_completion": "元数据补全", "summary_translation": "AI翻译", "metadata_correction": "元数据修正", "card_collage_refresh": "卡片拼贴刷新"}
+                if task["type"] not in labels:
+                    self._json(400, {"error": "无效的任务功能"})
+                    return
                 tasks = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task["id"]]
                 task["name"] = str(task.get("name") or "").strip()
                 if not task["name"]:
@@ -1146,6 +1382,23 @@ class Handler(BaseHTTPRequestHandler):
                             task["name"] = f"{base_name} 副本 {copy_index}"
                             copy_index += 1
                 task["fields"] = list(task.get("fields") or [])
+                if task["type"] != "card_collage_refresh" and not task["fields"]:
+                    self._json(400, {"error": "请至少选择一个元数据项"})
+                    return
+                task["operations"] = list(task.get("operations") or [])
+                task["ai_completion"] = bool(task.get("ai_completion", False))
+                if task["type"] in ("summary_translation", "metadata_correction"):
+                    if not task["fields"] or any(field not in ("title", "summary", "publisher", "authors") for field in task["fields"]):
+                        self._json(400, {"error": "请选择元数据：标题、简介、出版商或作者"})
+                        return
+                if task["type"] == "metadata_correction":
+                    ops = set(task["operations"])
+                    if not ops <= {"simplify", "extract_title", "include_locked"} or not ops & {"simplify", "extract_title"}:
+                        self._json(400, {"error": "请选择繁转简或标题提取"})
+                        return
+                    if "simplify" not in ops and "title" not in task["fields"]:
+                        self._json(400, {"error": "标题提取需要选择标题元数据"})
+                        return
                 task["card_ids"] = list(task.get("card_ids") or [])
                 task["cron"] = str(task.get("cron") or "0 6 * * *").strip()
                 if len(task["cron"].split()) != 5:
@@ -1165,6 +1418,10 @@ class Handler(BaseHTTPRequestHandler):
                 result = save_state(state)
                 _write_activity("计划任务：删除", f"删除计划任务 {task_id}")
                 self._json(200, {"items": result.get("METADATA_TASKS", [])})
+            elif path == "/api/tasks/stop" and self._require_auth():
+                task_id = str(self._body().get("id", ""))
+                stopped = _stop_task(task_id)
+                self._json(202 if stopped else 409, {"stopping": stopped, "error": "" if stopped else "任务已结束或不是当前运行任务"})
             elif path == "/api/tasks/run" and self._require_auth():
                 body = self._body()
                 task_id = str(body.get("id", ""))
@@ -1199,6 +1456,8 @@ class Handler(BaseHTTPRequestHandler):
             content_type = "image/x-icon"
         elif target.suffix == ".png":
             content_type = "image/png"
+        elif target.suffix == ".svg":
+            content_type = "image/svg+xml"
         raw = target.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)

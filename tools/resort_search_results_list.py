@@ -35,7 +35,13 @@ def resort_search_list(query, results, threshold, is_novel=False):
         # bangumi书籍类型包括：漫画、小说、画集、其他
         platform = SubjectPlatform.parse(result["platform"])
         # 根据 IS_NOVEL_ONLY 配置判断是否只应用于 Komga 的小说库
-        is_target_platform = (platform == SubjectPlatform.Novel) == is_novel
+        mode = is_novel if isinstance(is_novel, str) else ("book" if is_novel else "comic")
+        is_book = platform in (SubjectPlatform.Novel, SubjectPlatform.Illustration) or (
+            platform.name == "BGM38" and result.get("type", 1) == 1)
+        is_target_platform = (
+            (mode in ("comic", "mixed") and platform == SubjectPlatform.Comic)
+            or (mode in ("book", "mixed") and is_book)
+        )
         if is_target_platform:
             # 计算得分
             score = compute_name_score_by_fuzzy(

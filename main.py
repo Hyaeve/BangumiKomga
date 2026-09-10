@@ -6,6 +6,7 @@ import time
 import runpy
 
 from web_backend import start_web_server
+from services.media_policy import scrape_enabled
 
 
 def main():
@@ -40,7 +41,7 @@ def main():
                             worker.wait(timeout=3)
                     config = runpy.run_path(config_file)
                     servers = config.get("KOMGA_SERVERS", []) or []
-                    configured_cards = config.get("KOMGA_LIBRARY_LIST", []) or []
+                    configured_cards = [card for card in config.get("KOMGA_LIBRARY_LIST", []) or [] if scrape_enabled(card)]
                     card_server_ids = {str(item.get("SERVER_ID")) for item in configured_cards if item.get("SERVER_ID")}
                     server_ids = [str(server.get("id")) for server in servers if str(server.get("id")) in card_server_ids]
                     worker_targets = server_ids or ([""] if configured_cards and not servers else [])

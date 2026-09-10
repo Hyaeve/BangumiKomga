@@ -13,7 +13,7 @@ const TagPicker = {
     return { open: false, panelStyle: {} };
   },
   computed: {
-    canSelectAll() { return !this.single && this.id !== 'card-features'; },
+    canSelectAll() { return !this.single && !['card-features', 'task-operations'].includes(this.id); },
     allSelected() { return this.options.length > 0 && this.options.every(option => this.modelValue.includes(option.value)); },
     selectedOptions() {
       return this.options.filter(option => this.modelValue.includes(option.value));

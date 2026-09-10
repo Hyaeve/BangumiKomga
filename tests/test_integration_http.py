@@ -45,6 +45,15 @@ class IntegrationHTTPTests(unittest.TestCase):
                     self.reply({"content": [], "last": True})
                 elif self.path == "/v1/chat/completions":
                     self.reply({"choices": [{"message": {"content": [{"type": "text", "text": "年轻读者发现了一座秘密图书馆。"}]}}]})
+                elif self.path == "/v1/responses":
+                    self.reply({"output": [
+                        {"type": "web_search_call", "status": "completed"},
+                        {"type": "message", "content": [{
+                            "type": "output_text",
+                            "text": json.dumps({"summary": {"value": "联网检索简介", "source_urls": ["https://publisher.example/book"]}}),
+                            "annotations": [{"type": "url_citation", "url": "https://publisher.example/book"}]
+                        }]}
+                    ]})
                 else:
                     self.reply({}, 404)
 
@@ -142,6 +151,33 @@ class IntegrationHTTPTests(unittest.TestCase):
             result = translate_summary_to_zh("English original.", True, self.settings)
         self.assertEqual(result, "English original.")
         self.assertFalse(self.metadata["summaryLock"])
+
+    def test_ai_completion_uses_http_web_search_protocol(self):
+        from tools.ai_completion import search_metadata
+        result = search_metadata("书名", ["summary"], self.settings)
+        self.assertEqual(result, {"summary": "联网检索简介"})
+        call = next(call for call in self.calls if call[0] == "/v1/responses")
+        self.assertEqual(call[1]["tool_choice"], "required")
+        self.assertEqual(call[2], "Bearer fixture-ai")
+
+    def test_correction_task_dispatch_writes_only_selected_field(self):
+        self.metadata["summary"] = "這是漫畫簡介"
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            state = {"KOMGA_LIBRARY_LIST": [{"SERVER_ID": "server", "LIBRARY": "lib"}]}
+            context = {"server::lib": {"library_id": "lib", "server_id": "server", "server_name": "测试服务"}}
+            with patch.object(web_backend, "ROOT", root), patch.object(web_backend, "_read_state", return_value=state), \
+                 patch.object(web_backend, "_configured_library_context", return_value=context), \
+                 patch.object(web_backend, "_load_komga", return_value=self.komga), \
+                 patch.object(self.komga, "list_libraries", return_value=[{"id": "lib", "name": "测试库"}]), \
+                 patch.object(web_backend, "_write_activity"):
+                web_backend._translate_task_libraries(["server::lib"], ["summary"], correction=["simplify"])
+                self.assertEqual(self.metadata["summary"], "这是漫画简介")
+                self.assertFalse(self.metadata["summaryLock"])
+                _, conn = init_sqlite3(root / "recordsRefreshed.db")
+                with closing(conn):
+                    event = conn.execute("SELECT metadata_fields,match_source FROM scrape_records").fetchone()
+                self.assertEqual(event, ("summary", "计划任务：元数据修正"))
 
 
 if __name__ == "__main__":

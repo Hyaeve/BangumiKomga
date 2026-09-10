@@ -37,7 +37,9 @@ createApp({
       records: [],
       logs: [],
       logSearch: '',
-      logStats: { total: 0, today: 0, plans: 0, manual: 0 },
+      logStats: { total: 0, today: 0, success: 0, failed: 0 },
+      recordPage: 1, logPage: 1, recordTotal: 0, logTotal: 0,
+      recordRequest: 0, logRequest: 0,
       tasks: [],
       editingTask: null,
       deletingTask: null,
@@ -46,14 +48,24 @@ createApp({
       liveRefreshTimer: null,
       taskTypeOptions: [
         { value: 'metadata_completion', label: '元数据补全' },
-        { value: 'summary_translation', label: '简介翻译' },
+        { value: 'summary_translation', label: 'AI翻译' },
+        { value: 'metadata_correction', label: '元数据修正' },
         { value: 'card_collage_refresh', label: '卡片拼贴刷新' }
       ],
       cardFeatureOptions: [
-        { value: 'isNovel', label: '仅匹配小说' },
-        { value: 'translateSummary', label: '简介翻译' },
+        { value: 'scrapeEnabled', label: '刮削匹配' },
         { value: 'aiRecognition', label: 'AI 识别' },
         { value: 'sortVolumes', label: '卷号排序' }
+      ],
+      mediaTypeOptions: [
+        { value: 'comic', label: '漫画匹配' },
+        { value: 'book', label: '书籍匹配' },
+        { value: 'mixed', label: '混合匹配' }
+      ],
+      correctionOptions: [
+        { value: 'simplify', label: '繁转简' },
+        { value: 'extract_title', label: '标题提取' },
+        { value: 'include_locked', label: '包含锁定项' }
       ],
       recordSearch: '',
       recordSortNewest: true,
@@ -70,7 +82,7 @@ createApp({
         ,RECORD_RETENTION_DAYS: 30, LOG_RETENTION_DAYS: 30, METADATA_TASKS: []
       },
       navItems: [
-        { id: 'scrape', label: '刮削卡片', title: '刮削卡片', subtitle: '为不同媒体库配置独立的增量匹配规则' },
+        { id: 'scrape', label: '媒体卡片', title: '媒体卡片', subtitle: '为不同媒体库配置独立的匹配规则' },
         { id: 'records', label: '刮削记录', title: '刮削记录', subtitle: '按书籍查看每一卷的元数据匹配结果' },
         { id: 'tasks', label: '计划任务', title: '计划任务', subtitle: '按媒体库安排元数据补全任务' },
         { id: 'logs', label: '运行日志', title: '运行日志', subtitle: '查看后台操作与刮削执行轨迹' },
@@ -92,6 +104,11 @@ createApp({
     };
   },
   computed: {
+    editingMediaType: {
+      get() { return [this.editingCard?.mediaType || 'comic']; },
+      set(values) { if (values.length) this.editingCard.mediaType = values[0]; }
+    },
+    taskMetadataOptions() { return this.editingTask?.functions.some(value => ['summary_translation', 'metadata_correction'].includes(value)) ? this.overwriteFieldOptions.filter(option => ['title', 'summary', 'publisher', 'authors'].includes(option.value)) : this.overwriteFieldOptions; },
     cardServerOptions() { return this.config.KOMGA_SERVERS.map(server => ({value:server.id,label:server.name})); },
     cardLibraryOptions() { return this.libraries.map(library => ({value:library.id,label:library.name})); },
     editingServerChoice: {
@@ -121,13 +138,21 @@ createApp({
       return this.records.filter(record => [record.item_type, record.item_title, record.source_title, record.matched_title, record.match_source, record.source_path, record.library_name, record.server_name, ...(record.metadata_fields || []), ...((record.volumes || []).flatMap(volume => [volume.item_title, volume.matched_title, volume.match_source, volume.source_path, ...(volume.metadata_fields || [])]))].some(value => String(value || '').toLocaleLowerCase().includes(keyword)));
     },
     sortedRecords() {
-      return [...this.filteredRecords].sort((a, b) => {
+      return [...this.records].sort((a, b) => {
         const left = String(a.recorded_at || ''), right = String(b.recorded_at || '');
         return this.recordSortNewest ? right.localeCompare(left) : left.localeCompare(right);
       });
     }
   },
   watch: {
+    recordSearch() { this.recordPage = 1; this.loadRecords(); },
+    logSearch() { this.logPage = 1; this.loadLogs(); },
+    'editingTask.functions'(values, previous) {
+      if (!this.editingTask || !previous || values?.[0] === previous?.[0]) return;
+      this.editingTask.fields = [];
+      this.editingTask.operations = [];
+      this.editingTask.ai_completion = false;
+    },
     view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
     bangumiTestQuery() { this.resetBangumiSearch(); }
   },
@@ -186,7 +211,8 @@ createApp({
       this.pollStatus();
     },
     applyConfig(config) { this.config = { ...this.config, ...config, KOMGA_SERVERS: (config.KOMGA_SERVERS || []).map(server => ({ auth_mode: server.auth_mode || (server.api_key ? 'key' : 'password'), ...server })) }; this.tasks = this.config.METADATA_TASKS || []; if (!this.config.KOMGA_SERVERS.length && this.config.KOMGA_BASE_URL) this.config.KOMGA_SERVERS = [{ id: 'legacy', name: '默认 Komga', base_url: this.config.KOMGA_BASE_URL, email: this.config.KOMGA_EMAIL, password: this.config.KOMGA_EMAIL_PASSWORD, api_key: this.config.KOMGA_API_KEY, auth_mode: this.config.KOMGA_API_KEY ? 'key' : 'password' }]; this.komgaAuthMode = this.config.KOMGA_API_KEY ? 'key' : 'password'; this.cards = (this.config.KOMGA_LIBRARY_LIST || []).map((item, index) => this.makeCard(item, index)); },
-    makeCard(item = {}, index = 0) { const defaultOverwriteFields = this.overwriteFieldOptions.map(field => field.value); return { uid: `${Date.now()}-${Math.random()}`, id: item.LIBRARY || '', serverId: item.SERVER_ID || '', name: '', path: '', covers: [], isNovel: !!item.IS_NOVEL_ONLY, rules: item.REQUIRED_FIELDS || [], overwriteFields: Array.isArray(item.OVERWRITE_FIELDS) ? item.OVERWRITE_FIELDS : defaultOverwriteFields, translateSummary: !!item.TRANSLATE_SUMMARY_TO_ZH, aiRecognition: !!item.AI_RECOGNITION, sortVolumes: !!item.SORT_VOLUMES, hue: this.cardHues[index % this.cardHues.length] }; },
+    makeCard(item = {}, index = 0) { const defaultOverwriteFields = this.overwriteFieldOptions.map(field => field.value); return { uid: `${Date.now()}-${Math.random()}`, id: item.LIBRARY || '', serverId: item.SERVER_ID || '', name: '', path: '', covers: [], mediaType: ['comic','book','mixed'].includes(item.MEDIA_TYPE) ? item.MEDIA_TYPE : item.IS_NOVEL_ONLY ? 'book' : 'comic', scrapeEnabled: item.SCRAPE_ENABLED !== false, rules: item.REQUIRED_FIELDS || [], overwriteFields: Array.isArray(item.OVERWRITE_FIELDS) ? item.OVERWRITE_FIELDS : defaultOverwriteFields, aiRecognition: !!item.AI_RECOGNITION, sortVolumes: !!item.SORT_VOLUMES, hue: this.cardHues[index % this.cardHues.length] }; },
+    mediaTypeLabel(card) { return {comic:'漫画媒体库',book:'书籍媒体库',mixed:'混合媒体库'}[card.mediaType] || '漫画媒体库'; },
     addCard() { const card = this.makeCard({}, this.cards.length); this.cards.push(card); this.openCardSettings(card, true); },
     resetServerDraft() { this.serverDraft = { id: '', name: '', base_url: '', email: '', password: '', api_key: '', auth_mode: 'password' }; this.showServerDraftSecret = false; },
     addServer() { const draft = this.serverDraft; if (!draft.name.trim() || !draft.base_url.trim()) { this.notify('请填写 Komga 名称和地址', true); return; } if (draft.auth_mode === 'key' ? !draft.api_key : (!draft.email || !draft.password)) { this.notify('请填写完整的 Komga 认证信息', true); return; } (this.config.KOMGA_SERVERS ||= []).push({ ...draft, id: `server-${Date.now()}`, name: draft.name.trim(), base_url: draft.base_url.trim().replace(/\/$/, '') }); this.resetServerDraft(); this.notify('Komga 服务器已添加'); },
@@ -198,7 +224,7 @@ createApp({
     dropCard(index) { if (this.dragIndex === null || this.dragIndex === index) return; const [card] = this.cards.splice(this.dragIndex, 1); this.cards.splice(index, 0, card); this.dragIndex = null; },
     openCardMenu(index, event) { const menuWidth = 170, menuHeight = 132; this.contextMenu = { visible: true, index, x: Math.min(event.clientX, window.innerWidth - menuWidth - 12), y: Math.min(event.clientY, window.innerHeight - menuHeight - 12) }; },
     closeContextMenu() { if (this.contextMenu.visible) this.contextMenu = { visible: false, x: 0, y: 0, index: null }; },
-    deleteCard(index) { this.removeCard(index); this.closeContextMenu(); this.notify('媒体库卡片已删除'); },
+    async deleteCard(index) { const card = this.cards[index]; if (!card) return; this.removeCard(index); this.closeContextMenu(); if (await this.save()) this.notify('媒体卡片已删除'); else this.cards.splice(index, 0, card); },
     openCardSettings(card, isNew = false) { this.editingCard = card; this.editingCardOriginal = isNew ? null : JSON.parse(JSON.stringify(card)); this.editingCardIsNew = isNew; this.closeContextMenu(); this.$nextTick(() => this.decorateFieldLabels()); if (card.serverId) this.loadCardLibraries(card); },
     closeCardSettings(event) {
       if (event && (event.type === 'submit' || (event.submitter && event.submitter.type === 'submit'))) { this.saveCardSettings(); return; }
@@ -234,7 +260,7 @@ createApp({
         this.notify(`${server.name || 'Komga 服务'} 连接成功，读取到 ${this.libraries.length} 个媒体库`);
       } catch (error) { this.notify(`连接失败：${error.message}`, true); }
     },
-    collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.isNovel, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: card.translateSummary, AI_RECOGNITION: card.aiRecognition, SORT_VOLUMES: card.sortVolumes })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
+    collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.mediaType === 'book', MEDIA_TYPE: card.mediaType, SCRAPE_ENABLED: card.scrapeEnabled, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: false, AI_RECOGNITION: card.aiRecognition, SORT_VOLUMES: card.sortVolumes })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     async save() { try { this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify('设置已保存'); return true; } catch (error) { this.notify(error.message, true); return false; } },
     async saveServiceMode() { await this.save(); this.$nextTick(() => this.decorateFieldLabels()); },
     async testBangumiSearch() {
@@ -262,23 +288,49 @@ createApp({
     toggleCardField(card, key, value) { const fields = Array.isArray(card[key]) ? [...card[key]] : []; const index = fields.indexOf(value); if (index >= 0) fields.splice(index, 1); else fields.push(value); card[key] = fields; },
     async backupConfig() { try { const data = await this.api('/api/config/backup'); const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `bangumikomga-config-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); this.notify('配置备份已下载'); } catch (error) { this.notify(error.message, true); } },
     async restoreConfig(event) { const file = event.target.files && event.target.files[0]; event.target.value = ''; if (!file || !window.confirm('还原配置会覆盖当前系统设置，是否继续？')) return; try { const payload = JSON.parse(await file.text()); const restored = await this.api('/api/config/restore', { method: 'POST', body: JSON.stringify({ config: payload.config || payload }) }); this.applyConfig(restored); this.notify('配置已还原'); if (this.config.KOMGA_SERVERS.length) await this.loadLibraries(false); } catch (error) { this.notify(`还原失败：${error.message}`, true); } },
-    async refresh(full) { try { await this.api('/api/refresh', { method: 'POST', body: JSON.stringify({ full }) }); this.notify(full ? '全量刮削已开始' : '增量刮削已开始'); } catch (error) { this.notify(error.message, true); } },
-    async loadRecords(showError = false) { try { const [records, stats] = await Promise.all([this.api('/api/scrape-records?limit=300'), this.api('/api/scrape-records/stats')]); this.records = records.items || []; this.recordStats = stats; } catch (error) { if (showError) this.notify(error.message, true); } },
-    async loadLogs(showError = false) { try { const [logs, stats] = await Promise.all([this.api(`/api/runtime-logs?limit=200&q=${encodeURIComponent(this.logSearch)}`), this.api('/api/runtime-logs/stats')]); this.logs = logs.items || []; this.logStats = stats; } catch (error) { if (showError) this.notify(error.message, true); } },
+    async refresh(full, index) { const card = this.cards[index]; if (!card?.id) { this.notify('请先配置媒体卡片', true); return; } try { await this.api('/api/refresh', { method: 'POST', body: JSON.stringify({ full, target_id: this.taskLibraryKey(card) }) }); this.notify(full ? '全量刮削已开始' : '增量刮削已开始'); } catch (error) { this.notify(error.message, true); } },
+    async loadRecords(showError = false) {
+      const request = ++this.recordRequest;
+      try {
+        const [records, stats] = await Promise.all([
+          this.api(`/api/scrape-records?limit=50&offset=${(this.recordPage-1)*50}&q=${encodeURIComponent(this.recordSearch)}&sort=${this.recordSortNewest?'newest':'oldest'}`),
+          this.api('/api/scrape-records/stats')
+        ]);
+        if (request !== this.recordRequest) return;
+        const items = records.items || [];
+        await Promise.all(items.map(async record => {
+          const previous = this.records.find(item => item.id === record.id);
+          if (!previous?.volume_offset || !this.recordExpanded(record)) return;
+          const offset = Math.min(previous.volume_offset, Math.max(0, Math.ceil(record.volume_count / 50)-1)*50);
+          const details = await this.api(`/api/scrape-records/details?id=${encodeURIComponent(record.id)}&offset=${offset}`);
+          record.volumes = details.items || [];
+          record.volume_offset = offset;
+        }));
+        if (request !== this.recordRequest) return;
+        this.records = items;
+        this.recordTotal = records.total ?? stats.total;
+        this.recordStats = stats;
+        const last = Math.max(1, Math.ceil(this.recordTotal/50));
+        if (this.recordPage > last) { this.recordPage = last; return this.loadRecords(); }
+      } catch (error) { if (showError) this.notify(error.message, true); }
+    },
+    async loadLogs(showError = false) { const request = ++this.logRequest; try { const [logs, stats] = await Promise.all([this.api(`/api/runtime-logs?limit=100&offset=${(this.logPage-1)*100}&q=${encodeURIComponent(this.logSearch)}`), this.api('/api/runtime-logs/stats')]); if (request !== this.logRequest) return; this.logs = logs.items || []; this.logTotal = logs.total ?? stats.total; this.logStats = stats; const last = Math.max(1, Math.ceil(this.logTotal/100)); if (this.logPage > last) { this.logPage = last; return this.loadLogs(); } } catch (error) { if (showError) this.notify(error.message, true); } },
+    changePage(kind, delta) { if (kind === 'records') { this.recordPage += delta; this.expandedRecordIds = []; this.loadRecords(true); } else { this.logPage += delta; this.loadLogs(true); } },
     startLiveRefresh() { clearInterval(this.liveRefreshTimer); this.liveRefreshTimer = null; if (!this.authenticated || document.hidden || !['records', 'logs'].includes(this.view)) return; this.liveRefreshTimer = setInterval(() => { if (this.view === 'records') this.loadRecords(); else if (this.view === 'logs') this.loadLogs(); }, 4000); },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
-    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], card_ids: [], cron: '0 6 * * *', enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
-    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
+    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], operations: [], ai_completion: false, card_ids: [], cron: '0 6 * * *', enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
+    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, operations: [...(task.operations || [])], ai_completion: !!task.ai_completion, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields?.length ? task.fields : this.taskType(task) === 'summary_translation' ? ['summary'] : [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
     validCronExpression(value) { const parts = String(value || '').trim().split(/\s+/); return parts.length === 5 && parts.every(part => /^[0-9A-Za-z*?,/\-]+$/.test(part)); },
-    async saveTask() { if (!this.editingTask) return; this.editingTask.functions = this.editingTask.functions.slice(0, 1); if (!this.editingTask.functions.length) { this.notify('请选择任务功能', true); return; } if (this.editingTask.functions.includes('metadata_completion') && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (!this.validCronExpression(this.editingTask.cron)) { this.notify('请输入有效的五段 Cron 表达式', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } if (!this.editingTask.name.trim()) this.editingTask.name = this.uniqueTaskName(this.taskTypeLabel(this.editingTask.functions[0]), this.editingTask.id); try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
+    async saveTask() { if (!this.editingTask) return; this.editingTask.functions = this.editingTask.functions.slice(0, 1); if (!this.editingTask.functions.length) { this.notify('请选择任务功能', true); return; } if (this.editingTask.functions[0] !== 'card_collage_refresh' && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (this.editingTask.functions.includes('metadata_correction')) { const ops = this.editingTask.operations || []; if (!ops.some(value => ['simplify','extract_title'].includes(value))) { this.notify('请选择繁转简或标题提取', true); return; } if (!ops.includes('simplify') && !this.editingTask.fields.includes('title')) { this.notify('标题提取需要选择标题元数据', true); return; } } if (!this.validCronExpression(this.editingTask.cron)) { this.notify('请输入有效的五段 Cron 表达式', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } if (!this.editingTask.name.trim()) this.editingTask.name = this.uniqueTaskName(this.taskTypeLabel(this.editingTask.functions[0]), this.editingTask.id); try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
     requestDeleteTask(task) { this.deletingTask = task; },
     async deleteTask() { const task = this.deletingTask; if (!task) return; try { const data = await this.api('/api/tasks/delete', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.deletingTask = null; this.notify('计划任务已删除'); } catch (error) { this.notify(error.message, true); } },
     async toggleTask(task) { task.enabled = !task.enabled; try { this.config.METADATA_TASKS = this.tasks; this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify(task.enabled ? '计划任务已启用' : '计划任务已停用'); } catch (error) { task.enabled = !task.enabled; this.notify(error.message, true); } },
     taskDragStart(index, event) { this.taskDragIndex = index; this.taskDragMoved = false; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); },
     async taskDrop(index) { if (this.taskDragIndex === null || this.taskDragIndex === index) return; const [task] = this.tasks.splice(this.taskDragIndex, 1); this.tasks.splice(index, 0, task); this.taskDragMoved = true; this.taskDragIndex = null; this.config.METADATA_TASKS = this.tasks; await this.save(); },
-    async runTask(task) { try { await this.api('/api/tasks/run', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.notify('计划任务已开始执行'); } catch (error) { this.notify(error.message, true); } },
+    taskRunning(task) { return this.status.running && this.status.task_id === task.id; },
+    async runTask(task) { const stopping = this.taskRunning(task); try { await this.api(stopping ? '/api/tasks/stop' : '/api/tasks/run', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.status = await this.api('/api/status'); this.notify(stopping ? '正在停止任务' : '计划任务已开始执行'); } catch (error) { this.notify(error.message, true); } },
     handleServerWheel(event) { const grid = event.target && event.target.closest ? event.target.closest('.server-card-grid') : null; if (!grid || grid.scrollWidth <= grid.clientWidth) return; event.preventDefault(); grid.scrollLeft += Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX; },
-    toggleRecordSort() { this.recordSortNewest = !this.recordSortNewest; },
+    toggleRecordSort() { this.recordSortNewest = !this.recordSortNewest; this.recordPage = 1; this.loadRecords(true); },
     taskType(task) { return (task.functions || [task.type || 'metadata_completion'])[0]; },
     taskTypeLabel(value) { return this.taskTypeOptions.find(option => option.value === value)?.label || value || '计划任务'; },
     taskLibraryKey(card) { return `${card.serverId || ''}::${card.id || ''}`; },
@@ -286,9 +338,10 @@ createApp({
     uniqueTaskName(base, currentId = '') { const names = new Set(this.tasks.filter(task => task.id !== currentId).map(task => task.name)); if (!names.has(base)) return base; if (!names.has(`${base} 副本`)) return `${base} 副本`; let index = 2; while (names.has(`${base} 副本 ${index}`)) index += 1; return `${base} 副本 ${index}`; },
     toggleRecord(record) { const index = this.expandedRecordIds.indexOf(record.id); if (index >= 0) this.expandedRecordIds.splice(index, 1); else this.expandedRecordIds.push(record.id); },
     recordExpanded(record) { return this.expandedRecordIds.includes(record.id); },
+    async changeDetailPage(record, delta) { const offset = Math.max(0, (record.volume_offset || 0) + delta * 50); try { const data = await this.api(`/api/scrape-records/details?id=${encodeURIComponent(record.id)}&offset=${offset}`); record.volumes = data.items || []; record.volume_count = data.total; record.volume_offset = offset; } catch(error) { this.notify(error.message, true); } },
     formatRecordTime(value) { return String(value || '').replace('T', ' ').replace(/-/g, '/').replace(/\.\d{3}Z?$/, ''); },
     cardServerName(card) { return this.config.KOMGA_SERVERS.find(server => server.id === card.serverId)?.name || 'Komga 服务'; },
-    metadataText(record) { const labels = { status: '状态', summary: '简介', publisher: '出版商', genres: '流派', tags: '标签', title: '标题', alternateTitles: '别名', ageRating: '年龄分级', links: 'Bangumi 链接', totalBookCount: '册数', language: '语言', titleSort: '标题排序', authors: '作者', isbn: 'ISBN', number: '卷号', releaseDate: '发行日期', numberSort: '卷号排序', thumbnail: '封面' }; return (record.metadata_fields || []).map(field => labels[field] || field).join('、'); },
+    metadataText(record) { const labels = { status: '状态', summary: '简介', publisher: '出版商', genres: '流派', tags: '标签', title: '标题', alternateTitles: '别名', ageRating: '年龄分级', links: 'Bangumi 链接', totalBookCount: '册数', language: '语言', titleSort: '标题排序', authors: '作者', isbn: 'ISBN', number: '卷号', releaseDate: '发行日期', numberSort: '卷号排序', thumbnail: '封面' }; return (record.metadata_fields || []).map(field => field.endsWith('Lock') ? `${labels[field.slice(0,-4)] || field.slice(0,-4)}锁定` : labels[field] || field).join('、'); },
     recordTooltip(record) { const source = record.source_title || record.item_title || ''; const matched = record.matched_title && record.matched_title !== source ? ` → ${record.matched_title}` : ''; return `${source}${matched}`; },
     async pollStatus() { if (!this.authenticated) return; try { this.status = await this.api('/api/status'); } catch (_) {} setTimeout(() => this.pollStatus(), 3000); },
     openCredentialModal() { this.credentialForm = { username: '', password: '' }; this.showCredentialModal = true; },

@@ -1,6 +1,7 @@
 """Isolated scraper worker managed by the Web process."""
 
 import argparse
+from services.media_policy import scrape_enabled
 
 
 def configure_server(config, server_id):
@@ -20,6 +21,13 @@ def configure_server(config, server_id):
     ]
 
 
+def configure_automatic_libraries(config):
+    """Disabled media cards remain saved, but never enter automatic workers."""
+    config.KOMGA_LIBRARY_LIST = [card for card in config.KOMGA_LIBRARY_LIST if scrape_enabled(card)]
+    config.KOMGA_COLLECTION_LIST = []
+    return bool(config.KOMGA_LIBRARY_LIST)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--server-id", default="")
@@ -34,6 +42,9 @@ if __name__ == "__main__":
 
     import config.config as config
     configure_server(config, args.server_id)
+    if not configure_automatic_libraries(config):
+        import threading
+        threading.Event().wait()
 
     from services.service_runner import run_service
     run_service(include_archive=args.with_archive)

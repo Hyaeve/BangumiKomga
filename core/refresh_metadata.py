@@ -1,5 +1,6 @@
 import os
 import re
+import hashlib
 from api.bangumi_model import SubjectRelation
 from tools.get_title import get_title_candidates
 from tools.title_recognition import recognize_title
@@ -13,6 +14,8 @@ from tools.summary_translation import translate_summary_to_zh, summary_is_chines
 from tools.db import init_sqlite3, record_series_status, record_book_status, record_scrape_event, record_activity_log
 from tools.cache_time import TimeCacheManager
 from tools.komga_path import resolve_item_path
+from services.media_policy import media_type
+from api.bangumi_model import SubjectPlatform
 
 
 env = InitEnv()
@@ -21,6 +24,28 @@ komga = env.komga
 cursor, conn = init_sqlite3()
 _library_name_cache = {}
 TASK_TRANSLATION_OVERRIDE = None
+TASK_COMPLETION_FIELDS = None
+TASK_AI_COMPLETION = False
+
+
+def _complete_unmatched_with_ai(series, only_novel):
+    from config import config
+    from tools.ai_completion import complete_unmatched
+
+    def record(item, kind, fields):
+        record_scrape_event(
+            conn, "小说" if only_novel is True or only_novel == "book" else "漫画", item.get("name", ""),
+            series.get("libraryId"), _library_name(series.get("libraryId")), fields,
+            source_title=series["name"], event_kind=kind, source_path=item.get("url", ""),
+            match_source="计划任务：AI补全（联网来源）", komga_id=item["id"],
+            server_id=_record_server_id(series.get("libraryId")),
+        )
+
+    def log(detail, level):
+        record_activity_log(conn, "计划任务：AI补全", detail, level=level, source="scheduler")
+        logger.log(30 if level == "warning" else 40 if level == "error" else 20, detail)
+
+    complete_unmatched(komga, series, TASK_COMPLETION_FIELDS or [], vars(config), only_novel, record, log)
 
 
 def _record_server_id(library_id):
@@ -82,12 +107,11 @@ def _overwrite_fields_for_library(library_id):
 
 
 def _translation_enabled_for_library(library_id):
-    if TASK_TRANSLATION_OVERRIDE is True:
-        return True
-    for item in KOMGA_LIBRARY_LIST:
-        if item.get("LIBRARY") == library_id:
-            return bool(item.get("TRANSLATE_SUMMARY_TO_ZH", False))
-    return False
+    return TASK_TRANSLATION_OVERRIDE is True
+
+
+def _media_type_for_library(library_id):
+    return next((media_type(item) for item in KOMGA_LIBRARY_LIST if str(item.get("LIBRARY")) == str(library_id)), "comic")
 
 
 def _volume_sort_enabled_for_library(library_id):
@@ -127,6 +151,10 @@ def _is_metadata_empty(value):
 def _metadata_write_payload(existing_metadata, matched_metadata, overwrite_fields):
     """Keep populated Komga values unless a card explicitly permits overwrite."""
     existing_metadata = existing_metadata or {}
+    if TASK_COMPLETION_FIELDS is not None:
+        return {field: value for field, value in matched_metadata.items()
+                if field in TASK_COMPLETION_FIELDS and _is_metadata_empty(existing_metadata.get(field))
+                and not _metadata_field_locked(existing_metadata, field) and not _is_metadata_empty(value)}
     return {
         field: value
         for field, value in matched_metadata.items()
@@ -219,6 +247,7 @@ def refresh_metadata(series_list=None):
         series_id = series["id"]
         series_name = series["name"]
         is_novel_series = series["is_novel"]
+        search_mode = _media_type_for_library(series.get("libraryId"))
         metadata = None
         match_source = "已有匹配"
         matched_search_title = ""
@@ -272,7 +301,7 @@ def refresh_metadata(series_list=None):
             ai_title = ""
             for candidate in title_candidates:
                 search_results = bgm.search_subjects(
-                    candidate, FUZZ_SCORE_THRESHOLD, is_novel_series)
+                    candidate, FUZZ_SCORE_THRESHOLD, search_mode)
                 if search_results:
                     subject_id = search_results[0]["id"]
                     metadata = search_results[0]
@@ -282,11 +311,11 @@ def refresh_metadata(series_list=None):
                     break
 
             if subject_id is None and _ai_recognition_enabled_for_library(series.get("libraryId")):
-                ai_title = recognize_title(series_name, only_novel=is_novel_series)
+                ai_title = recognize_title(series_name, only_novel=search_mode)
                 if ai_title and ai_title not in title_candidates:
                     title_candidates.append(ai_title)
                     search_results = bgm.search_subjects(
-                        ai_title, FUZZ_SCORE_THRESHOLD, is_novel_series)
+                        ai_title, FUZZ_SCORE_THRESHOLD, search_mode)
                     if search_results:
                         subject_id = search_results[0]["id"]
                         metadata = search_results[0]
@@ -300,7 +329,7 @@ def refresh_metadata(series_list=None):
                 fallback_title = series_name.strip()
                 if fallback_title and fallback_title not in title_candidates:
                     search_results = bgm.search_subjects(
-                        fallback_title, FUZZ_SCORE_THRESHOLD, is_novel_series)
+                        fallback_title, FUZZ_SCORE_THRESHOLD, search_mode)
                     if search_results:
                         subject_id = search_results[0]["id"]
                         metadata = search_results[0]
@@ -309,6 +338,8 @@ def refresh_metadata(series_list=None):
                         logger.debug("原始名称匹配成功: %s", series_name)
 
             if subject_id is None:
+                if TASK_AI_COMPLETION and TASK_COMPLETION_FIELDS:
+                    _complete_unmatched_with_ai(series, search_mode)
                 failed_count, failed_comic = record_series_status(
                     conn,
                     series_id,
@@ -324,6 +355,7 @@ def refresh_metadata(series_list=None):
         if not metadata:
             logger.warning("无法获取元数据: %s", series_name)
             continue
+        is_novel_series = SubjectPlatform.parse(metadata.get("platform")) != SubjectPlatform.Comic
 
         # Summary translation is applied once below, after checking Komga's
         # existing value and lock state. Keeping the metadata builder raw
@@ -387,7 +419,7 @@ def refresh_metadata(series_list=None):
             # 使用 Bangumi 图片替换原封面
             # 确保没有上传过海报，避免重复上传
             thumbnail_updated = False
-            if USE_BANGUMI_THUMBNAIL and (
+            if USE_BANGUMI_THUMBNAIL and (TASK_COMPLETION_FIELDS is None or "thumbnail" in TASK_COMPLETION_FIELDS) and (
                 "thumbnail" in overwrite_fields
                 or len(komga.get_series_thumbnails(series_id)) == 0
             ):
@@ -415,7 +447,7 @@ def refresh_metadata(series_list=None):
                 # 所有尺寸都失败时
                 else:
                     logger.warning("替换系列: %s 的海报失败", series_name)
-            if _is_scrape_card_library(series.get("libraryId")):
+            if _is_scrape_card_library(series.get("libraryId")) and (TASK_COMPLETION_FIELDS is None or series_data or thumbnail_updated):
                 record_scrape_event(
                     conn,
                     "小说" if is_novel_series else "漫画",
@@ -493,7 +525,7 @@ def _is_novel_series(series_metadata):
     library_id = series_metadata["libraryId"]
     for item in KOMGA_LIBRARY_LIST:
         if item["LIBRARY"] == library_id:
-            return item["IS_NOVEL_ONLY"]
+            return media_type(item) == "book"
     return False
 
 
@@ -532,7 +564,7 @@ def get_series_metadata(series_ids=[]) -> list:
                 series_list = komga.get_series_with_libraryid(
                     [libray_item["LIBRARY"]])["content"]
                 for series in series_list:
-                    series["is_novel"] = libray_item["IS_NOVEL_ONLY"]
+                    series["is_novel"] = media_type(libray_item) == "book"
                 series_metadata_list.extend(series_list)
         if KOMGA_COLLECTION_LIST:
             for collection_item in KOMGA_COLLECTION_LIST:
@@ -544,11 +576,17 @@ def get_series_metadata(series_ids=[]) -> list:
         # 列表去重
         series_metadata_list = _series_list_deduplicate(series_metadata_list)
     # 未设置 KOMGA_LIBRARY_LIST 和 KOMGA_COLLECTION_LIST
-    if not series_metadata_list:
+    if not series_metadata_list and not KOMGA_LIBRARY_LIST and not KOMGA_COLLECTION_LIST:
         series_metadata_list = komga.get_all_series()["content"]
         for series in series_metadata_list:
             series["is_novel"] = False
     return series_metadata_list
+
+
+def _watermark_path(library_id=None):
+    scope = f"{komga.base_url}|{library_id or '*'}"
+    key = hashlib.sha256(scope.encode("utf-8")).hexdigest()[:20]
+    return os.path.join(ARCHIVE_FILES_DIR, f"komga_modified_{key}.json")
 
 
 def _filter_new_modified_series(library_id=None):
@@ -557,9 +595,7 @@ def _filter_new_modified_series(library_id=None):
     """
     os.makedirs(ARCHIVE_FILES_DIR, exist_ok=True)
     # 读取上次修改时间
-    LastModifiedCacheFilePath = os.path.join(
-        ARCHIVE_FILES_DIR, "komga_last_modified_time.json"
-    )
+    LastModifiedCacheFilePath = _watermark_path(library_id)
     local_last_modified = TimeCacheManager.convert_to_datetime(
         TimeCacheManager.read_time(LastModifiedCacheFilePath)
     )
@@ -608,10 +644,10 @@ def refresh_partial_metadata(library_ids=None):
         for libray_item in configured_libraries:
             series_list = _filter_new_modified_series(libray_item["LIBRARY"])
             for series in series_list:
-                series["is_novel"] = libray_item["IS_NOVEL_ONLY"]
+                series["is_novel"] = media_type(libray_item) == "book"
             recent_modified_series.extend(series_list)
 
-    else:
+    elif not KOMGA_LIBRARY_LIST and not library_ids:
         series_list = _filter_new_modified_series()
         for series in series_list:
             series["is_novel"] = False
@@ -620,13 +656,11 @@ def refresh_partial_metadata(library_ids=None):
     if recent_modified_series:
         refresh_metadata(recent_modified_series)
         # 取第一个系列的 lastModified 时间作为新的更新时间
-        LastModifiedCacheFilePath = os.path.join(
-            ARCHIVE_FILES_DIR, "komga_last_modified_time.json"
-        )
-        TimeCacheManager.save_time(
-            LastModifiedCacheFilePath,
-            max(item["lastModified"] for item in recent_modified_series),
-        )
+        for library in configured_libraries or [{"LIBRARY": None}]:
+            library_id = library["LIBRARY"]
+            changed = [item for item in recent_modified_series if library_id is None or str(item.get("libraryId")) == str(library_id)]
+            if changed:
+                TimeCacheManager.save_time(_watermark_path(library_id), max(item["lastModified"] for item in changed))
     else:
         logger.info("未找到最近添加系列, 无需刷新")
     return
@@ -679,7 +713,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         # 使用 Bangumi 图片替换原封面
         # 确保没有上传过海报，避免重复上传，排除 komga 生成的封面
         thumbnail_updated = False
-        if USE_BANGUMI_THUMBNAIL_FOR_BOOK and (
+        if USE_BANGUMI_THUMBNAIL_FOR_BOOK and (TASK_COMPLETION_FIELDS is None or "thumbnail" in TASK_COMPLETION_FIELDS) and (
             "thumbnail" in overwrite_fields
             or len(komga.get_book_thumbnails(book_id)) == 1
         ):
@@ -707,7 +741,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
             # 所有尺寸都失败时
             else:
                 logger.warning("替换书籍: %s 的海报失败", book_name)
-        if _is_scrape_card_library(library_id):
+        if _is_scrape_card_library(library_id) and (TASK_COMPLETION_FIELDS is None or book_data or thumbnail_updated):
             record_scrape_event(
                 conn,
                 "小说" if is_novel else "漫画",
@@ -828,6 +862,8 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
         # 修正`话`序号
         if ep_flag:
             book_data = {"number": book_number, "numberSort": book_number} if _volume_sort_enabled_for_library(library_id) else {}
+            if TASK_COMPLETION_FIELDS is not None:
+                book_data = _metadata_write_payload(book.get("metadata"), book_data, [])
             if not book_data:
                 continue
             number_updated = komga.update_book_metadata(book_id, book_data)

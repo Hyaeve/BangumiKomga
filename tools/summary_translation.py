@@ -23,7 +23,7 @@ def summary_is_chinese(value):
     return chinese >= 2 and chinese >= letters
 
 
-def translate_summary_to_zh(summary: str, enabled_override=None, settings=None) -> str:
+def translate_summary_to_zh(summary: str, enabled_override=None, settings=None, field="summary") -> str:
     """Return a Simplified Chinese translation, or the source on any failure."""
     text = (summary or "").strip()
     if settings is None:
@@ -44,7 +44,14 @@ def translate_summary_to_zh(summary: str, enabled_override=None, settings=None) 
         "messages": [
             {
                 "role": "system",
-                "content": "Translate the supplied book or comic summary into concise Simplified Chinese. Return only the translation; preserve names, dates, and line breaks.",
+                "content": (
+                    "Translate the supplied book or comic summary into Simplified Chinese. "
+                    "Return only the complete translation; preserve names, dates, and line breaks."
+                    if field == "summary" else
+                    "Translate the supplied " + {"title": "book or comic title", "publisher": "publisher name", "authors": "author name"}.get(field, "metadata")
+                    + " into Simplified Chinese. Use the established Chinese name when known. "
+                    "Return only the translated value, without explanations, additional titles, or invented details."
+                ),
             },
             {"role": "user", "content": text},
         ],

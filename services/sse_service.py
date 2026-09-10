@@ -19,6 +19,9 @@ def series_update_sse_handler(data):
     # TODO: 处理 series_id, library_id 或者 series_detail 的场景
     series_id = data["event_data"].get("seriesId") or data["event_data"].get("id")
     library_id = data["event_data"]["libraryId"]
+    if not _is_surveilled_library(library_id):
+        logger.info("libraryId: %s 未启用刮削匹配，跳过实时事件", library_id)
+        return
     if not series_id:
         logger.info("SSE 事件缺少系列 ID，跳过实时刮削")
         return

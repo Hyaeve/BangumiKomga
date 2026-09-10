@@ -158,5 +158,44 @@ class RecordPathTests(unittest.TestCase):
                     self.assertEqual(conn.execute("SELECT source_path FROM scrape_records").fetchone()[0], "/books/Book")
 
 
+class TaskConfigPersistenceTests(unittest.TestCase):
+    def test_media_policy_survives_config_reload_and_legacy_translation_is_removed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(web_backend, "CONFIG_DIR", root), \
+                 patch.object(web_backend, "CONFIG_FILE", root / "config.py"), \
+                 patch.object(web_backend, "WEB_STATE", root / "state.json"):
+                web_backend.save_state({"KOMGA_LIBRARY_LIST": [
+                    {"LIBRARY": "one", "MEDIA_TYPE": "mixed", "SCRAPE_ENABLED": False, "TRANSLATE_SUMMARY_TO_ZH": True},
+                    {"LIBRARY": "two", "IS_NOVEL_ONLY": True},
+                ]})
+                (root / "state.json").unlink()
+                cards = web_backend._read_state()["KOMGA_LIBRARY_LIST"]
+                self.assertEqual(cards[0]["MEDIA_TYPE"], "mixed")
+                self.assertFalse(cards[0]["SCRAPE_ENABLED"])
+                self.assertFalse(cards[0]["TRANSLATE_SUMMARY_TO_ZH"])
+                self.assertEqual(cards[1]["MEDIA_TYPE"], "book")
+                self.assertTrue(cards[1]["SCRAPE_ENABLED"])
+
+    def test_operations_and_ai_completion_survive_config_reload(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(web_backend, "CONFIG_DIR", root), \
+                 patch.object(web_backend, "CONFIG_FILE", root / "config.py"), \
+                 patch.object(web_backend, "WEB_STATE", root / "state.json"):
+                web_backend.save_state({"METADATA_TASKS": [
+                    {"id": "correction", "functions": ["metadata_correction"], "fields": ["title", "summary"],
+                     "operations": ["simplify", "extract_title", "include_locked"], "card_ids": ["s::lib"]},
+                    {"id": "completion", "functions": ["metadata_completion"], "fields": ["summary"],
+                     "ai_completion": True, "card_ids": ["s::lib"]},
+                ]})
+                # Force loading only config.py, as after a backup restore.
+                (root / "state.json").unlink()
+                tasks = web_backend._read_state()["METADATA_TASKS"]
+                self.assertEqual(tasks[0]["operations"], ["simplify", "extract_title", "include_locked"])
+                self.assertEqual(tasks[0]["fields"], ["title", "summary"])
+                self.assertTrue(tasks[1]["ai_completion"])
+
+
 if __name__ == "__main__":
     unittest.main()

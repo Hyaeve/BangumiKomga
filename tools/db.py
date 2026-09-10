@@ -2,6 +2,7 @@ import sqlite3
 import threading
 from time import strftime, localtime
 from tools.log import logger
+from tools.execution_outcomes import record_outcome
 
 _record_lock = threading.Lock()
 
@@ -131,6 +132,8 @@ def record_scrape_event(conn, item_type, item_title, library_id, library_name,
             ),
         )
         conn.commit()
+        if komga_id:
+            record_outcome(event_kind or "volume", komga_id, failed=status == "error", conn=conn)
 
 
 def record_activity_log(conn, action, detail, level="info", source="web"):
@@ -147,6 +150,7 @@ def record_series_status(
     conn, series_id, subject_id, status, series_name, message, count, comic
 ):
     upsert_series_record(conn, series_id, subject_id, status, series_name, message)
+    record_outcome("series", series_id, failed=not status, conn=conn)
     count += 1
     if status == 0:
         logger.warning("更新系列元数据失败: %s, %s", series_name, message)
@@ -160,6 +164,8 @@ def record_series_status(
 
 def record_book_status(conn, book_id, subject_id, status, book_name, message):
     upsert_book_record(conn, book_id, subject_id, status, book_name)
+    if message != "Only update book number":
+        record_outcome("volume", book_id, failed=not status, conn=conn)
     if status == 0:
         logger.warning("更新书籍元数据失败: %s, %s, %s", book_id, book_name, message)
     elif status == 1:

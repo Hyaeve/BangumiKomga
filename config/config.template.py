@@ -68,7 +68,8 @@ AI_RECOGNITION = False
 # @@version: 0.18.0
 KOMGA_LIBRARY_LIST = []
 # Web UI managed per-card options are stored in each item when configured:
-# SERVER_ID, REQUIRED_FIELDS, OVERWRITE_FIELDS, TRANSLATE_SUMMARY_TO_ZH,
+# SERVER_ID, REQUIRED_FIELDS, OVERWRITE_FIELDS, MEDIA_TYPE (comic/book/mixed),
+# SCRAPE_ENABLED (default True; automatic monitoring only),
 # AI_RECOGNITION and SORT_VOLUMES (卷号排序，默认关闭).
 # @@name: KOMGA_COLLECTION_LIST
 # @@prompt: 配置 KOMGA 收藏
