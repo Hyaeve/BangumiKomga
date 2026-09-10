@@ -1216,6 +1216,31 @@
   text-decoration: none;
 }
 .bangumi-origin-link:hover { background: #e9e4f6; }
+
+/* Login artwork is limited to media cards explicitly published as backgrounds. */
+.login-screen { background: #e8ebee; isolation: isolate; }
+.login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; }
+.login-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(230,232,238,.55); }
+.login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
+.login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
+.login-cover-column:nth-child(even) { margin-top: -90px; animation-direction: alternate-reverse; animation-duration: 115s; }
+.login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; }
+@keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
+.login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(251,251,253,.72); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
+.login-card .login-input { display: flex; align-items: center; gap: 13px; height: 62px; padding: 0 15px; border: 1px solid #b6b6bf; border-radius: 15px; background: rgba(255,255,255,.82); margin-top: 22px; }
+.login-card .login-input:focus-within { border-color: #9581ba; box-shadow: 0 0 0 3px rgba(149,129,186,.1); }
+.login-card .login-input > svg { width: 22px; height: 22px; flex: 0 0 22px; fill: none; stroke: #88868f; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.login-card .login-input input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; padding: 12px 0; font-size: 16px; color: #535260; box-shadow: none; }
+.login-card .login-input input::placeholder { color: #93909b; opacity: 1; }
+.login-eye { display: grid; place-items: center; flex: 0 0 34px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #88868f; }
+.login-eye:hover { background: #eeebf3; }
+.login-eye svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.login-button { min-height: 48px; }
+@media (max-width: 600px) {
+  .login-backdrop-grid { inset: -15% -70%; }
+  .login-screen .login-card { padding: 28px 24px; }
+}
+@media (prefers-reduced-motion: reduce) { .login-cover-column { animation: none; will-change: auto; } }
 @media (max-width: 1000px) {
   .log-hero-controls { min-width: 0; width: 100%; }
   .record-path { grid-column: 1 / -1; }
@@ -1476,3 +1501,45 @@
   .bangumi-preview-heading .kicker { font-size: 15px !important; }
   .bangumi-preview-modal .bangumi-preview-heading .bangumi-origin-link { padding: 6px 8px; font-size: 12px; }
 }
+
+.sidebar .sidebar-foot, .sidebar.collapsed .sidebar-foot { left: 16px; right: 16px; }
+.sidebar .sidebar-logout { gap: 13px; border-radius: 12px; transition: color .18s, background .18s; }
+.sidebar .sidebar-logout:hover, .sidebar .sidebar-logout:focus-visible { color: #b37480; background: #f4e6ea; }
+.hero-head .settings-controls .settings-hero-actions { display: flex; gap: 10px; align-items: center; width: auto; padding: 0; }
+.hero-head .settings-controls .backup-button {
+  height: 40px !important; min-height: 40px !important; min-width: 90px !important;
+  padding: 8px 18px !important; margin: 0 !important; font-size: 15px !important; line-height: 1.4 !important;
+}
+.hero-head .settings-controls .backup-button span { font-size: 15px !important; }
+.hero-head .hero-action { font-size: 15px !important; }
+.records-head > *, .record-book-title strong, .record-service, .record-library strong,
+.record-path, .record-volume > span { font-size: 14px !important; }
+.record-time, .record-volume time { font-size: 14px !important; }
+.record-fields, .record-fields span, .record-fields small, .record-volume b { font-size: 14px !important; }
+.records-head .time-sort { font-size: 14px !important; justify-content: flex-start; gap: 2px !important; }
+.time-sort .sort-arrows { margin-left: 0 !important; flex: 0 0 24px; }
+.tooltip-cell::after, .tag-picker-chip::after { display: none !important; }
+.log-hero-controls .record-stats > div:has(.stat-icon-failed),
+.log-hero-controls .record-stats > div:has(.stat-icon-failed) strong,
+.log-hero-controls .record-stats > div:has(.stat-icon-failed) span { color: #bc7d89 !important; }
+.log-hero-controls .stat-icon-failed { background: #f5e8eb !important; border-color: #ebd4da !important; }
+.task-queue-state { color: #9b8a61; font-size: 12px; }
+.retention-input { position: relative; }
+.retention-input input { padding-right: 40px !important; appearance: textfield; -moz-appearance: textfield; }
+.retention-input input::-webkit-inner-spin-button, .retention-input input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.retention-input .day-unit, .retention-input .day-stepper {
+  position: absolute; right: 10px; bottom: 6px; height: 30px; width: 28px;
+}
+.retention-input .day-unit { display: grid; place-items: center; color: #8d8797; pointer-events: none; }
+.retention-input .day-stepper { display: grid; grid-template-rows: 1fr 1fr; opacity: 0; }
+.day-stepper button { border: 0; background: transparent; color: #837799; padding: 0; display: grid; place-items: center; border-radius: 4px; }
+.day-stepper button:hover { background: #efebf5; }
+.day-stepper svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.retention-input:hover .day-unit, .retention-input:focus-within .day-unit { opacity: 0; }
+.retention-input:hover .day-stepper, .retention-input:focus-within .day-stepper { opacity: 1; }
+.strategy-card #service-mode { margin: 18px 0 0; }
+.strategy-card #service-mode .tag-picker-chip { white-space: normal; }
+.task-option-switches { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 18px; margin-top: 18px; }
+.task-option-switches .task-ai-toggle { margin: 0; min-height: 40px; padding: 8px 10px; justify-content: flex-start; border-radius: 8px; }
+.task-option-switches .task-toggle-switch { flex: 0 0 32px; }
+@media (max-width: 360px) { .task-option-switches { grid-template-columns: 1fr; } }
