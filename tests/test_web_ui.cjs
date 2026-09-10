@@ -347,6 +347,22 @@ async function main() {
     }));
     assert.equal(logLayout.whiteSpace,'pre-wrap');
     assert(logLayout.height>100 && !logLayout.overflow);
+    const shortLogHeight = await page.locator('.runtime-log-board').evaluate(el=>el.getBoundingClientRect().height);
+    runtimeLogs.push(...Array.from({length:99},(_,index)=>({...runtimeLogs[0],id:index+2,detail:'操作详情\n执行完成'})));
+    await page.getByRole('button',{name:'刷新运行日志',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.runtime-log-row').length===100);
+    const fullLogLayout = await page.locator('.runtime-log-board').evaluate(el=>({
+      height:el.getBoundingClientRect().height,viewport:innerHeight,
+      overflow:getComputedStyle(el).overflowY,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight
+    }));
+    assert(fullLogLayout.height>fullLogLayout.viewport && fullLogLayout.height>shortLogHeight);
+    assert.equal(fullLogLayout.overflow,'visible');
+    assert(Math.abs(fullLogLayout.scrollHeight-fullLogLayout.clientHeight)<=1);
+    await page.screenshot({path:path.join(output,'logs-natural-height.png')});
+    runtimeLogs.splice(1);
+    await page.getByRole('button',{name:'刷新运行日志',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.runtime-log-row').length===1);
+    assert(Math.abs(await page.locator('.runtime-log-board').evaluate(el=>el.getBoundingClientRect().height)-shortLogHeight)<1);
     assert.match(await page.locator('.log-hero-controls').innerText(), /成功/);
     assert.match(await page.locator('.log-hero-controls').innerText(), /失败/);
     assert.equal(await page.locator('.stat-icon-success svg').count(), 1);
