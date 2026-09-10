@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260910-11">
+<link rel="stylesheet" href="final-overrides.css?v=20260910-14">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -417,8 +417,7 @@
 <article v-for="log in logs" :key="log.id" class="runtime-log-row" :class="log.level">
 <time>{{formatRecordTime(log.recorded_at)}}</time>
 <strong>{{log.action}}</strong>
-<span>{{log.detail}}</span>
-<small>{{log.source}}</small>
+<div class="runtime-log-detail">{{log.detail}}</div>
 </article>
 <div v-if="!logs.length" class="record-empty">暂无运行日志</div>
 </div>
@@ -635,7 +634,9 @@
 <legend>Cron 表达式</legend>
 <input v-model.trim="editingTask.cron" inputmode="text" spellcheck="false" placeholder="0 6 * * *" aria-label="Cron 表达式">
 </fieldset>
-<div v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" class="task-option-switches">
+<div v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" class="task-option-switches" :class="{'completion-switches':editingTask.functions.includes('metadata_completion')}">
+<button v-if="editingTask.functions.includes('metadata_completion')" type="button" class="task-ai-toggle" :class="{active:editingTask.ai_completion}" :aria-pressed="editingTask.ai_completion" @click="editingTask.ai_completion=!editingTask.ai_completion">
+<span aria-hidden="true" class="task-toggle-switch"></span>AI补全</button>
 <template v-if="editingTask.functions.includes('metadata_correction')">
 <button v-for="option in correctionOptions" :key="option.value" type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.operations.includes(option.value)}" :aria-checked="editingTask.operations.includes(option.value)" @click="toggleTaskOperation(option.value)">
 <span aria-hidden="true" class="task-toggle-switch"></span>{{option.label}}</button>
@@ -645,9 +646,6 @@
 <button type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.lock_completed}" :aria-checked="editingTask.lock_completed" @click="editingTask.lock_completed=!editingTask.lock_completed">
 <span aria-hidden="true" class="task-toggle-switch"></span>完成锁定</button>
 </div>
-<button v-if="editingTask.functions.includes('metadata_completion')" type="button" class="task-ai-toggle" :class="{active:editingTask.ai_completion}" :aria-pressed="editingTask.ai_completion" @click="editingTask.ai_completion=!editingTask.ai_completion">
-<span aria-hidden="true" class="task-toggle-switch">
-</span>AI补全</button>
 <tag-picker v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" id="task-metadata" label="元数据候选" v-model="editingTask.fields" :options="taskMetadataOptions" placeholder="请选择元数据">
 </tag-picker>
 <tag-picker v-if="editingTask.functions.length" id="task-libraries" label="应用媒体库" v-model="editingTask.card_ids" :options="taskLibraryOptions" placeholder="请选择媒体库">
