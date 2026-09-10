@@ -1220,14 +1220,14 @@
 /* Login artwork is limited to media cards explicitly published as backgrounds. */
 .login-screen { background: #e8ebee; isolation: isolate; }
 .login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; }
-.login-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(230,232,238,.55); }
-.login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
+.login-backdrop::after { content: none; }
+.login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
 .login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
 .login-cover-column:nth-child(even) { margin-top: -90px; animation-direction: alternate-reverse; animation-duration: 115s; }
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; }
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
-.login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(251,251,253,.72); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
-.login-card .login-input { display: flex; align-items: center; gap: 13px; height: 62px; padding: 0 15px; border: 1px solid #b6b6bf; border-radius: 15px; background: rgba(255,255,255,.82); margin-top: 22px; }
+.login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
+.login-card .login-input { display: flex; align-items: center; gap: 13px; height: 62px; padding: 0 15px; border: 1px solid #b6b6bf; border-radius: 15px; background: #fff; margin-top: 22px; }
 .login-card .login-input:focus-within { border-color: #9581ba; box-shadow: 0 0 0 3px rgba(149,129,186,.1); }
 .login-card .login-input > svg { width: 22px; height: 22px; flex: 0 0 22px; fill: none; stroke: #88868f; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .login-card .login-input input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; padding: 12px 0; font-size: 16px; color: #535260; box-shadow: none; }
@@ -1235,7 +1235,8 @@
 .login-eye { display: grid; place-items: center; flex: 0 0 34px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #88868f; }
 .login-eye:hover { background: #eeebf3; }
 .login-eye svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.login-button { min-height: 48px; }
+.login-button { min-height: 48px; display: flex; justify-content: center; align-items: center; gap: 10px; }
+.login-button > svg { width: 22px; height: 22px; flex: 0 0 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 600px) {
   .login-backdrop-grid { inset: -15% -70%; }
   .login-screen .login-card { padding: 28px 24px; }
