@@ -541,6 +541,8 @@ async function main() {
     assert.equal(await page.locator('.login-input input').last().inputValue(), '');
     await page.waitForFunction(() => [...document.querySelectorAll('.login-backdrop img')].length > 0 &&
       [...document.querySelectorAll('.login-backdrop img')].every(img=>img.complete&&img.naturalWidth));
+    assert.equal(await page.locator('.login-cover-column').count(), 7);
+    assert.equal(await page.locator('.login-backdrop img').count(), 49);
     const backgroundCover = page.locator('.login-backdrop img').first();
     await backgroundCover.dispatchEvent('error');
     assert.equal(await backgroundCover.evaluate(img=>img.style.visibility), 'hidden');

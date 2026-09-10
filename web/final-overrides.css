@@ -1221,7 +1221,7 @@
 .login-screen { background: #e8ebee; isolation: isolate; }
 .login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; }
 .login-backdrop::after { content: ""; position: absolute; inset: 0; background: rgba(230,232,238,.55); }
-.login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
+.login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
 .login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
 .login-cover-column:nth-child(even) { margin-top: -90px; animation-direction: alternate-reverse; animation-duration: 115s; }
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; }

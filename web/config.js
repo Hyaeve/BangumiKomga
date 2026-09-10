@@ -118,8 +118,8 @@ createApp({
   computed: {
     loginBackgroundColumns() {
       if (!this.loginBackground.length) return [];
-      return Array.from({length:6}, (_, column) => Array.from({length:6}, (_, row) =>
-        this.loginBackground[(column*6+row)%this.loginBackground.length]));
+      return Array.from({length:7}, (_, column) => Array.from({length:7}, (_, row) =>
+        this.loginBackground[(column*7+row)%this.loginBackground.length]));
     },
     serviceModeChoice: {
       get() { return [this.config.BANGUMI_KOMGA_SERVICE_TYPE]; },
