@@ -68,7 +68,7 @@ async function main() {
       else if (url.pathname === '/api/scrape-records') result = { items: scrapeRecords };
       else if (url.pathname === '/api/scrape-records/stats') result = { total: 1, today: 1, comic: 1, novel: 0 };
       else if (url.pathname === '/api/runtime-logs') result = { items: runtimeLogs };
-      else if (url.pathname === '/api/runtime-logs/stats') result = { total: 1, today: 1, actions: 1, errors: 0 };
+      else if (url.pathname === '/api/runtime-logs/stats') result = { total: 1, today: 1, plans: 1, manual: 0 };
       res.end(JSON.stringify(result));
       return;
     }
@@ -154,6 +154,8 @@ async function main() {
     assert.equal(await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).count(), 1);
     await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).check();
     await taskFunctions.getByLabel('元数据补全').check();
+    assert.equal(await taskFunctions.getByLabel('卡片拼贴刷新', { exact: true }).isChecked(), false);
+    assert.equal(await page.locator('#task-functions .tag-picker-chip').count(), 1);
     await taskFunctions.getByLabel('元数据补全').press('Escape');
     assert.equal(await page.locator('.cron-picker').count(), 1);
     assert.equal(await page.locator('.cron-picker input').inputValue(), '0 6 * * *');
@@ -188,7 +190,7 @@ async function main() {
     await page.locator('.nav-item').nth(1).click();
     await page.locator('.record-item').first().waitFor();
     assert.equal(await page.locator('.records-head > *').count(), 6);
-    assert.equal(await page.locator('.time-sort i').count(), 1);
+    assert.equal(await page.locator('.time-sort .sort-arrows i').count(), 2);
     await page.locator('.record-expand').click();
     assert.equal(await page.locator('.record-volume-head > *').count(), 6);
     assert.match(await page.locator('.record-path').innerText(), /第一卷\.cbz/);

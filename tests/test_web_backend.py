@@ -71,6 +71,21 @@ class CollageTaskTests(unittest.TestCase):
             web_backend._refresh_card_collages(["library-a", "library-b"])
         self.assertEqual(refreshed, [("server-a", "library-a", True), ("server-b", "library-b", True)])
 
+    def test_collage_task_uses_server_qualified_library_keys(self):
+        refreshed = []
+        with patch.object(web_backend, "_configured_library_context", return_value={
+            "server-a::shared": {"server_id": "server-a", "library_id": "shared"},
+            "server-b::shared": {"server_id": "server-b", "library_id": "shared"},
+        }), patch.object(web_backend, "_preview_items", side_effect=lambda server, library, force=False: refreshed.append((server, library, force))), patch.object(web_backend, "_write_activity"):
+            web_backend._refresh_card_collages(["server-b::shared"])
+        self.assertEqual(refreshed, [("server-b", "shared", True)])
+
+    def test_task_library_ids_strip_server_qualification(self):
+        with patch.object(web_backend, "_configured_library_context", return_value={
+            "server-a::library-a": {"server_id": "server-a", "library_id": "library-a"},
+        }):
+            self.assertEqual(web_backend._task_library_ids(["server-a::library-a"]), ["library-a"])
+
 
 class ScrapeRecordGroupingTests(unittest.TestCase):
     def test_series_and_volumes_are_grouped_with_source_paths(self):

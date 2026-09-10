@@ -418,6 +418,7 @@ def refresh_metadata(series_list=None):
                     matched_title=komga_metadata.title or matched_search_title or series_name,
                     match_source=match_source,
                     event_kind="series",
+                    source_path=str(series.get("url") or ""),
                 )
                 record_activity_log(conn, "刮削匹配", f"{series_name} → {komga_metadata.title or matched_search_title or series_name}（{match_source}）", source="scraper")
         else:

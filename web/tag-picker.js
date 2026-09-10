@@ -4,7 +4,8 @@ const TagPicker = {
     label: { type: String, required: true },
     modelValue: { type: Array, default: () => [] },
     options: { type: Array, default: () => [] },
-    placeholder: { type: String, default: '请选择' }
+    placeholder: { type: String, default: '请选择' },
+    single: { type: Boolean, default: false }
   },
   emits: ['update:modelValue'],
   data() {
@@ -79,7 +80,7 @@ const TagPicker = {
       };
     },
     select(value, checked) {
-      const selected = this.modelValue.filter(item => item !== value);
+      const selected = this.single ? [] : this.modelValue.filter(item => item !== value);
       if (checked) selected.push(value);
       this.$emit('update:modelValue', selected);
     },
@@ -144,7 +145,7 @@ const TagPicker = {
           role="dialog" :aria-label="label + '候选项'" :style="panelStyle" @keydown="panelKeydown">
           <label v-for="option in options" :key="option.value" class="tag-picker-option"
             :class="{ 'is-selected': modelValue.includes(option.value) }">
-            <input type="checkbox" :checked="modelValue.includes(option.value)"
+            <input :type="single ? 'radio' : 'checkbox'" :name="single ? id : undefined" :checked="modelValue.includes(option.value)"
               @change="select(option.value, $event.target.checked)">
             <span class="tag-picker-option-text">{{ option.label }}<small v-if="option.detail">{{ option.detail }}</small></span>
           </label>

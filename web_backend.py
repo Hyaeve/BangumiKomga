@@ -346,16 +346,27 @@ def _start_refresh(full=False, library_ids=None):
 def _refresh_card_collages(library_ids):
     context = _configured_library_context()
     targets = []
-    for library_id in library_ids or []:
-        library_key = str(library_id)
-        item = context.get(library_key)
+    for target_id in library_ids or []:
+        target_key = str(target_id)
+        item = context.get(target_key)
         if item:
-            targets.append((library_key, item["server_id"]))
+            targets.append((item.get("library_id") or target_key.split("::", 1)[-1], item["server_id"]))
     if not targets:
         raise ValueError("计划任务没有可刷新的媒体库")
     for library_id, server_id in targets:
         _preview_items(server_id, library_id, force=True)
         _write_activity("计划任务：拼贴刷新", f"刷新媒体库 {library_id} 的封面拼贴")
+
+
+def _task_library_ids(target_ids):
+    context = _configured_library_context()
+    resolved = []
+    for target_id in target_ids or []:
+        item = context.get(str(target_id))
+        library_id = item.get("library_id") if item else str(target_id).split("::", 1)[-1]
+        if library_id and library_id not in resolved:
+            resolved.append(library_id)
+    return resolved
 
 
 def _start_task(task):
@@ -364,7 +375,8 @@ def _start_task(task):
         return False
     REFRESH_STATE.update({"running": True, "last_error": None})
     functions = {str(value) for value in (task.get("functions") or [task.get("type") or "metadata_completion"])}
-    library_ids = [str(value) for value in (task.get("card_ids") or [])]
+    target_ids = [str(value) for value in (task.get("card_ids") or [])]
+    library_ids = _task_library_ids(target_ids)
 
     def worker():
         try:
@@ -381,7 +393,7 @@ def _start_task(task):
                 if has_summary_translation:
                     result_labels.append("summary_translation")
             if "card_collage_refresh" in functions:
-                _refresh_card_collages(library_ids)
+                _refresh_card_collages(target_ids)
                 result_labels.append("card_collage")
             REFRESH_STATE["last_result"] = "+".join(result_labels) or "task"
             _write_activity("计划任务：完成", f"计划任务 {task.get('name', '未命名任务')} 执行完成")
@@ -508,14 +520,26 @@ def _configured_library_context():
         for server in (state.get("KOMGA_SERVERS") or [])
         if server.get("id")
     }
-    return {
-        str(item.get("LIBRARY")): {
+    result = {}
+    legacy_ids = {}
+    for item in (state.get("KOMGA_LIBRARY_LIST") or []):
+        library_id = str(item.get("LIBRARY") or "")
+        server_id = str(item.get("SERVER_ID") or "")
+        if not library_id:
+            continue
+        value = {
+            "library_id": library_id,
             "server_id": str(item.get("SERVER_ID") or ""),
             "server_name": servers.get(str(item.get("SERVER_ID") or ""), "默认 Komga 服务"),
         }
-        for item in (state.get("KOMGA_LIBRARY_LIST") or [])
-        if item.get("LIBRARY")
-    }
+        result[f"{server_id}::{library_id}"] = value
+        legacy_ids.setdefault(library_id, []).append(value)
+    for library_id, values in legacy_ids.items():
+        # Scrape records historically stored only a library ID. Preserve a
+        # display context for those rows while new task targets use the exact
+        # server::library key.
+        result[library_id] = values[0]
+    return result
 
 
 def _read_scrape_rows():
@@ -525,7 +549,7 @@ def _read_scrape_rows():
         return []
     try:
         context = _configured_library_context()
-        ids = list(context)
+        ids = sorted({item["library_id"] for item in context.values()})
         if not ids:
             return []
         _cleanup_expired_records()
@@ -642,7 +666,7 @@ def _read_runtime_logs(limit=100, offset=0, search=""):
 def _runtime_log_stats():
     db_file = ROOT / "recordsRefreshed.db"
     if not db_file.exists():
-        return {"total": 0, "today": 0, "errors": 0, "actions": 0}
+        return {"total": 0, "today": 0, "plans": 0, "manual": 0}
     try:
         conn = sqlite3.connect(db_file)
         conn.execute("CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL, source TEXT, recorded_at TEXT NOT NULL)")
@@ -653,11 +677,11 @@ def _runtime_log_stats():
         conn.execute("DELETE FROM activity_logs WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
         conn.commit()
         today = __import__("datetime").date.today().isoformat()
-        row = conn.execute("SELECT COUNT(*), SUM(CASE WHEN recorded_at LIKE ? THEN 1 ELSE 0 END), SUM(CASE WHEN level='error' THEN 1 ELSE 0 END), SUM(CASE WHEN action LIKE '按钮%' OR action LIKE '配置%' THEN 1 ELSE 0 END) FROM activity_logs", (today + "%",)).fetchone()
+        row = conn.execute("SELECT COUNT(*), SUM(CASE WHEN recorded_at LIKE ? THEN 1 ELSE 0 END), SUM(CASE WHEN action LIKE '计划任务%' THEN 1 ELSE 0 END), SUM(CASE WHEN action LIKE '按钮：手动%' OR action LIKE '%手动执行%' THEN 1 ELSE 0 END) FROM activity_logs", (today + "%",)).fetchone()
         conn.close()
-        return {"total": row[0] or 0, "today": row[1] or 0, "errors": row[2] or 0, "actions": row[3] or 0}
+        return {"total": row[0] or 0, "today": row[1] or 0, "plans": row[2] or 0, "manual": row[3] or 0}
     except sqlite3.Error:
-        return {"total": 0, "today": 0, "errors": 0, "actions": 0}
+        return {"total": 0, "today": 0, "plans": 0, "manual": 0}
 
 
 def _write_activity(action, detail, level="info", source="web"):
@@ -848,35 +872,28 @@ class Handler(BaseHTTPRequestHandler):
                 series_id = query.get("series_id", [""])[0]
                 image_headers = {"Accept": "image/avif,image/webp,image/jpeg,image/*"}
                 response = None
-                # The selected thumbnail resource keeps the source bytes at
-                # the best resolution Komga has available. The convenience
-                # /thumbnail endpoint is retained as a compatibility fallback.
-                thumbs = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails", timeout=30)
-                if thumbs.ok:
-                    try:
-                        payload = thumbs.json()
-                    except ValueError:
-                        payload = []
-                    thumb_items = payload if isinstance(payload, list) else []
-                    selected = next((item for item in thumb_items if item.get("selected")), None) or (thumb_items[0] if thumb_items else None)
-                    if selected and selected.get("id"):
-                        candidate = komga.r.get(
-                            f"{komga.base_url}/series/{series_id}/thumbnails/{selected['id']}",
-                            headers=image_headers,
-                            timeout=30,
-                        )
-                        if candidate.ok and candidate.content:
-                            response = candidate
+                # Komga's poster endpoint returns the selected poster bytes
+                # directly. Forward them untouched; never resize or re-encode.
+                candidate = komga.r.get(
+                    f"{komga.base_url}/series/{series_id}/thumbnail",
+                    headers=image_headers,
+                    timeout=30,
+                )
+                if candidate.ok and candidate.content:
+                    response = candidate
                 if response is None:
-                    for suffix in ("/thumbnail?selected=true", "/thumbnail"):
-                        candidate = komga.r.get(
-                            f"{komga.base_url}/series/{series_id}{suffix}",
-                            headers=image_headers,
-                            timeout=30,
-                        )
-                        if candidate.ok and candidate.content:
-                            response = candidate
-                            break
+                    thumbs = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails", timeout=30)
+                    if thumbs.ok:
+                        try:
+                            payload = thumbs.json()
+                        except ValueError:
+                            payload = []
+                        thumb_items = payload if isinstance(payload, list) else []
+                        selected = next((item for item in thumb_items if item.get("selected")), None) or (thumb_items[0] if thumb_items else None)
+                        if selected and selected.get("id"):
+                            candidate = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails/{selected['id']}", headers=image_headers, timeout=30)
+                            if candidate.ok and candidate.content:
+                                response = candidate
                 if response is None:
                     raise ValueError("Komga 未返回封面")
                 self.send_response(200)
@@ -964,9 +981,21 @@ class Handler(BaseHTTPRequestHandler):
                 state = _read_state()
                 task = dict(body or {})
                 task["id"] = str(task.get("id") or f"task-{secrets.token_hex(6)}")
-                task["name"] = str(task.get("name") or "元数据补全").strip()
-                task["functions"] = [str(value) for value in (task.get("functions") or [task.get("type", "metadata_completion")])]
+                task["functions"] = [str(value) for value in (task.get("functions") or [task.get("type", "metadata_completion")])][:1]
                 task["type"] = task["functions"][0] if task["functions"] else "metadata_completion"
+                labels = {"metadata_completion": "元数据补全", "summary_translation": "简介翻译", "card_collage_refresh": "卡片拼贴刷新"}
+                tasks = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task["id"]]
+                task["name"] = str(task.get("name") or "").strip()
+                if not task["name"]:
+                    base_name = labels.get(task["type"], "计划任务")
+                    existing = {str(item.get("name") or "") for item in tasks}
+                    task["name"] = base_name
+                    if task["name"] in existing:
+                        task["name"] = f"{base_name} 副本"
+                        copy_index = 2
+                        while task["name"] in existing:
+                            task["name"] = f"{base_name} 副本 {copy_index}"
+                            copy_index += 1
                 task["fields"] = list(task.get("fields") or [])
                 task["card_ids"] = list(task.get("card_ids") or [])
                 task["cron"] = str(task.get("cron") or "0 6 * * *").strip()
@@ -975,7 +1004,6 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 task["schedule"] = task["cron"]
                 task["enabled"] = bool(task.get("enabled", True))
-                tasks = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task["id"]]
                 tasks.append(task)
                 state["METADATA_TASKS"] = tasks
                 result = save_state(state)

@@ -37,7 +37,7 @@ createApp({
       records: [],
       logs: [],
       logSearch: '',
-      logStats: { total: 0, today: 0, errors: 0, actions: 0 },
+      logStats: { total: 0, today: 0, plans: 0, manual: 0 },
       tasks: [],
       editingTask: null,
       deletingTask: null,
@@ -94,7 +94,7 @@ createApp({
   computed: {
     taskLibraryOptions() {
       return this.cards.filter(card => card.id).map(card => ({
-        value: card.id, label: card.name || '未命名媒体库', detail: this.cardServerName(card)
+        value: this.taskLibraryKey(card), label: card.name || '未命名媒体库', detail: this.cardServerName(card)
       }));
     },
     editingCardFeatures: {
@@ -117,7 +117,10 @@ createApp({
       });
     }
   },
-  watch: { view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); } },
+  watch: {
+    view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
+    bangumiTestQuery() { this.resetBangumiSearch(); }
+  },
   async mounted() { document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
   beforeUnmount() { document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
   methods: {
@@ -221,6 +224,10 @@ createApp({
       } catch (error) { this.bangumiTestMessage = `搜索失败：${error.message}`; this.bangumiTestError = true; }
       finally { this.bangumiTestBusy = false; }
     },
+    resetBangumiSearch() {
+      this.bangumiTestResults = []; this.bangumiTestMessage = ''; this.bangumiTestError = false;
+      this.previewBangumiSubject = null; this.showBangumiPreview = false;
+    },
     async previewBangumi() {
       const first = this.bangumiTestResults[0];
       if (!first) return;
@@ -236,9 +243,9 @@ createApp({
     startLiveRefresh() { clearInterval(this.liveRefreshTimer); this.liveRefreshTimer = null; if (!this.authenticated || document.hidden || !['records', 'logs'].includes(this.view)) return; this.liveRefreshTimer = setInterval(() => { if (this.view === 'records') this.loadRecords(); else if (this.view === 'logs') this.loadLogs(); }, 4000); },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
     newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], card_ids: [], cron: '0 6 * * *', enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
-    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : []))], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])] }; this.$nextTick(() => this.decorateFieldLabels()); },
+    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields || [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
     validCronExpression(value) { const parts = String(value || '').trim().split(/\s+/); return parts.length === 5 && parts.every(part => /^[0-9A-Za-z*?,/\-]+$/.test(part)); },
-    async saveTask() { if (!this.editingTask) return; if (!this.editingTask.name.trim()) { this.notify('请填写任务名称', true); return; } if (!this.editingTask.functions.length) { this.notify('请至少选择一个任务功能', true); return; } if (this.editingTask.functions.includes('metadata_completion') && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (!this.validCronExpression(this.editingTask.cron)) { this.notify('请输入有效的五段 Cron 表达式', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
+    async saveTask() { if (!this.editingTask) return; this.editingTask.functions = this.editingTask.functions.slice(0, 1); if (!this.editingTask.functions.length) { this.notify('请选择任务功能', true); return; } if (this.editingTask.functions.includes('metadata_completion') && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (!this.validCronExpression(this.editingTask.cron)) { this.notify('请输入有效的五段 Cron 表达式', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } if (!this.editingTask.name.trim()) this.editingTask.name = this.uniqueTaskName(this.taskTypeLabel(this.editingTask.functions[0]), this.editingTask.id); try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
     requestDeleteTask(task) { this.deletingTask = task; },
     async deleteTask() { const task = this.deletingTask; if (!task) return; try { const data = await this.api('/api/tasks/delete', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.deletingTask = null; this.notify('计划任务已删除'); } catch (error) { this.notify(error.message, true); } },
     async toggleTask(task) { task.enabled = !task.enabled; try { this.config.METADATA_TASKS = this.tasks; this.config = await this.api('/api/config', { method: 'POST', body: JSON.stringify(this.collectConfig()) }); this.notify(task.enabled ? '计划任务已启用' : '计划任务已停用'); } catch (error) { task.enabled = !task.enabled; this.notify(error.message, true); } },
@@ -247,6 +254,11 @@ createApp({
     async runTask(task) { try { await this.api('/api/tasks/run', { method: 'POST', body: JSON.stringify({ id: task.id }) }); this.notify('计划任务已开始执行'); } catch (error) { this.notify(error.message, true); } },
     handleServerWheel(event) { const grid = event.target && event.target.closest ? event.target.closest('.server-card-grid') : null; if (!grid || grid.scrollWidth <= grid.clientWidth) return; event.preventDefault(); grid.scrollLeft += Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX; },
     toggleRecordSort() { this.recordSortNewest = !this.recordSortNewest; },
+    taskType(task) { return (task.functions || [task.type || 'metadata_completion'])[0]; },
+    taskTypeLabel(value) { return this.taskTypeOptions.find(option => option.value === value)?.label || value || '计划任务'; },
+    taskLibraryKey(card) { return `${card.serverId || ''}::${card.id || ''}`; },
+    normalizeTaskLibraryKey(value) { if (String(value).includes('::')) return String(value); const card = this.cards.find(item => item.id === String(value)); return card ? this.taskLibraryKey(card) : String(value); },
+    uniqueTaskName(base, currentId = '') { const names = new Set(this.tasks.filter(task => task.id !== currentId).map(task => task.name)); if (!names.has(base)) return base; if (!names.has(`${base} 副本`)) return `${base} 副本`; let index = 2; while (names.has(`${base} 副本 ${index}`)) index += 1; return `${base} 副本 ${index}`; },
     toggleRecord(record) { const index = this.expandedRecordIds.indexOf(record.id); if (index >= 0) this.expandedRecordIds.splice(index, 1); else this.expandedRecordIds.push(record.id); },
     recordExpanded(record) { return this.expandedRecordIds.includes(record.id); },
     formatRecordTime(value) { return String(value || '').replace('T', ' ').replace(/-/g, '/').replace(/\.\d{3}Z?$/, ''); },
