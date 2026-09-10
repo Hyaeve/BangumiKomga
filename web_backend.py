@@ -25,6 +25,7 @@ from tools.komga_path import item_path
 from services.media_policy import media_type, scrape_enabled
 from services.task_execution import TaskExecutor, TaskStopped
 from tools.task_lock_policy import task_lock_options
+from tools.activity_details import config_changes, task_details, target_names
 
 
 ROOT = Path(__file__).resolve().parent
@@ -367,14 +368,18 @@ def _start_refresh(full=False, library_ids=None, target_id=None):
     if not targets or any(key not in context for key in targets):
         raise ValueError("所选媒体卡片不存在")
     def worker():
+        started = time.monotonic()
+        details = f"方式：{'全量刮削' if full else '增量刮削'}\n应用媒体库：{target_names(targets, _read_state())}"
         try:
+            _write_activity("手动刮削：开始", details)
             _manual_refresh_targets(targets, full)
+            _write_activity("手动刮削：完成", details + f"\n耗时：{time.monotonic()-started:.1f} 秒")
             return "full" if full else "incremental"
         except TaskStopped:
-            _write_activity("手动刮削：停止", "手动刮削已停止")
+            _write_activity("手动刮削：停止", details + "\n结果：已停止，已完成的修改保留")
             raise
         except Exception as exc:  # pragma: no cover - surfaced through API
-            _write_activity("手动刮削：失败", str(exc), level="error")
+            _write_activity("手动刮削：失败", details + f"\n错误：{exc}", level="error")
             raise
     return TASK_EXECUTOR.submit("manual:" + "|".join(sorted(targets)), targets, worker)
 
@@ -418,7 +423,10 @@ def _start_task(task):
     target_ids = [str(value) for value in (task.get("card_ids") or [])]
 
     def worker():
+        started = time.monotonic()
+        details = task_details(task, _read_state())
         try:
+            _write_activity("计划任务：开始处理", details)
             result_labels = []
             if "metadata_completion" in functions:
                 _complete_task_libraries(target_ids, task)
@@ -436,13 +444,13 @@ def _start_task(task):
                     PREVIEW_CACHE.clear()
                     PREVIEW_CACHE_LOADED = False
                 result_labels.append("card_collage")
-            _write_activity("计划任务：完成", f"计划任务 {task.get('name', '未命名任务')} 执行完成")
+            _write_activity("计划任务：完成", details + f"\n结果：执行完成\n耗时：{time.monotonic()-started:.1f} 秒")
             return "+".join(result_labels) or "task"
         except TaskStopped:
-            _write_activity("计划任务：停止", f"计划任务 {task.get('name', '未命名任务')} 已停止")
+            _write_activity("计划任务：停止", details + f"\n结果：已停止，已完成的修改保留\n耗时：{time.monotonic()-started:.1f} 秒")
             raise
         except Exception as exc:  # pragma: no cover - surfaced through API
-            _write_activity("计划任务：失败", f"计划任务 {task.get('name', '未命名任务')}：{exc}", level="error")
+            _write_activity("计划任务：失败", details + f"\n错误：{exc}\n耗时：{time.monotonic()-started:.1f} 秒", level="error")
             raise
     context = _configured_library_context()
     targets = [f"{context[key]['server_id']}::{context[key]['library_id']}"
@@ -610,7 +618,7 @@ def _task_scheduler_loop():
                     continue
                 if _start_task(task):
                     TASK_LAST_RUN[task_id] = minute_key
-                    _write_activity("计划任务：自动执行", f"按 Cron {cron} 执行计划任务 {task.get('name', '未命名任务')}")
+                    _write_activity("计划任务：自动执行", "触发方式：Cron 定时触发\n" + task_details(task, _read_state()))
         except Exception as exc:  # pragma: no cover - scheduler is best effort
             try:
                 _write_activity("计划任务：调度失败", str(exc), level="error")
@@ -1163,6 +1171,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/config":
             self._json(200, _read_state())
         elif path == "/api/config/backup":
+            _write_activity("配置：备份", "下载当前配置备份\n包含系统设置、媒体卡片、计划任务与认证配置")
             self._json(200, {"config": _read_state(), "format": "bangumikomga-config-v1"})
         elif path == "/api/status":
             self._json(200, TASK_EXECUTOR.snapshot())
@@ -1350,8 +1359,9 @@ class Handler(BaseHTTPRequestHandler):
                 _write_activity("配置：保存账号", f"后台账号修改为 {username}")
                 self._json(200, result)
             elif path == "/api/config" and self._require_auth():
+                previous = _read_state()
                 result = save_state(self._body())
-                _write_activity("配置：保存设置", "保存系统设置、Komga 服务或刮削卡片")
+                _write_activity("配置：保存设置", config_changes(previous, result))
                 self._json(200, result)
             elif path == "/api/config/restore" and self._require_auth():
                 body = self._body()
@@ -1359,11 +1369,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(payload, dict):
                     self._json(400, {"error": "备份文件格式无效"})
                     return
-                self._json(200, save_state(payload))
+                previous = _read_state()
+                result = save_state(payload)
+                _write_activity("配置：还原", "从备份还原配置\n" + config_changes(previous, result))
+                self._json(200, result)
             elif path == "/api/refresh" and self._require_auth():
                 body = self._body()
                 if _start_refresh(bool(body.get("full", False)), target_id=body.get("target_id")):
-                    _write_activity("按钮：手动刮削", "启动" + ("全量" if body.get("full", False) else "增量") + "刮削")
+                    _write_activity("按钮：手动刮削", "触发方式：媒体卡片右键菜单\n方式：" + ("全量" if body.get("full", False) else "增量") + "\n目标：" + target_names([body.get("target_id") or "全部已配置媒体库"], _read_state()))
                     self._json(202, {"started": True})
                 else:
                     self._json(409, {"started": False, "error": "已有刷新任务正在运行"})
@@ -1420,7 +1433,7 @@ class Handler(BaseHTTPRequestHandler):
                 tasks.append(task)
                 state["METADATA_TASKS"] = tasks
                 result = save_state(state)
-                _write_activity("计划任务：保存", f"保存计划任务 {task['name']}")
+                _write_activity("计划任务：保存", task_details(task, result))
                 self._json(200, {"items": result.get("METADATA_TASKS", [])})
             elif path == "/api/tasks/delete" and self._require_auth():
                 task_id = str(self._body().get("id", ""))
@@ -1428,9 +1441,10 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(409, {"error": "请先停止正在执行或排队的任务，再删除"})
                     return
                 state = _read_state()
+                deleted = next((item for item in state.get("METADATA_TASKS", []) if item.get("id")==task_id), {"id":task_id,"name":task_id})
                 state["METADATA_TASKS"] = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task_id]
                 result = save_state(state)
-                _write_activity("计划任务：删除", f"删除计划任务 {task_id}")
+                _write_activity("计划任务：删除", task_details(deleted, state))
                 self._json(200, {"items": result.get("METADATA_TASKS", [])})
             elif path == "/api/tasks/stop" and self._require_auth():
                 task_id = str(self._body().get("id", ""))
@@ -1445,7 +1459,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not task:
                     self._json(404, {"error": "计划任务不存在"})
                 elif _start_task(task):
-                    _write_activity("计划任务：执行", f"执行计划任务 {task.get('name', '元数据补全')}")
+                    _write_activity("计划任务：执行", "触发方式：点击立即执行\n" + task_details(task, _read_state()))
                     self._json(202, {"started": True})
                 else:
                     self._json(409, {"started": False, "error": "此任务已在执行或排队"})

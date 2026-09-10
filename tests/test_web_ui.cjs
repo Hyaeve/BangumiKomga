@@ -28,7 +28,7 @@ const scrapeRecords = [{
   metadata_fields: ['title', 'summary', 'numberSort', 'publisher', 'authors', 'tags', 'genres'], match_source: '书名号内容', recorded_at: '2026-09-10T13:14:13', volume_count: 1,
   volumes: [{ id: 2, item_title: '第一卷：用于验证省略显示与完整信息悬浮文本框的长标题', source_path: '/data/comics/万古之王/第一卷.cbz', metadata_fields: ['numberSort'], match_source: '卷号排序', recorded_at: '2026-09-10T13:14:13' }]
 }];
-const runtimeLogs = [{ id: 1, level: 'info', action: '计划任务：自动执行', detail: '按 Cron 0 6 * * * 执行计划任务 每日元数据补全', source: 'scheduler', recorded_at: '2026-09-10T06:00:00' }];
+const runtimeLogs = [{ id: 1, level: 'info', action: '计划任务：自动执行', detail: '触发方式：Cron 定时触发\n任务：每日元数据补全\n应用媒体库：家庭书库 / 国漫\n元数据：标题、简介\n包含锁定：关闭；完成锁定：开启\n' + '用于测试很长操作详情的自动换行，不应省略或撑出页面。'.repeat(8), source: 'web', recorded_at: '2026-09-10T06:00:00' }];
 const libraries = state.KOMGA_LIBRARY_LIST.map((item, index) => ({
   id: item.LIBRARY, name: ['国漫', '轻小说', '日漫', '无封面书库'][index] || `媒体库 ${index + 1}`
 }));
@@ -310,7 +310,7 @@ async function main() {
       content: [element, ...element.children].flatMap(node =>
         ['::before', '::after'].map(pseudo => getComputedStyle(node, pseudo).content))
     }));
-    assert.equal(sortDecoration.width, 24);
+    assert.equal(sortDecoration.width, 20);
     assert(sortDecoration.content.every(content => content === 'none' || content === 'normal'));
     const initialColors = await page.locator('.sort-arrows i').evaluateAll(items => items.map(item => getComputedStyle(item).color));
     assert.notEqual(initialColors[0], initialColors[1]);
@@ -336,6 +336,15 @@ async function main() {
     assert.match(await page.locator('.floating-tooltip').innerText(), /长标题/);
     await page.locator('.nav-item').nth(3).click();
     await page.locator('.runtime-log-row').first().waitFor();
+    assert.equal(await page.locator('.runtime-log-row > small').count(), 0);
+    assert.equal(await page.locator('.runtime-log-row').getByText('web', {exact:true}).count(), 0);
+    const logLayout = await page.locator('.runtime-log-detail').first().evaluate(element=>({
+      whiteSpace:getComputedStyle(element).whiteSpace,
+      height:element.getBoundingClientRect().height,
+      overflow:element.scrollWidth>element.clientWidth+1
+    }));
+    assert.equal(logLayout.whiteSpace,'pre-wrap');
+    assert(logLayout.height>100 && !logLayout.overflow);
     assert.match(await page.locator('.log-hero-controls').innerText(), /成功/);
     assert.match(await page.locator('.log-hero-controls').innerText(), /失败/);
     assert.equal(await page.locator('.stat-icon-success svg').count(), 1);
@@ -421,6 +430,11 @@ async function main() {
     assert.match(await page.getByRole('dialog', {name:'任务功能候选项'}).locator('.tag-picker-option').first().innerText(), /元数据修正/);
     await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据修正', { exact: true }).click();
     assert.equal(await page.getByRole('switch').count(), 4);
+    const switchRows = await page.locator('.task-option-switches > button').evaluateAll(elements=>elements.map(element=>{
+      const box=element.getBoundingClientRect(); return {x:box.x,y:box.y};
+    }));
+    assert(switchRows.slice(0,3).every(box=>Math.abs(box.y-switchRows[0].y)<1));
+    assert(switchRows[3].y>switchRows[0].y && Math.abs(switchRows[3].x-switchRows[0].x)<1);
     assert.equal(await page.getByRole('switch', {name:'包含锁定',exact:true}).getAttribute('aria-checked'), 'false');
     assert.equal(await page.getByRole('switch', {name:'完成锁定',exact:true}).getAttribute('aria-checked'), 'false');
     await page.getByRole('switch', {name:'繁转简',exact:true}).click();
@@ -464,11 +478,23 @@ async function main() {
     assert.equal(await page.getByRole('switch').count(), 2);
     assert.equal(await page.getByRole('switch', {name:'包含锁定',exact:true}).getAttribute('aria-checked'), 'false');
     const aiCompletion = page.getByRole('button', { name: 'AI补全', exact: true });
+    assert.deepEqual(await page.locator('.completion-switches > button').allTextContents().then(values=>values.map(value=>value.trim())),
+      ['AI补全','包含锁定','完成锁定']);
+    const completionBoxes = await page.locator('.completion-switches > button').evaluateAll(elements=>elements.map(element=>{
+      const box=element.getBoundingClientRect(); return {top:box.top,height:box.height,width:box.width};
+    }));
+    assert(completionBoxes.every(box=>Math.abs(box.top-completionBoxes[0].top)<1 &&
+      Math.abs(box.height-completionBoxes[0].height)<1 && Math.abs(box.width-completionBoxes[0].width)<1));
     assert.equal(await aiCompletion.getAttribute('aria-pressed'), 'false');
     await aiCompletion.click();
     assert.equal(await aiCompletion.getAttribute('aria-pressed'), 'true');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: path.join(output, 'ai-completion-mobile.png') });
+    const mobileSwitches = await page.locator('.completion-switches > button').evaluateAll(elements=>elements.map(element=>{
+      const box=element.getBoundingClientRect(); return {y:box.y,right:box.right,overflow:element.scrollWidth>element.clientWidth+1};
+    }));
+    assert.equal(mobileSwitches.length,3);
+    assert(mobileSwitches.every(box=>Math.abs(box.y-mobileSwitches[0].y)<1 && box.right<=390 && !box.overflow));
     await page.locator('.task-modal').getByRole('button', { name: '取消', exact: true }).click();
     await page.locator('.sidebar-logout').click();
     await page.locator('.login-card').waitFor();
