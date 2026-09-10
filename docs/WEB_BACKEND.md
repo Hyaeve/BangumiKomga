@@ -39,4 +39,22 @@ Web 层只通过保存动作生成原版可导入的 `config/config.py`，刮削
 
 封面拼贴缓存写入数据目录的 `cover_collage_cache.json`（默认位于已挂载的 `config` 目录），不属于 `config/config.py` 的业务配置；删除该文件会让对应媒体库在下次读取时重新生成初始拼贴。
 
-运行日志不再通过 Web 页面或日志文件读取，统一输出到容器 stdout/stderr，使用 `docker logs bangumikomga` 查看。
+运行日志同时输出至容器 stdout/stderr，Web 运行日志页面提供操作审计与计划任务日志查询。
+
+## 2026-09-10 交互与翻译修复
+
+- `tools/translation_task.py` 独立执行计划任务简介翻译，不依赖刮削增量时间戳，分页遍历所选 Komga 服务的媒体库及卷册。空简介或已锁定简介跳过；中文简介直接锁定；其他简介翻译成功后覆盖并锁定。AI 请求后再次检查锁定与原文，避免覆盖期间用户的修改。翻译失败保留原文且不锁定。
+- `tools/summary_translation.py` 接受当前 Web 配置，避免计划任务使用过期的模块级 AI 配置。刮削核心仍可沿用原来的调用方式。
+- `web_backend.py` 在查询记录时后台补全旧记录路径，每批最多 20 条，失败后至少间隔五分钟重试。仅使用数据库唯一匹配的 Komga ID 查询真实 `url`，并校验媒体库；跨服务媒体库 ID 重复或缺少历史 ID 时不猜测路径。路径是否完整取决于 Komga 返回值与账号权限。
+- `web/tag-picker.js` 统一单选服务与媒体库的浮层样式，元数据及应用媒体库支持全选/全部取消。`web/floating-tooltip.js` 将完整文本提示挂载到页面顶层，避免表格裁切；Esc 优先关闭下拉浮层，再关闭编辑窗口。
+- 卡片前端复用已有封面补足九张拼贴，不改动手动/计划刷新机制，也不重新压缩原图。无封面时保持空背景。
+
+解耦时可移除独立翻译任务模块及 `_translate_task_libraries` 调用，保留原刮削路径；提示层脚本仅依赖 `data-tooltip` 属性，不依赖后端接口。修改由 `tests/test_translation_task.py`、`tests/test_web_backend.py` 和 `tests/test_web_ui.cjs` 覆盖。
+
+### AI 与路径联调
+
+- 新记录增加 `komga_id`、`server_id`，数据库自动补列。路径统一通过 `tools/komga_path.py` 提取；列表缺失时查询详情。记录按服务分组，避免不同服务的同名条目合并。
+- 旧记录优先使用已存 ID；没有 ID 时按原名查找原系列，再限定该系列查找卷册的文件名或元数据标题。只有唯一精确匹配才回填，不猜测磁盘路径。
+- AI URL 可填写域名、带 `/v1` 的基础地址或完整 `/chat/completions` 地址，支持文本及文本数组响应；不强制指定模型可能不支持的 temperature 参数。连接超时 10 秒、响应超时 120 秒，失败保留原文且不锁定。
+- `tests/test_integration_http.py` 使用本地 HTTP 服务运行真正的 requests 客户端，验证 AI 请求、Komga 查询/PATCH、简介锁定、记录落库、改名后路径回填及失败保护，不需要生产密钥。
+- 真实部署可运行 `docker exec bangumikomga python scripts/check_integrations.py`。该命令读取容器当前配置，向 AI 发送一次固定测试文本，并只读查询已配置媒体库的真实路径；不修改 Komga 元数据，不输出密钥或实际路径。失败时退出码为 1。真实配置不在开发工作区时，本地 HTTP 测试不等同于生产联调通过。

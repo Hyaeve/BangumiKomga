@@ -44,6 +44,9 @@ jobs:
           python run_unit_tests.py  
         continue-on-error: true
 
+      - name: Web And Integration Regression
+        run: python -m unittest tests.test_web_backend tests.test_runtime_service tests.test_translation_task tests.test_integration_http
+
       - name: Upload Test Results
         uses: actions/upload-artifact@v7
         with:

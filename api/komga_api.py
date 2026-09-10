@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 class KomgaApi:
     def __init__(self, base_url, username, password, api_key=None):
         # store the base URL and authentication information for use in other methods
+        base_url = base_url.rstrip("/")
         self.base_url = base_url + "/api/v1"
         self.auth = (username, password)
 
@@ -28,19 +29,48 @@ class KomgaApi:
         if api_key:
             self.r.headers["X-API-Key"] = api_key
             test_url = f"{base_url}/api/v2/users/me"
-            response = self.r.get(test_url)
+            response = self.r.get(test_url, timeout=30)
             if response.status_code != 200:
                 logger.error("Komga: API Key 验证失败!")
-                exit(1)
+                raise ValueError("Komga API Key 验证失败")
         else:
             url = f"{self.base_url}/login/set-cookie"
             response = self.r.get(
                 url,
                 auth=self.auth,
+                timeout=30,
             )
             if response.status_code != 204:
                 logger.error("Komga: 基本身份验证失败!")
-                exit(1)
+                raise ValueError("Komga 账号密码验证失败")
+
+    def get_specific_book(self, book_id):
+        response = self.r.get(f"{self.base_url}/books/{book_id}", timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+    def _iter_list(self, resource, condition):
+        page = 0
+        while True:
+            response = self.r.post(
+                f"{self.base_url}/{resource}/list",
+                params={"page": page, "size": 100},
+                json={"condition": {"allOf": [condition, {"deleted": {"operator": "isFalse"}}]}},
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            items = payload.get("content", [])
+            yield from items
+            if not items or payload.get("last", len(items) < 100):
+                break
+            page += 1
+
+    def iter_library_series(self, library_id):
+        return self._iter_list("series", {"libraryId": {"operator": "is", "value": str(library_id)}})
+
+    def iter_series_books(self, series_id):
+        return self._iter_list("books", {"seriesId": {"operator": "is", "value": str(series_id)}})
 
     def get_latest_series(self, library_id=None, page=0):
         """
@@ -74,7 +104,7 @@ class KomgaApi:
         """
         url = f"{self.base_url}/series/{series_id}"
         try:
-            response = self.r.get(url)
+            response = self.r.get(url, timeout=30)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"出现错误: {e}")
@@ -250,11 +280,12 @@ class KomgaApi:
         try:
             # make a PATCH request to the URL to update the metadata for a given series
             response = self.r.patch(
-                f"{self.base_url}/series/{series_id}/metadata", json=metadata
+                f"{self.base_url}/series/{series_id}/metadata", json=metadata, timeout=30
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"出现错误: {e}")
+            return False
         # return True if the status code indicates success, False otherwise
         return response.status_code == 204
 
@@ -286,11 +317,12 @@ class KomgaApi:
         try:
             # make a PATCH request to the URL to update the metadata for a given book
             response = self.r.patch(
-                f"{self.base_url}/books/{book_id}/metadata", json=metadata
+                f"{self.base_url}/books/{book_id}/metadata", json=metadata, timeout=30
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"出现错误: {e}")
+            return False
         # return True if the status code indicates success, False otherwise
         return response.status_code == 204
 

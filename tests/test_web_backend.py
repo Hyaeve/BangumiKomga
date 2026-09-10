@@ -1,8 +1,11 @@
 import json
 import tempfile
+import sqlite3
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
+from unittest.mock import Mock
 
 import web_backend
 
@@ -129,6 +132,30 @@ class ScrapeRecordGroupingTests(unittest.TestCase):
             [volume["source_path"] for volume in grouped[0]["volumes"]],
             ["/books/volume-1.cbz", "/books/volume-2.cbz"],
         )
+
+
+class RecordPathTests(unittest.TestCase):
+    def test_old_record_path_recovered_by_id_and_library_checked(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with closing(sqlite3.connect(root / "recordsRefreshed.db")) as conn:
+                conn.executescript("""
+                    CREATE TABLE scrape_records(id INTEGER PRIMARY KEY, source_path TEXT);
+                    INSERT INTO scrape_records VALUES (1, NULL);
+                    CREATE TABLE refreshed_series(series_id TEXT, series_name TEXT);
+                    INSERT INTO refreshed_series VALUES ('series', 'Book');
+                """)
+            komga = Mock()
+            record = {"id": "book:lib:1", "source_title": "Book", "event_kind": "series", "library_id": "lib", "server_id": "server"}
+            with patch.object(web_backend, "ROOT", root), patch.object(web_backend, "_load_komga", return_value=komga):
+                komga.get_specific_series.return_value = {"libraryId": "other", "url": "/wrong"}
+                web_backend._backfill_source_paths([record])
+                with closing(sqlite3.connect(root / "recordsRefreshed.db")) as conn:
+                    self.assertIsNone(conn.execute("SELECT source_path FROM scrape_records").fetchone()[0])
+                komga.get_specific_series.return_value = {"libraryId": "lib", "url": "/books/Book"}
+                web_backend._backfill_source_paths([record])
+                with closing(sqlite3.connect(root / "recordsRefreshed.db")) as conn:
+                    self.assertEqual(conn.execute("SELECT source_path FROM scrape_records").fetchone()[0], "/books/Book")
 
 
 if __name__ == "__main__":

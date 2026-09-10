@@ -15,10 +15,12 @@ import secrets
 import sqlite3
 import threading
 import time
+from contextlib import closing
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from tools.komga_path import item_path
 
 
 ROOT = Path(__file__).resolve().parent
@@ -89,6 +91,8 @@ PREVIEW_CACHE_LOCK = threading.RLock()
 PREVIEW_CACHE_LOADED = False
 TASK_SCHEDULER_STARTED = False
 TASK_LAST_RUN = {}
+PATH_BACKFILL_LOCK = threading.Lock()
+PATH_BACKFILL_ATTEMPTS = {}
 
 
 def _preview_cache_disk_key(server_id, library_id):
@@ -380,18 +384,14 @@ def _start_task(task):
 
     def worker():
         try:
-            from core.refresh_metadata import set_task_translation_override
-            has_summary_translation = "summary_translation" in functions
-            set_task_translation_override(has_summary_translation)
             result_labels = []
-            needs_metadata_refresh = bool({"metadata_completion", "summary_translation"} & functions)
-            if needs_metadata_refresh:
+            if "metadata_completion" in functions:
                 from core.refresh_metadata import refresh_partial_metadata
                 refresh_partial_metadata(library_ids=library_ids or None)
-                if "metadata_completion" in functions:
-                    result_labels.append("incremental")
-                if has_summary_translation:
-                    result_labels.append("summary_translation")
+                result_labels.append("incremental")
+            if "summary_translation" in functions:
+                _translate_task_libraries(target_ids)
+                result_labels.append("summary_translation")
             if "card_collage_refresh" in functions:
                 _refresh_card_collages(target_ids)
                 result_labels.append("card_collage")
@@ -401,16 +401,56 @@ def _start_task(task):
             REFRESH_STATE["last_error"] = str(exc)
             _write_activity("计划任务：失败", f"计划任务 {task.get('name', '未命名任务')}：{exc}", level="error")
         finally:
-            try:
-                from core.refresh_metadata import set_task_translation_override
-                set_task_translation_override(None)
-            except Exception:
-                pass
             REFRESH_STATE["running"] = False
             REFRESH_LOCK.release()
 
     threading.Thread(target=worker, name="WebTask", daemon=True).start()
     return True
+
+
+def _translate_task_libraries(target_ids):
+    from tools.translation_task import translate_library
+    from tools.db import init_sqlite3, record_scrape_event
+
+    state = _read_state()
+    context = _configured_library_context()
+    targets = []
+    for key in target_ids:
+        target = context.get(str(key))
+        if not target:
+            raise ValueError(f"计划任务的媒体库不存在：{key}")
+        targets.append(target)
+    if not targets:
+        raise ValueError("请选择应用媒体库")
+    _, conn = init_sqlite3(ROOT / "recordsRefreshed.db")
+    failures = 0
+    try:
+        for target in targets:
+            library_id, server_id = target["library_id"], target["server_id"]
+            komga = _load_komga(server_id)
+            libraries = komga.list_libraries()
+            library_name = next((item.get("name") for item in libraries if str(item.get("id")) == library_id), library_id)
+            card = next((item for item in state.get("KOMGA_LIBRARY_LIST", []) if str(item.get("LIBRARY")) == library_id and str(item.get("SERVER_ID") or "") == server_id), {})
+
+            def record(item, kind, source_title, fields):
+                record_scrape_event(
+                    conn, "小说" if card.get("IS_NOVEL_ONLY") else "漫画",
+                    item.get("name") or "", library_id, library_name, fields,
+                    source_title=source_title, match_source="计划任务：简介翻译",
+                    event_kind=kind, source_path=str(item.get("url") or ""),
+                    komga_id=item["id"], server_id=server_id,
+                )
+
+            counts = translate_library(
+                komga, library_id, state, record,
+                lambda detail, level: _write_activity("计划任务：简介翻译", detail, level=level),
+            )
+            failures += counts["failed"]
+            _write_activity("计划任务：简介翻译", f"{target['server_name']} / {library_name}：更新 {counts['updated']}，跳过 {counts['skipped']}，失败 {counts['failed']}")
+    finally:
+        conn.close()
+    if failures:
+        raise ValueError(f"{failures} 项简介翻译或写入失败，已保留原文，详见运行日志")
 
 
 def _cron_value(token, minimum, maximum):
@@ -553,19 +593,22 @@ def _read_scrape_rows():
         if not ids:
             return []
         _cleanup_expired_records()
-        with sqlite3.connect(db_file) as conn:
+        with closing(sqlite3.connect(db_file)) as conn:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(scrape_records)").fetchall()}
             placeholders = ",".join("?" for _ in ids)
             source_sql = ",source_title,matched_title,match_source" if {"source_title", "matched_title", "match_source"}.issubset(columns) else ",'' AS source_title,item_title AS matched_title,'' AS match_source"
             kind_sql = ",event_kind" if "event_kind" in columns else ",'volume' AS event_kind"
             path_sql = ",source_path" if "source_path" in columns else ",'' AS source_path"
-            rows = conn.execute("SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at" + source_sql + kind_sql + path_sql + " FROM scrape_records WHERE library_id IN (" + placeholders + ") ORDER BY id DESC", ids).fetchall()
+            identity_sql = (",komga_id" if "komga_id" in columns else ",''") + (",server_id" if "server_id" in columns else ",''")
+            rows = conn.execute("SELECT id,item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at" + source_sql + kind_sql + path_sql + identity_sql + " FROM scrape_records WHERE library_id IN (" + placeholders + ") ORDER BY id DESC", ids).fetchall()
         return [{
             "id": row[0], "item_type": row[1], "item_title": row[2], "library_id": row[3], "library_name": row[4],
-            "server_id": context.get(str(row[3]), {}).get("server_id", ""), "server_name": context.get(str(row[3]), {}).get("server_name", "默认 Komga 服务"),
+            "server_id": row[14] or context.get(str(row[3]), {}).get("server_id", ""),
+            "server_name": context.get(f"{row[14]}::{row[3]}" if row[14] else str(row[3]), {}).get("server_name", "默认 Komga 服务"),
+            "komga_id": row[13] or "", "record_server_id": row[14] or "",
             "metadata_fields": [field for field in (row[5] or "").split(",") if field], "status": row[6], "recorded_at": row[7],
             "source_title": row[8] or row[2], "matched_title": row[9] or row[2], "match_source": row[10] or "", "event_kind": row[11] or "volume", "source_path": row[12] or "",
-        } for row in rows]
+        } for row in rows if not row[14] or f"{row[14]}::{row[3]}" in context]
     except (OSError, sqlite3.Error, IndexError):
         return []
 
@@ -584,7 +627,7 @@ def _group_scrape_records(rows):
     groups = {}
     for row in rows:
         title = str(row.get("source_title") or row.get("item_title") or "").strip()
-        key = (str(row.get("library_id") or ""), str(row.get("item_type") or ""), title.casefold())
+        key = (str(row.get("server_id") or ""), str(row.get("library_id") or ""), str(row.get("item_type") or ""), title.casefold())
         groups.setdefault(key, []).append(row)
     result = []
     for rows_for_book in groups.values():
@@ -604,6 +647,8 @@ def _group_scrape_records(rows):
             "matched_title": row.get("matched_title") or row.get("item_title") or "", "metadata_fields": row.get("metadata_fields") or [],
             "status": row.get("status") or "success", "recorded_at": row.get("recorded_at") or "", "match_source": row.get("match_source") or "",
             "source_path": row.get("source_path") or "",
+            "komga_id": row.get("komga_id") or "", "record_server_id": row.get("record_server_id") or "",
+            "source_title": row.get("source_title") or "",
         } for row in details]
         primary["source_path"] = primary.get("source_path") or next((row.get("source_path") for row in rows_for_book if row.get("source_path")), "")
         primary["volume_count"] = len(primary["volumes"])
@@ -614,7 +659,111 @@ def _group_scrape_records(rows):
 
 def _read_scrape_records(limit=100, offset=0):
     grouped = _group_scrape_records(_read_scrape_rows())
-    return grouped[offset:offset + limit]
+    visible = grouped[offset:offset + limit]
+    _schedule_path_backfill(visible)
+    return visible
+
+
+def _backfill_source_paths(records):
+    """Recover old rows using recorded Komga IDs, never invent filesystem paths."""
+    db_file = ROOT / "recordsRefreshed.db"
+    configured = _configured_library_context()
+    with closing(sqlite3.connect(db_file)) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(scrape_records)")}
+        if "source_path" not in columns:
+            conn.execute("ALTER TABLE scrape_records ADD COLUMN source_path TEXT")
+        clients = {}
+        for row in records:
+            server_id = row.get("server_id", "")
+            library_id = str(row.get("library_id") or "")
+            servers = {value["server_id"] for value in configured.values() if value["library_id"] == library_id}
+            if len(servers) > 1 and not row.get("record_server_id"):
+                continue
+            kind = "series" if _is_series_scrape_row(row) else "volume"
+            table, id_column, name_column = ("refreshed_series", "series_id", "series_name") if kind == "series" else ("refreshed_books", "book_id", "book_name")
+            name = (row.get("source_title") or row.get("item_title")) if kind == "series" else row.get("item_title")
+            ids = [(row["komga_id"],)] if row.get("komga_id") else (
+                conn.execute(f"SELECT {id_column} FROM {table} WHERE {name_column}=? LIMIT 2", (name,)).fetchall()
+                if table in tables else [])
+            try:
+                if server_id not in clients:
+                    clients[server_id] = _load_komga(server_id)
+                komga = clients[server_id]
+                if len(ids) != 1:
+                    item = _find_legacy_record_item(komga, row, kind)
+                    ids = [(item["id"],)] if item else []
+                if len(ids) != 1:
+                    continue
+                item = (komga.get_specific_series if kind == "series" else komga.get_specific_book)(ids[0][0])
+                if not isinstance(item, dict) or str(item.get("libraryId")) != library_id:
+                    continue
+                path = item_path(item)
+                if not path:
+                    continue
+                event_id = str(row["id"]).rsplit(":", 1)[-1]
+                conn.execute("UPDATE scrape_records SET source_path=? WHERE id=? AND COALESCE(source_path,'')=''", (path, event_id))
+                conn.commit()
+            except Exception as exc:
+                _write_activity("记录：路径回填", f"{name}：{exc}", level="warning")
+
+
+def _find_legacy_record_item(komga, row, kind):
+    """Recover renamed legacy entries only when an exact match is unique."""
+    title = str(row.get("source_title") or row.get("item_title") or "")
+    series_matches = []
+    for series in komga.iter_library_series(row["library_id"]):
+        if title in (series.get("name"), (series.get("metadata") or {}).get("title")):
+            series_matches.append(series)
+            if len(series_matches) > 1:
+                return None
+    if len(series_matches) != 1:
+        return None
+    if kind == "series":
+        return series_matches[0]
+    names = {row.get("item_title"), row.get("matched_title")} - {None, ""}
+    matches = []
+    for book in komga.iter_series_books(series_matches[0]["id"]):
+        if names.intersection((book.get("name"), (book.get("metadata") or {}).get("title"))):
+            matches.append(book)
+            if len(matches) > 1:
+                return None
+    return matches[0] if matches else None
+
+
+def _schedule_path_backfill(records):
+    if not PATH_BACKFILL_LOCK.acquire(blocking=False):
+        return
+    pending = []
+    now = time.monotonic()
+    for record in records:
+        for row in [record, *[
+            {**volume, "event_kind": "volume", "server_id": record.get("server_id"), "library_id": record.get("library_id")}
+            for volume in record.get("volumes", [])
+        ]]:
+            if not row.get("source_path") and now - PATH_BACKFILL_ATTEMPTS.get(str(row["id"]), -1000) >= 300:
+                pending.append(row)
+                if len(pending) >= 20:
+                    break
+        if len(pending) >= 20:
+            break
+    if not pending:
+        PATH_BACKFILL_LOCK.release()
+        return
+    if len(PATH_BACKFILL_ATTEMPTS) > 1000:
+        PATH_BACKFILL_ATTEMPTS.clear()
+    for row in pending:
+        PATH_BACKFILL_ATTEMPTS[str(row["id"])] = now
+
+    def worker():
+        try:
+            _backfill_source_paths(pending)
+        except (OSError, sqlite3.Error) as exc:
+            _write_activity("记录：路径回填", str(exc), level="warning")
+        finally:
+            PATH_BACKFILL_LOCK.release()
+
+    threading.Thread(target=worker, name="RecordPathBackfill", daemon=True).start()
 
 
 def _read_scrape_stats():
@@ -630,7 +779,7 @@ def _cleanup_expired_records():
         return
     try:
         days = max(1, min(int(_read_state().get("RECORD_RETENTION_DAYS", 30)), 365))
-        with sqlite3.connect(db_file) as conn:
+        with closing(sqlite3.connect(db_file)) as conn:
             conn.execute("DELETE FROM scrape_records WHERE datetime(recorded_at) < datetime('now', ?)", (f"-{days} days",))
             conn.commit()
     except (OSError, sqlite3.Error, TypeError, ValueError):

@@ -52,9 +52,9 @@ def upsert_book_record(conn, book_id, subject_id, update_success, book_name):
     conn.commit()
 
 
-def init_sqlite3():
+def init_sqlite3(db_path="recordsRefreshed.db"):
     # Create a connection to the sqlite database
-    conn = sqlite3.connect("recordsRefreshed.db", check_same_thread=False)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute(
         """CREATE TABLE IF NOT EXISTS refreshed_series (series_id text primary key,subject_id text ,update_success BOOLEAN,series_name text,bangumi_name text,refresh_time text )"""
@@ -81,7 +81,7 @@ def init_sqlite3():
             recorded_at TEXT NOT NULL
         )"""
     )
-    for column, definition in (("source_title", "TEXT"), ("matched_title", "TEXT"), ("match_source", "TEXT"), ("event_kind", "TEXT"), ("source_path", "TEXT")):
+    for column, definition in (("source_title", "TEXT"), ("matched_title", "TEXT"), ("match_source", "TEXT"), ("event_kind", "TEXT"), ("source_path", "TEXT"), ("komga_id", "TEXT"), ("server_id", "TEXT")):
         try:
             cursor.execute(f"ALTER TABLE scrape_records ADD COLUMN {column} {definition}")
         except sqlite3.OperationalError:
@@ -105,13 +105,14 @@ def init_sqlite3():
 
 def record_scrape_event(conn, item_type, item_title, library_id, library_name,
                         metadata_fields, status="success", source_title="",
-                        matched_title="", match_source="", event_kind="volume", source_path=""):
+                        matched_title="", match_source="", event_kind="volume", source_path="",
+                        komga_id="", server_id=""):
     """Persist a compact, user-facing history entry for a metadata update."""
     with _record_lock:
         conn.execute(
             """INSERT INTO scrape_records
-            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at,source_title,matched_title,match_source,event_kind,source_path)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at,source_title,matched_title,match_source,event_kind,source_path,komga_id,server_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item_type,
                 item_title,
@@ -125,6 +126,8 @@ def record_scrape_event(conn, item_type, item_title, library_id, library_name,
                 match_source or "",
                 event_kind or "volume",
                 source_path or "",
+                str(komga_id or ""),
+                str(server_id or ""),
             ),
         )
         conn.commit()

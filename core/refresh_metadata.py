@@ -9,9 +9,10 @@ from tools.get_number import get_number, NumberType
 from tools.env import *
 from tools.log import logger
 from tools.notification import send_notification
-from tools.summary_translation import translate_summary_to_zh
+from tools.summary_translation import translate_summary_to_zh, summary_is_chinese
 from tools.db import init_sqlite3, record_series_status, record_book_status, record_scrape_event, record_activity_log
 from tools.cache_time import TimeCacheManager
+from tools.komga_path import resolve_item_path
 
 
 env = InitEnv()
@@ -20,6 +21,19 @@ komga = env.komga
 cursor, conn = init_sqlite3()
 _library_name_cache = {}
 TASK_TRANSLATION_OVERRIDE = None
+
+
+def _record_server_id(library_id):
+    return next((str(item.get("SERVER_ID") or "") for item in KOMGA_LIBRARY_LIST
+                 if str(item.get("LIBRARY")) == str(library_id)), "")
+
+
+def _record_path(item, kind):
+    try:
+        return resolve_item_path(komga, item, kind)
+    except Exception as exc:
+        logger.warning("读取 Komga 文件路径失败，保留 ID 供后续回填：%s", exc)
+        return ""
 
 
 def set_task_translation_override(enabled=None):
@@ -126,12 +140,7 @@ def _metadata_write_payload(existing_metadata, matched_metadata, overwrite_field
 
 
 def _summary_is_chinese(value):
-    text = str(value or "").strip()
-    if not text:
-        return False
-    chinese = len(re.findall(r"[\u3400-\u9fff]", text))
-    letters = len(re.findall(r"[A-Za-z]", text))
-    return chinese >= 2 and chinese >= letters
+    return summary_is_chinese(value)
 
 
 def _apply_summary_translation_policy(existing_metadata, matched_data, overwrite_fields, enabled):
@@ -418,7 +427,8 @@ def refresh_metadata(series_list=None):
                     matched_title=komga_metadata.title or matched_search_title or series_name,
                     match_source=match_source,
                     event_kind="series",
-                    source_path=str(series.get("url") or ""),
+                    source_path=_record_path(series, "series"),
+                    komga_id=series_id, server_id=_record_server_id(series.get("libraryId")),
                 )
                 record_activity_log(conn, "刮削匹配", f"{series_name} → {komga_metadata.title or matched_search_title or series_name}（{match_source}）", source="scraper")
         else:
@@ -710,6 +720,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 match_source=match_source or "卷匹配",
                 event_kind="volume",
                 source_path=source_path,
+                komga_id=book_id, server_id=_record_server_id(library_id),
             )
     else:
         record_book_status(
@@ -747,7 +758,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
     for book in books["content"]:
         book_id = book["id"]
         book_name = book["name"]
-        source_path = str(book.get("url") or book.get("filePath") or book.get("path") or (book.get("media") or {}).get("filePath") or "")
+        source_path = _record_path(book, "volume")
 
         # Get the subject id from the Correct Bgm Link (CBL) if it exists
         for link in book["metadata"]["links"]:
@@ -836,4 +847,5 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     match_source=match_source or "卷号修正",
                     event_kind="volume",
                     source_path=source_path,
+                    komga_id=book_id, server_id=_record_server_id(library_id),
                 )
