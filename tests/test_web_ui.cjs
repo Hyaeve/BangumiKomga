@@ -502,6 +502,11 @@ async function main() {
     assert.equal(await page.locator('.login-input input').last().inputValue(), '');
     await page.waitForFunction(() => [...document.querySelectorAll('.login-backdrop img')].length > 0 &&
       [...document.querySelectorAll('.login-backdrop img')].every(img=>img.complete&&img.naturalWidth));
+    const backgroundCover = page.locator('.login-backdrop img').first();
+    await backgroundCover.dispatchEvent('error');
+    assert.equal(await backgroundCover.evaluate(img=>img.style.visibility), 'hidden');
+    await backgroundCover.dispatchEvent('load');
+    assert.equal(await backgroundCover.evaluate(img=>img.style.visibility), 'visible');
     assert.equal(await page.locator('.login-input > svg').count(), 2);
     assert.equal(await page.locator('.login-input input').last().getAttribute('type'), 'password');
     await page.getByRole('button', {name:'显示密码',exact:true}).click();

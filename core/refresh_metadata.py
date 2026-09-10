@@ -47,6 +47,8 @@ def _complete_unmatched_with_ai(series, only_novel):
         record_activity_log(conn, "计划任务：AI补全", detail, level=level, source="scheduler")
         logger.log(30 if level == "warning" else 40 if level == "error" else 20, detail)
 
+    log(f"Bangumi 匹配无结果，开始 AI 联网补全\n媒体项目：{series.get('name', '')}\n"
+        f"所选元数据：{', '.join(sorted(TASK_COMPLETION_FIELDS or []))}", "info")
     complete_unmatched(komga, series, TASK_COMPLETION_FIELDS or [], vars(config), only_novel, record, log,
                        include_locked=TASK_INCLUDE_LOCKED, lock_completed=TASK_LOCK_COMPLETED)
 

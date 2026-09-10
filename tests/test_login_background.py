@@ -6,7 +6,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer
 from urllib.request import urlopen
 from urllib.error import HTTPError
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import web_backend as backend
 
@@ -22,6 +22,8 @@ class LoginBackgroundTests(unittest.TestCase):
             patch.object(backend, "_read_state", return_value=self.state),
             patch.object(backend, "PREVIEW_CACHE", self.cache),
             patch.object(backend, "_load_preview_cache"),
+            patch.object(backend, "LOGIN_PREVIEW_PENDING", set()),
+            patch.object(backend, "LOGIN_PREVIEW_RETRY_AT", {}),
         ]
         for item in self.patches:
             item.start()
@@ -76,6 +78,54 @@ class LoginBackgroundTests(unittest.TestCase):
                     backend._persist_preview_cache(("s", "private"))
                 saved = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(len(saved), 2)
+
+    def test_cold_login_initializes_only_opted_in_cards_once(self):
+        self.cache.clear()
+        with patch.object(backend.threading, "Thread") as thread:
+            backend._prepare_login_previews()
+            backend._prepare_login_previews()
+            thread.assert_called_once()
+            self.assertEqual(thread.call_args.kwargs["args"], (("s", "public"),))
+            worker = thread.call_args.kwargs["target"]
+        with patch.object(backend, "_preview_items") as preview:
+            worker(("s", "public"))
+            preview.assert_called_once_with("s", "public")
+        self.assertEqual(backend.LOGIN_PREVIEW_PENDING, set())
+        with patch.object(backend.threading, "Thread") as thread:
+            backend._prepare_login_previews()
+            thread.assert_not_called()
+
+    def test_existing_collages_are_not_automatically_refreshed(self):
+        with patch.object(backend.threading, "Thread") as thread:
+            backend._prepare_login_previews()
+            thread.assert_not_called()
+
+    def test_slow_komga_does_not_hold_global_cache_lock(self):
+        started, release = threading.Event(), threading.Event()
+        def fetch(**kwargs):
+            started.set()
+            release.wait(5)
+            return {"content": [{"id": "new-series"}]}
+        client = Mock()
+        client.get_latest_series.side_effect = fetch
+        self.cache.clear()
+        with patch.object(backend, "_load_komga", return_value=client), \
+             patch.object(backend, "_persist_preview_cache"):
+            worker = threading.Thread(target=backend._preview_items, args=("s", "public"))
+            worker.start()
+            try:
+                self.assertTrue(started.wait(2))
+                acquired = backend.PREVIEW_CACHE_LOCK.acquire(timeout=0.2)
+                if acquired:
+                    backend.PREVIEW_CACHE_LOCK.release()
+                self.assertTrue(acquired)
+            finally:
+                release.set()
+                worker.join(5)
+            self.assertEqual(len(backend._login_background_entries()), 1)
+
+    def test_default_runtime_mode_is_realtime(self):
+        self.assertEqual(backend.DEFAULTS["BANGUMI_KOMGA_SERVICE_TYPE"], "sse")
 
 
 if __name__ == "__main__":

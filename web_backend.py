@@ -102,6 +102,8 @@ PREVIEW_CACHE = {}
 PREVIEW_CACHE_FILE = DATA_DIR / "cover_collage_cache.json"
 PREVIEW_CACHE_LOCK = threading.RLock()
 PREVIEW_CACHE_LOADED = False
+LOGIN_PREVIEW_PENDING = set()
+LOGIN_PREVIEW_RETRY_AT = {}
 TASK_SCHEDULER_STARTED = False
 TASK_LAST_RUN = {}
 PATH_BACKFILL_LOCK = threading.Lock()
@@ -1040,34 +1042,58 @@ def _preview_items(server_id, library_id, force=False):
         # replace the selected series.
         if cached and not force:
             return cached["items"]
-        komga = _load_komga(server_id)
-        payload = komga.get_latest_series(library_id=library_id, page=0)
-        items = payload.get("content", []) if isinstance(payload, dict) else payload
-        # Komga returns this page in recent-first order. Pick a fresh subset
-        # from that latest batch only when the user explicitly refreshes.
-        latest_batch = list(items or [])[:20]
-        if latest_batch:
-            # Keep the collage full even when the latest page contains fewer
-            # than eight series. Shuffle once, then cycle through the available
-            # covers; an empty library remains an intentionally empty collage.
-            random.shuffle(latest_batch)
-            selected_items = [latest_batch[index % len(latest_batch)] for index in range(8)]
-        else:
-            selected_items = []
-        version = f"{int(time.time() * 1000)}-{secrets.token_hex(3)}"
-        result = []
-        for index, series in enumerate(selected_items):
-            series_id = series.get("id")
-            if series_id:
-                result.append({
-                    "id": series_id,
-                    "preview_id": f"{series_id}-{index}",
-                    "title": series.get("name") or (series.get("metadata") or {}).get("title", ""),
-                    "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}&v={version}",
-                })
+    # Network I/O must not block login manifests or other libraries' covers.
+    komga = _load_komga(server_id)
+    payload = komga.get_latest_series(library_id=library_id, page=0)
+    items = payload.get("content", []) if isinstance(payload, dict) else payload
+    latest_batch = list(items or [])[:20]
+    random.shuffle(latest_batch)
+    selected_items = [latest_batch[index % len(latest_batch)] for index in range(8)] if latest_batch else []
+    version = f"{int(time.time() * 1000)}-{secrets.token_hex(3)}"
+    result = []
+    for index, series in enumerate(selected_items):
+        series_id = series.get("id")
+        if series_id:
+            result.append({
+                "id": series_id,
+                "preview_id": f"{series_id}-{index}",
+                "title": series.get("name") or (series.get("metadata") or {}).get("title", ""),
+                "url": f"/api/komga/cover?server_id={server_id}&series_id={series_id}&v={version}",
+            })
+    with PREVIEW_CACHE_LOCK:
+        if key in PREVIEW_CACHE and not force:
+            return PREVIEW_CACHE[key]["items"]
         PREVIEW_CACHE[key] = {"created": time.time(), "version": version, "items": result}
         _persist_preview_cache(key)
         return result
+
+
+def _prepare_login_previews():
+    """Warm missing opted-in collages off-thread without refreshing saved selections."""
+    def prepare(key):
+        try:
+            _preview_items(*key)
+        except Exception:
+            # Public polling must not repeatedly hammer an unavailable server.
+            pass
+        finally:
+            with PREVIEW_CACHE_LOCK:
+                LOGIN_PREVIEW_PENDING.discard(key)
+
+    state = _read_state()
+    with PREVIEW_CACHE_LOCK:
+        _load_preview_cache()
+        for card in state.get("KOMGA_LIBRARY_LIST", []):
+            if not card.get("LOGIN_BACKGROUND") or not card.get("LIBRARY"):
+                continue
+            key = (str(card.get("SERVER_ID") or ""), str(card["LIBRARY"]))
+            if key in PREVIEW_CACHE or key in LOGIN_PREVIEW_PENDING:
+                continue
+            if time.monotonic() < LOGIN_PREVIEW_RETRY_AT.get(key, 0):
+                continue
+            LOGIN_PREVIEW_PENDING.add(key)
+            LOGIN_PREVIEW_RETRY_AT[key] = time.monotonic() + 60
+            threading.Thread(target=prepare, args=(key,), daemon=True).start()
 
 
 def _login_background_entries():
@@ -1151,9 +1177,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth/session":
             self._json(200, {"authenticated": self._authorized(), "username": _read_auth()["username"] if self._authorized() else ""})
         elif path == "/api/login-background":
+            _prepare_login_previews()
             entries = list(_login_background_entries())
             self._json(200, {"items": [{"url": "/api/login-background/cover?token=" + token}
-                                      for token in entries[:36]]})
+                                      for token in entries[:36]], "pending": bool(LOGIN_PREVIEW_PENDING)})
         elif path == "/api/login-background/cover":
             try:
                 token = parse_qs(urlparse(self.path).query).get("token", [""])[0]

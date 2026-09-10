@@ -218,9 +218,10 @@ createApp({
     },
     async loadLoginBackground() {
       if (this.authenticated) return;
-      try { const data = await this.api('/api/login-background'); if (!this.authenticated) this.loginBackground = data.items || []; } catch (_) { this.loginBackground = []; }
+      let pending = false;
+      try { const data = await this.api('/api/login-background'); pending = !!data.pending; if (!this.authenticated) this.loginBackground = data.items || []; } catch (_) { this.loginBackground = []; }
       clearInterval(this.loginBackgroundTimer);
-      if (!this.authenticated) this.loginBackgroundTimer = setInterval(() => this.loadLoginBackground(), 60000);
+      if (!this.authenticated) this.loginBackgroundTimer = setInterval(() => this.loadLoginBackground(), pending ? 2000 : 60000);
     },
     async login() {
       try { await this.api('/api/auth/login', { method: 'POST', body: JSON.stringify(this.loginForm) }); this.authenticated = true; this.credentialForm.username = this.loginForm.username; this.loginForm.password = ''; await this.loadApp(); }
