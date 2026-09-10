@@ -102,7 +102,7 @@
   {
     "name": "BANGUMI_KOMGA_SERVICE_TYPE",
     "prompt": "BangumiKomga 服务运行方式",
-    "default": "poll",
+    "default": "sse",
     "type": "string",
     "required": false,
     "validator": "",
