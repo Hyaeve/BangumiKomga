@@ -226,6 +226,22 @@ def _book_needs_refresh(book, required_fields):
     return False
 
 
+def _log_match_result(series, action, reason, matched_title="", subject_id=None):
+    if not _is_scrape_card_library(series.get("libraryId")):
+        return
+    details = [
+        f"媒体项目：{series.get('name', '')}",
+        f"媒体库：{_library_name(series.get('libraryId'))}",
+        f"结果：{reason}",
+    ]
+    if matched_title:
+        details.append(f"匹配标题：{matched_title}")
+    if subject_id is not None:
+        details.append(f"Bangumi ID：{subject_id}")
+    record_activity_log(conn, action, "\n".join(details),
+                        level="error" if action == "匹配失败" else "info", source="scraper")
+
+
 def refresh_metadata(series_list=None):
     """
     刷新书籍系列元数据
@@ -286,12 +302,14 @@ def refresh_metadata(series_list=None):
                         (series_id,),
                     ).fetchone()[0]
                     if not _series_needs_refresh(series, _required_fields_for_series(series)):
+                        _log_match_result(series, "跳过匹配", "已有成功匹配记录，无需重新匹配", subject_id=subject_id)
                         refresh_book_metadata(subject_id, series_id, force_refresh_flag, _required_fields_for_series(series), series.get("libraryId"))
                         continue
 
                 # recheck or skip failed series
                 elif series_record[2] == 0 and not RECHECK_FAILED_SERIES:
                     logger.debug("跳过刮削失败的系列: %s", series_name)
+                    _log_match_result(series, "跳过匹配", "历史匹配失败，当前未启用失败重试")
                     continue
 
         # A previously matched series may need selected fields refreshed. It
@@ -344,6 +362,7 @@ def refresh_metadata(series_list=None):
                         logger.debug("原始名称匹配成功: %s", series_name)
 
             if subject_id is None:
+                _log_match_result(series, "匹配失败", "所有标题搜索步骤均未找到 Bangumi 匹配结果")
                 if TASK_AI_COMPLETION and TASK_COMPLETION_FIELDS:
                     _complete_unmatched_with_ai(series, search_mode)
                 failed_count, failed_comic = record_series_status(
@@ -360,6 +379,7 @@ def refresh_metadata(series_list=None):
 
         if not metadata:
             logger.warning("无法获取元数据: %s", series_name)
+            _log_match_result(series, "匹配失败", "无法取得匹配条目的元数据", subject_id=subject_id)
             continue
         is_novel_series = SubjectPlatform.parse(metadata.get("platform")) != SubjectPlatform.Comic
 
@@ -372,6 +392,7 @@ def refresh_metadata(series_list=None):
         )
 
         if komga_metadata.isvalid == False:
+            _log_match_result(series, "匹配失败", "匹配条目的元数据无效", subject_id=subject_id)
             failed_count, failed_comic = record_series_status(
                 conn,
                 series_id,
@@ -414,6 +435,10 @@ def refresh_metadata(series_list=None):
         # Only selected fields overwrite existing values; blank values are filled.
         is_success = not series_data or komga.update_series_metadata(series_id, series_data)
         if is_success:
+            _log_match_result(
+                series, "跳过匹配" if match_source == "已有匹配" else "成功匹配",
+                "复用已有匹配，执行所需元数据更新" if match_source == "已有匹配" else f"本次匹配成功，匹配方式：{match_source}",
+                komga_metadata.title or matched_search_title or series_name, subject_id)
             success_count, success_comic = record_series_status(
                 conn,
                 series_id,
@@ -470,8 +495,8 @@ def refresh_metadata(series_list=None):
                     source_path=_record_path(series, "series"),
                     komga_id=series_id, server_id=_record_server_id(series.get("libraryId")),
                 )
-                record_activity_log(conn, "刮削匹配", f"{series_name} → {komga_metadata.title or matched_search_title or series_name}（{match_source}）", source="scraper")
         else:
+            _log_match_result(series, "匹配失败", "已找到匹配条目，但 Komga 元数据写入失败", subject_id=subject_id)
             failed_count, failed_comic = record_series_status(
                 conn,
                 series_id,
