@@ -26,6 +26,7 @@ from services.media_policy import media_type, scrape_enabled
 from services.task_execution import TaskExecutor, TaskStopped
 from tools.task_lock_policy import task_lock_options
 from tools.activity_details import config_changes, task_details, target_names
+from tools.komga_cover import read_series_cover
 
 
 ROOT = Path(__file__).resolve().parent
@@ -1075,7 +1076,9 @@ def _prepare_login_previews():
     """Warm missing opted-in collages off-thread without refreshing saved selections."""
     def prepare(key):
         try:
-            _preview_items(*key)
+            with PREVIEW_CACHE_LOCK:
+                empty_cache = key in PREVIEW_CACHE and not PREVIEW_CACHE[key].get("items")
+            _preview_items(*key, **({"force": True} if empty_cache else {}))
         except Exception:
             # Public polling must not repeatedly hammer an unavailable server.
             pass
@@ -1090,7 +1093,7 @@ def _prepare_login_previews():
             if not card.get("LOGIN_BACKGROUND") or not card.get("LIBRARY"):
                 continue
             key = (str(card.get("SERVER_ID") or ""), str(card["LIBRARY"]))
-            if key in PREVIEW_CACHE or key in LOGIN_PREVIEW_PENDING:
+            if PREVIEW_CACHE.get(key, {}).get("items") or key in LOGIN_PREVIEW_PENDING:
                 continue
             if time.monotonic() < LOGIN_PREVIEW_RETRY_AT.get(key, 0):
                 continue
@@ -1125,17 +1128,8 @@ def _login_cover(token):
         raise ValueError("Background cover unavailable")
     komga = _load_komga(entry[0])
     try:
-        with komga.r.get(f"{komga.base_url}/series/{entry[2]}/thumbnail", stream=True, timeout=(5, 20)) as response:
-            response.raise_for_status()
-            content_type = response.headers.get("Content-Type", "").split(";")[0]
-            if content_type not in {"image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"}:
-                raise ValueError("Invalid cover type")
-            data = bytearray()
-            for chunk in response.iter_content(65536):
-                data.extend(chunk)
-                if len(data) > 16 * 1024 * 1024:
-                    raise ValueError("Cover too large")
-            return bytes(data), content_type
+        content, content_type, _ = read_series_cover(komga, entry[2])
+        return content, content_type
     finally:
         komga.r.close()
 
@@ -1299,48 +1293,26 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(400, {"error": str(exc)})
         elif path == "/api/komga/cover":
             query = parse_qs(urlparse(self.path).query)
+            komga = None
             try:
                 komga = _load_komga(query.get("server_id", [""])[0])
                 series_id = query.get("series_id", [""])[0]
-                image_headers = {"Accept": "image/avif,image/webp,image/jpeg,image/*"}
-                response = None
-                # Komga's poster endpoint returns the selected poster bytes
-                # directly. Forward them untouched; never resize or re-encode.
-                candidate = komga.r.get(
-                    f"{komga.base_url}/series/{series_id}/thumbnail",
-                    headers=image_headers,
-                    timeout=30,
-                )
-                if candidate.ok and candidate.content:
-                    response = candidate
-                if response is None:
-                    thumbs = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails", timeout=30)
-                    if thumbs.ok:
-                        try:
-                            payload = thumbs.json()
-                        except ValueError:
-                            payload = []
-                        thumb_items = payload if isinstance(payload, list) else []
-                        selected = next((item for item in thumb_items if item.get("selected")), None) or (thumb_items[0] if thumb_items else None)
-                        if selected and selected.get("id"):
-                            candidate = komga.r.get(f"{komga.base_url}/series/{series_id}/thumbnails/{selected['id']}", headers=image_headers, timeout=30)
-                            if candidate.ok and candidate.content:
-                                response = candidate
-                if response is None:
-                    raise ValueError("Komga 未返回封面")
+                content, content_type, cache_headers = read_series_cover(komga, series_id)
                 self.send_response(200)
-                self.send_header("Content-Type", response.headers.get("Content-Type", "image/jpeg"))
+                self.send_header("Content-Type", content_type)
                 # URLs include a new version after a manual refresh, so the
                 # browser can safely keep the high-quality bytes for a year.
                 self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-                for header in ("ETag", "Last-Modified"):
-                    if response.headers.get(header):
-                        self.send_header(header, response.headers[header])
-                self.send_header("Content-Length", str(len(response.content)))
+                for header, value in cache_headers.items():
+                    self.send_header(header, value)
+                self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
-                self.wfile.write(response.content)
+                self.wfile.write(content)
             except Exception as exc:
                 self._json(404, {"error": f"封面读取失败：{exc}"})
+            finally:
+                if komga is not None:
+                    komga.r.close()
         elif path == "/api/komga/libraries":
             try:
                 query = dict(item.split("=", 1) for item in urlparse(self.path).query.split("&") if "=" in item)

@@ -550,6 +550,22 @@ async function main() {
     const card = context.options.methods.makeCard.call({ overwriteFieldOptions: [{ value: 'title' }], cardHues: [105] }, { OVERWRITE_FIELDS: [] });
     assert.equal(card.overwriteFields.length, 0);
     assert.equal(context.options.methods.metadataText({ metadata_fields: ['summaryLock', 'authorsLock', 'summary'] }), '简介锁定、作者锁定、简介');
+    context.clearInterval = () => {};
+    context.setInterval = () => 1;
+    const coverUrl = '/api/login-background/cover?token=fixture';
+    const backgroundState = {authenticated:false,loginBackground:[{url:coverUrl,failed:true}],
+      api:async()=>({items:[{url:coverUrl}]}),loadLoginBackground:()=>{}};
+    await context.options.methods.loadLoginBackground.call(backgroundState);
+    assert.match(backgroundState.loginBackground[0].url, /&retry=\d+$/);
+    const recoveredUrl = backgroundState.loginBackground[0].url;
+    await context.options.methods.loadLoginBackground.call(backgroundState);
+    assert.equal(backgroundState.loginBackground[0].url, recoveredUrl);
+    backgroundState.api = async()=>{throw new Error('temporary failure');};
+    await context.options.methods.loadLoginBackground.call(backgroundState);
+    assert.equal(backgroundState.loginBackground[0].url, recoveredUrl);
+    backgroundState.api = async()=>({items:[]});
+    await context.options.methods.loadLoginBackground.call(backgroundState);
+    assert.equal(backgroundState.loginBackground.length, 0);
     console.log(JSON.stringify({ result: 'PASS', cardLayout, screenshots: output, checks: 'chip selection, persistence, outside click, Escape, keyboard, scrolling, narrow/landscape viewports, empty covers, empty overwrite reload', apiCalls: apiCalls.length }, null, 2));
   } finally {
     await browser?.close();

@@ -100,6 +100,15 @@ class LoginBackgroundTests(unittest.TestCase):
             backend._prepare_login_previews()
             thread.assert_not_called()
 
+    def test_empty_saved_cache_can_recover_without_replacing_existing_covers(self):
+        self.cache[("s", "public")] = {"items": []}
+        with patch.object(backend.threading, "Thread") as thread:
+            backend._prepare_login_previews()
+            worker = thread.call_args.kwargs["target"]
+        with patch.object(backend, "_preview_items") as preview:
+            worker(("s", "public"))
+            preview.assert_called_once_with("s", "public", force=True)
+
     def test_slow_komga_does_not_hold_global_cache_lock(self):
         started, release = threading.Event(), threading.Event()
         def fetch(**kwargs):
