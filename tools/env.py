@@ -14,6 +14,7 @@ class InitEnv:
         # 读取配置
         BANGUMI_DATA_SOURCE_CONFIG = {
             "access_token": BANGUMI_ACCESS_TOKEN,
+            "proxy_url": globals().get("OUTBOUND_PROXY_URL", ""),
             "use_local_archive": USE_BANGUMI_ARCHIVE,
             "local_archive_folder": ARCHIVE_FILES_DIR,
         }

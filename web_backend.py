@@ -46,6 +46,7 @@ DEFAULTS = {
     "OPENAI_BASE_URL": "",
     "OPENAI_API_KEY": "",
     "OPENAI_MODEL": "",
+    "OUTBOUND_PROXY_URL": "",
     "TRANSLATE_SUMMARY_TO_ZH": False,
     "KOMGA_BASE_URL": "",
     "KOMGA_EMAIL": "",
@@ -249,6 +250,8 @@ def _write_config(data: dict):
 
 def save_state(data: dict) -> dict:
     merged = {**DEFAULTS, **data}
+    from tools.proxy_settings import validate_proxy
+    merged["OUTBOUND_PROXY_URL"] = validate_proxy(merged.get("OUTBOUND_PROXY_URL"))
     try:
         merged["RECORD_RETENTION_DAYS"] = max(1, min(int(merged.get("RECORD_RETENTION_DAYS", 30)), 365))
     except (TypeError, ValueError):
@@ -1241,6 +1244,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = _read_state()
                     source = BangumiDataSourceFactory.create({
                         "access_token": state.get("BANGUMI_ACCESS_TOKEN", ""),
+                        "proxy_url": state.get("OUTBOUND_PROXY_URL", ""),
                         "use_local_archive": bool(state.get("USE_BANGUMI_ARCHIVE", False)),
                         "local_archive_folder": state.get("ARCHIVE_FILES_DIR", "./archivedata/"),
                     })
@@ -1268,6 +1272,7 @@ class Handler(BaseHTTPRequestHandler):
                     state = _read_state()
                     source = BangumiDataSourceFactory.create({
                         "access_token": state.get("BANGUMI_ACCESS_TOKEN", ""),
+                        "proxy_url": state.get("OUTBOUND_PROXY_URL", ""),
                         "use_local_archive": bool(state.get("USE_BANGUMI_ARCHIVE", False)),
                         "local_archive_folder": state.get("ARCHIVE_FILES_DIR", "./archivedata/"),
                     })
@@ -1385,6 +1390,17 @@ class Handler(BaseHTTPRequestHandler):
                 result = _save_auth(username, password)
                 _write_activity("配置：保存账号", f"后台账号修改为 {username}")
                 self._json(200, result)
+            elif path == "/api/proxy/test" and self._require_auth():
+                from tools.proxy_settings import test_proxy
+                result = test_proxy(self._body().get("url", ""))
+                _write_activity("按钮：测试代理", "通过代理连接 Bangumi 成功")
+                self._json(200, result)
+            elif path == "/api/proxy" and self._require_auth():
+                state = _read_state()
+                state["OUTBOUND_PROXY_URL"] = self._body().get("url", "")
+                result = save_state(state)
+                _write_activity("配置：保存代理", "外部请求代理已修改" if result["OUTBOUND_PROXY_URL"] else "已清除外部请求代理")
+                self._json(200, {"url": result["OUTBOUND_PROXY_URL"]})
             elif path == "/api/config" and self._require_auth():
                 previous = _read_state()
                 result = save_state(self._body())

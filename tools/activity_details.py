@@ -53,7 +53,7 @@ def config_changes(before, after):
     for key, label in scalar_labels.items():
         if before.get(key) != after.get(key):
             rows.append(f"{label}：{before.get(key, '未设置')} → {after.get(key, '未设置')}")
-    for key, label in {"BANGUMI_ACCESS_TOKEN":"Bangumi 令牌", "OPENAI_API_KEY":"AI 密钥",
+    for key, label in {"OUTBOUND_PROXY_URL":"代理地址", "BANGUMI_ACCESS_TOKEN":"Bangumi 令牌", "OPENAI_API_KEY":"AI 密钥",
                        "OPENAI_BASE_URL":"AI 接口地址", "OPENAI_MODEL":"AI 模型",
                        "KOMGA_BASE_URL":"默认 Komga 地址", "KOMGA_EMAIL":"默认 Komga 账号",
                        "KOMGA_EMAIL_PASSWORD":"默认 Komga 密码", "KOMGA_API_KEY":"默认 Komga 密钥"}.items():

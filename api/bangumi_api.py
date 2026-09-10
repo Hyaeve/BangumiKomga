@@ -5,6 +5,7 @@
 
 import requests
 from requests.adapters import HTTPAdapter
+from tools.proxy_settings import proxy_kwargs
 
 from api.bangumi_model import BangumiBaseType
 from tools.log import logger
@@ -55,8 +56,9 @@ class BangumiApiDataSource(DataSource):
 
     BASE_URL = "https://api.bgm.tv"
 
-    def __init__(self, access_token=None):
+    def __init__(self, access_token=None, proxy_url=""):
         self.r = requests.Session()
+        self.proxy_settings = {"OUTBOUND_PROXY_URL": proxy_url}
         self.r.mount("http://", HTTPAdapter(max_retries=3))
         self.r.mount("https://", HTTPAdapter(max_retries=3))
         self.access_token = access_token
@@ -88,7 +90,7 @@ class BangumiApiDataSource(DataSource):
         payload = {"keyword": query, "filter": {"type": [BangumiBaseType.BOOK.value]}}
 
         try:
-            response = self.r.post(url, headers=self._get_headers(), json=payload)
+            response = self.r.post(url, headers=self._get_headers(), json=payload, **proxy_kwargs(url, self.proxy_settings))
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"出现错误: {e}")
@@ -115,7 +117,7 @@ class BangumiApiDataSource(DataSource):
         """
         url = f"{self.BASE_URL}/v0/subjects/{subject_id}"
         try:
-            response = self.r.get(url, headers=self._get_headers())
+            response = self.r.get(url, headers=self._get_headers(), **proxy_kwargs(url, self.proxy_settings))
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"An error occurred: {e}")
@@ -132,7 +134,7 @@ class BangumiApiDataSource(DataSource):
         """
         url = f"{self.BASE_URL}/v0/subjects/{subject_id}/subjects"
         try:
-            response = self.r.get(url, headers=self._get_headers())
+            response = self.r.get(url, headers=self._get_headers(), **proxy_kwargs(url, self.proxy_settings))
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"出现错误: {e}")
@@ -168,7 +170,7 @@ class BangumiApiDataSource(DataSource):
                 image = self.get_subject_metadata(subject_metadata["id"])["images"][
                     image_size
                 ]
-            thumbnail = self.r.get(image).content
+            thumbnail = self.r.get(image, **proxy_kwargs(image, self.proxy_settings)).content
         except Exception as e:
             logger.error(f"出现错误: {e}")
             return []
@@ -311,7 +313,7 @@ class BangumiDataSourceFactory:
 
     @staticmethod
     def create(config):
-        online = BangumiApiDataSource(config.get("access_token"))
+        online = BangumiApiDataSource(config.get("access_token"), config.get("proxy_url", ""))
 
         if config.get("use_local_archive", False):
             offline = BangumiArchiveDataSource(config.get("local_archive_folder"))

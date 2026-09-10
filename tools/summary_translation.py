@@ -8,6 +8,7 @@ config values cleanly disables the optional integration.
 from __future__ import annotations
 
 import requests
+from tools.proxy_settings import proxy_kwargs
 import re
 from urllib.parse import urlsplit
 
@@ -62,6 +63,7 @@ def translate_summary_to_zh(summary: str, enabled_override=None, settings=None, 
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=payload,
             timeout=(10, 120),
+            **proxy_kwargs(endpoint, settings),
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]

@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlsplit
 
 import requests
+from tools.proxy_settings import proxy_kwargs
 
 SERIES_FIELDS = {"title", "summary", "publisher", "genres", "tags", "ageRating", "language", "totalBookCount",
                  "status", "titleSort", "alternateTitles", "links"}
@@ -81,7 +82,7 @@ def search_metadata(name, fields, settings, only_novel=False, context="", on_log
         response = requests.post(endpoint, headers={"Authorization": f"Bearer {key}"},
                                  json={"model": model, "tools": [{"type": "web_search"}],
                                        "tool_choice": "required", "input": prompt},
-                                 timeout=(10, 120))
+                                 timeout=(10, 120), **proxy_kwargs(endpoint, settings))
         response.raise_for_status()
         output = response.json().get("output", [])
         searched = any(item.get("type") == "web_search_call" and item.get("status") == "completed" for item in output)

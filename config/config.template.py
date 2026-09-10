@@ -54,6 +54,7 @@ KOMGA_SERVERS = []
 OPENAI_BASE_URL = ""
 OPENAI_API_KEY = ""
 OPENAI_MODEL = ""
+OUTBOUND_PROXY_URL = ""
 TRANSLATE_SUMMARY_TO_ZH = False
 # Enable AI-assisted title extraction for scrape cards that opt in.
 AI_RECOGNITION = False

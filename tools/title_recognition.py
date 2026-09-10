@@ -11,6 +11,7 @@ import re
 from urllib.parse import urlsplit
 
 import requests
+from tools.proxy_settings import proxy_kwargs
 
 from tools.log import logger
 
@@ -47,6 +48,7 @@ def recognize_title(name: str, only_novel: bool = False, settings=None) -> str:
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=payload,
             timeout=30,
+            **proxy_kwargs(endpoint, settings),
         )
         response.raise_for_status()
         value = response.json()["choices"][0]["message"]["content"]

@@ -66,6 +66,8 @@ async function main() {
       else if (url.pathname === '/api/auth/logout') { sessionAuthenticated = false; result = {ok:true}; }
       else if (url.pathname === '/api/login-background') result = {items:state.KOMGA_LIBRARY_LIST.some(card=>card.LOGIN_BACKGROUND) ? Array.from({length:12}, (_,i)=>({url:`/test-cover/${i}`})) : []};
       else if (url.pathname === '/api/status') result = executionStatus;
+      else if (url.pathname === '/api/proxy/test') result = {ok:true,message:'代理连接成功'};
+      else if (url.pathname === '/api/proxy') { state.OUTBOUND_PROXY_URL = body.url; result = {url:body.url}; }
       else if (url.pathname === '/api/tasks/run') {
         executionStatus = { running: true, tasks: {...executionStatus.tasks,[body.id]:{state:'running',stopping:false}} };
         result = { started: true };
@@ -402,7 +404,28 @@ async function main() {
     await page.locator('.strategy-card input[type=number]').first().waitFor();
     await page.waitForFunction(() => [...document.querySelectorAll('.strategy-card .field-label')].some(node => node.textContent === '轮询间隔（秒）'));
     assert.equal(await page.locator('.strategy-card .field-label').allTextContents().then(values => values.includes('轮询间隔（秒）')), true);
+    await page.locator('.proxy-card input').fill('http://127.0.0.1:7890');
+    await page.locator('.proxy-card').getByRole('button', {name:'测试',exact:true}).click();
+    await page.getByText('代理连接成功', {exact:true}).waitFor();
+    await page.locator('.proxy-card').getByRole('button', {name:'保存',exact:true}).click();
+    await page.getByText('代理配置已保存', {exact:true}).waitFor();
+    assert.equal(state.OUTBOUND_PROXY_URL, 'http://127.0.0.1:7890');
+    const aiBox = await page.locator('.ai-card').boundingBox();
+    const proxyBox = await page.locator('.proxy-card').boundingBox();
+    assert(Math.abs(aiBox.width-proxyBox.width)<1 && Math.abs(aiBox.y-proxyBox.y)<1, 'AI and proxy share equal-width columns');
     await page.screenshot({ path: path.join(output, 'settings-desktop.png') });
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('.proxy-card').scrollIntoViewIfNeeded();
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    const mobileProxy = await page.locator('.proxy-card').boundingBox();
+    const mobileAi = await page.locator('.ai-card').boundingBox();
+    assert(mobileProxy.y>=mobileAi.y+mobileAi.height && mobileProxy.width<=390);
+    await page.screenshot({path:path.join(output,'settings-proxy-mobile.png')});
+    await page.setViewportSize({width:1440,height:1000});
+    await page.evaluate(()=>window.scrollTo(0,0));
+    await page.evaluate(()=>Promise.all(document.getAnimations()
+      .filter(animation=>animation.effect.getTiming().iterations!==Infinity)
+      .map(animation=>animation.finished.catch(()=>{}))));
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     const motion = await page.evaluate(async () => {
       const sidebar = document.querySelector('.sidebar');
