@@ -92,6 +92,16 @@ createApp({
     };
   },
   computed: {
+    cardServerOptions() { return this.config.KOMGA_SERVERS.map(server => ({value:server.id,label:server.name})); },
+    cardLibraryOptions() { return this.libraries.map(library => ({value:library.id,label:library.name})); },
+    editingServerChoice: {
+      get() { return this.editingCard?.serverId ? [this.editingCard.serverId] : []; },
+      set(values) { this.editingCard.serverId = values[0] || ''; this.changeCardServer(this.editingCard); }
+    },
+    editingLibraryChoice: {
+      get() { return this.editingCard?.id ? [this.editingCard.id] : []; },
+      set(values) { this.editingCard.id = values[0] || ''; this.syncCardName(this.editingCard); }
+    },
     taskLibraryOptions() {
       return this.cards.filter(card => card.id).map(card => ({
         value: this.taskLibraryKey(card), label: card.name || '未命名媒体库', detail: this.cardServerName(card)
@@ -121,9 +131,24 @@ createApp({
     view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
     bangumiTestQuery() { this.resetBangumiSearch(); }
   },
-  async mounted() { document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
-  beforeUnmount() { document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
+  async mounted() { document.addEventListener('keydown', this.closeTopModal); document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
+  beforeUnmount() { document.removeEventListener('keydown', this.closeTopModal); document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
   methods: {
+    closeTopModal(event) {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (document.querySelector('.tag-picker-panel')) {
+        document.dispatchEvent(new Event('close-tag-pickers'));
+        return;
+      }
+      if (this.showCredentialConfirm) this.showCredentialConfirm = false;
+      else if (this.deletingTask) this.deletingTask = null;
+      else if (this.showBangumiPreview) this.showBangumiPreview = false;
+      else if (this.editingServer) this.editingServer = null;
+      else if (this.editingTask) this.editingTask = null;
+      else if (this.editingCard) this.closeCardSettings();
+      else if (this.showCredentialModal) this.showCredentialModal = false;
+      else this.closeContextMenu();
+    },
     decorateFieldLabels() {
       document.querySelectorAll('#app label').forEach(label => {
         if (label.querySelector(':scope > .field-label')) return;
@@ -190,9 +215,9 @@ createApp({
       this.notify('媒体库卡片已保存');
     },
     syncCardName(card) { const library = this.libraries.find(item => item.id === card.id); if (library) { card.name = library.name; card.path = library.root || library.path || ''; this.loadCardPreview(card); } },
-    changeCardServer(card) { card.id = ''; card.name = ''; card.path = ''; card.covers = []; this.loadCardLibraries(card); },
-    async loadCardLibraries(card) { if (!card.serverId) return; try { const data = await this.api(`/api/komga/libraries?server_id=${encodeURIComponent(card.serverId)}`); this.libraries = data.items || []; this.syncCardName(card); } catch (error) { this.notify(error.message, true); } },
-    async loadCardPreview(card, force = false) { if (!card.serverId || !card.id) { card.covers = []; return; } try { const data = await this.api(`/api/komga/previews?server_id=${encodeURIComponent(card.serverId)}&library_id=${encodeURIComponent(card.id)}${force ? '&refresh=1' : ''}`); card.covers = (data.items || []).map(item => ({ ...item, failed: false })); } catch (_) { card.covers = []; } },
+    changeCardServer(card) { card.id = ''; card.name = ''; card.path = ''; card.covers = []; this.libraries = []; this.loadCardLibraries(card); },
+    async loadCardLibraries(card) { this.libraries = []; const serverId = card.serverId; if (!serverId) return; try { const data = await this.api(`/api/komga/libraries?server_id=${encodeURIComponent(serverId)}`); if (card.serverId !== serverId || this.editingCard !== card) return; this.libraries = data.items || []; this.syncCardName(card); } catch (error) { this.notify(error.message, true); } },
+    async loadCardPreview(card, force = false) { if (!card.serverId || !card.id) { card.covers = []; return; } try { const data = await this.api(`/api/komga/previews?server_id=${encodeURIComponent(card.serverId)}&library_id=${encodeURIComponent(card.id)}${force ? '&refresh=1' : ''}`); const items = data.items || []; card.covers = items.length ? Array.from({length:9}, (_, index) => ({...items[index % items.length], preview_id:`${items[index % items.length].id}-${index}`,failed:false})) : []; } catch (_) { card.covers = []; } },
     coverError(cover) { cover.failed = true; },
     async refreshCardPreview(index) { const card = this.cards[index]; this.closeContextMenu(); await this.loadCardPreview(card, true); this.notify('封面拼贴已刷新'); },
     async loadLibraries(showMessage = true) {

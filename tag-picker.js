@@ -5,13 +5,16 @@ const TagPicker = {
     modelValue: { type: Array, default: () => [] },
     options: { type: Array, default: () => [] },
     placeholder: { type: String, default: '请选择' },
-    single: { type: Boolean, default: false }
+    single: { type: Boolean, default: false },
+    disabled: { type: Boolean, default: false }
   },
   emits: ['update:modelValue'],
   data() {
     return { open: false, panelStyle: {} };
   },
   computed: {
+    canSelectAll() { return !this.single && this.id !== 'card-features'; },
+    allSelected() { return this.options.length > 0 && this.options.every(option => this.modelValue.includes(option.value)); },
     selectedOptions() {
       return this.options.filter(option => this.modelValue.includes(option.value));
     }
@@ -23,6 +26,7 @@ const TagPicker = {
     }
   },
   mounted() {
+    document.addEventListener('close-tag-pickers', this.closeFromEscape);
     document.addEventListener('pointerdown', this.handleOutside);
     document.addEventListener('focusin', this.handleOutside);
     window.addEventListener('resize', this.positionPanel);
@@ -31,6 +35,7 @@ const TagPicker = {
     this.resizeObserver.observe(this.$refs.field);
   },
   beforeUnmount() {
+    document.removeEventListener('close-tag-pickers', this.closeFromEscape);
     document.removeEventListener('pointerdown', this.handleOutside);
     document.removeEventListener('focusin', this.handleOutside);
     window.removeEventListener('resize', this.positionPanel);
@@ -38,7 +43,9 @@ const TagPicker = {
     this.resizeObserver.disconnect();
   },
   methods: {
+    closeFromEscape() { if (this.open) this.close(true); },
     toggle() {
+      if (this.disabled) return;
       if (this.open) this.close();
       else {
         this.open = true;
@@ -84,6 +91,7 @@ const TagPicker = {
       if (checked) selected.push(value);
       this.$emit('update:modelValue', selected);
     },
+    selectAll() { this.$emit('update:modelValue', this.allSelected ? [] : this.options.map(option => option.value)); },
     async focusOption(last = false) {
       this.open = true;
       await this.$nextTick();
@@ -131,11 +139,11 @@ const TagPicker = {
     <fieldset ref="field" :id="id" class="tag-picker" :class="{ 'is-open': open }">
       <legend :id="id + '-label'">{{ label }}</legend>
       <button ref="trigger" type="button" class="tag-picker-trigger"
-        :aria-labelledby="id + '-label'" aria-haspopup="dialog"
+        :aria-labelledby="id + '-label'" aria-haspopup="dialog" :disabled="disabled"
         :aria-expanded="open" :aria-controls="open ? id + '-panel' : undefined"
         @click="toggle" @keydown="triggerKeydown">
         <span class="tag-picker-values">
-          <span v-for="option in selectedOptions" :key="option.value" class="tag-picker-chip" :title="option.label">{{ option.label }}</span>
+          <span v-for="option in selectedOptions" :key="option.value" class="tag-picker-chip" :data-tooltip="option.label">{{ option.label }}</span>
           <span v-if="!selectedOptions.length" class="tag-picker-placeholder">{{ placeholder }}</span>
         </span>
         <span class="tag-picker-chevron" aria-hidden="true"></span>
@@ -143,6 +151,10 @@ const TagPicker = {
       <teleport to="body">
         <div v-if="open" ref="panel" :id="id + '-panel'" class="tag-picker-panel"
           role="dialog" :aria-label="label + '候选项'" :style="panelStyle" @keydown="panelKeydown">
+          <label v-if="canSelectAll && options.length" class="tag-picker-option select-all" :class="{'is-selected':allSelected}">
+            <input type="checkbox" :checked="allSelected" :indeterminate="!allSelected && selectedOptions.length > 0" @change="selectAll">
+            <span class="tag-picker-option-text">全选</span>
+          </label>
           <label v-for="option in options" :key="option.value" class="tag-picker-option"
             :class="{ 'is-selected': modelValue.includes(option.value) }">
             <input :type="single ? 'radio' : 'checkbox'" :name="single ? id : undefined" :checked="modelValue.includes(option.value)"
