@@ -335,7 +335,7 @@
 .task-library-options .meta-option { cursor: pointer; }
 .log-stats { display: flex; align-items: center; gap: 22px; color: #78898e; font-size: 13px; }
 .log-stats b { color: #425c60; font-size: 20px; margin-right: 4px; }
-.runtime-log-board { height: min(74vh, 820px); overflow: auto; border: 1px solid rgba(104,125,128,.14); border-radius: 14px; background: rgba(255,255,255,.58); }
+.runtime-log-board { height: auto; overflow: visible; border: 1px solid rgba(104,125,128,.14); border-radius: 14px; background: rgba(255,255,255,.58); }
 .runtime-log-row { display: grid; grid-template-columns: 158px 170px minmax(0,1fr) 70px; gap: 12px; align-items: center; min-height: 48px; padding: 8px 14px; border-bottom: 1px solid rgba(104,125,128,.1); font-size: 12px; }
 .runtime-log-row:last-child { border-bottom: 0; }
 .runtime-log-row time, .runtime-log-row small { color: #87979a; }
