@@ -541,8 +541,12 @@ async function main() {
     assert.equal(await page.locator('.login-input input').last().inputValue(), '');
     await page.waitForFunction(() => [...document.querySelectorAll('.login-backdrop img')].length > 0 &&
       [...document.querySelectorAll('.login-backdrop img')].every(img=>img.complete&&img.naturalWidth));
-    assert.equal(await page.locator('.login-cover-column').count(), 7);
-    assert.equal(await page.locator('.login-backdrop img').count(), 49);
+    assert.equal(await page.locator('.login-cover-column').count(), 8);
+    assert.equal(await page.locator('.login-backdrop img').count(), 64);
+    assert.equal(await page.locator('.login-backdrop').evaluate(el=>getComputedStyle(el,'::after').content), 'none');
+    assert.equal(await page.locator('.login-input').first().evaluate(el=>getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)');
+    assert.equal(await page.locator('.login-button > svg:first-child').count(), 1);
+    assert.equal(await page.locator('.login-card').evaluate(el=>getComputedStyle(el).backgroundColor), 'rgba(255, 255, 255, 0.62)');
     const backgroundCover = page.locator('.login-backdrop img').first();
     await backgroundCover.dispatchEvent('error');
     assert.equal(await backgroundCover.evaluate(img=>img.style.visibility), 'hidden');
