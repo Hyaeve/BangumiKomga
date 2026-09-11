@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260911-10">
+<link rel="stylesheet" href="final-overrides.css?v=20260911-11">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -18,8 +18,10 @@
     <section v-if="!authenticated" class="login-screen">
       <div v-if="loginBackground.length" class="login-backdrop" aria-hidden="true">
         <div class="login-backdrop-grid">
-          <div v-for="(column,index) in loginBackgroundColumns" :key="index" class="login-cover-column">
-            <img v-for="(cover,coverIndex) in column" :key="`${coverIndex}-${cover.url}`" :style="{'--cover-delay':`${(index + coverIndex % 3) * 0.12}s`}" :class="{loaded:cover.loaded}" :src="cover.url" alt="" @load="cover.failed=false;cover.loaded=true;$event.target.style.visibility='visible'" @error="markLoginCoverFailed(cover,$event)">
+          <div v-for="(column,index) in loginBackgroundColumns" :key="index" class="login-column-reveal" :class="{ready:column.some(cover=>cover.loaded)}" :style="{'--column-delay':`${index * 0.4}s`}">
+            <div class="login-cover-column">
+              <img v-for="(cover,coverIndex) in column" :key="`${coverIndex}-${cover.url}`" :class="{loaded:cover.loaded}" :src="cover.url" alt="" @load="cover.failed=false;cover.loaded=true;$event.target.style.visibility='visible'" @error="markLoginCoverFailed(cover,$event)">
+            </div>
           </div>
         </div>
       </div>
