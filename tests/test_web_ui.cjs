@@ -95,9 +95,9 @@ async function main() {
       }
       else if (url.pathname === '/api/refresh') { refreshRequests.push(body); result = { started: true }; }
       else if (url.pathname === '/api/scrape-records') result = { items: scrapeRecords, total: 125 };
-      else if (url.pathname === '/api/scrape-records/stats') result = { total: 1, today: 1, comic: 1, novel: 0 };
+      else if (url.pathname === '/api/scrape-records/stats') result = { total: 12345, today: 1, comic: 12345, novel: 0 };
       else if (url.pathname === '/api/runtime-logs') result = { items: runtimeLogs, total: 230 };
-      else if (url.pathname === '/api/runtime-logs/stats') result = { total: 230, today: 1, success: 12, failed: 3 };
+      else if (url.pathname === '/api/runtime-logs/stats') result = { total: 23456, today: 1, success: 12, failed: 3 };
       res.end(JSON.stringify(result));
       return;
     }
@@ -278,6 +278,17 @@ async function main() {
     }));
     assert.equal(scheduleFields.length,2);
     assert.deepEqual(scheduleFields[0],scheduleFields[1]);
+    const timeTypography = await page.locator('.task-schedule-row').evaluate(row=>{
+      const cron=row.querySelector('.cron-picker input'), time=row.querySelector('.task-time-limit input');
+      const unit=row.querySelector('.day-unit'), steps=row.querySelector('.day-stepper');
+      const text=el=>{const s=getComputedStyle(el);return [s.fontFamily,s.fontSize,s.fontWeight,s.lineHeight];};
+      const center=el=>{const b=el.getBoundingClientRect();return b.y+b.height/2;};
+      return {cron:text(cron),time:text(time),unit:text(unit),inputCenter:center(time),unitCenter:center(unit),stepCenter:center(steps)};
+    });
+    assert.deepEqual(timeTypography.cron,timeTypography.time);
+    assert.deepEqual(timeTypography.time,timeTypography.unit);
+    assert(Math.abs(timeTypography.inputCenter-timeTypography.unitCenter)<2);
+    assert(Math.abs(timeTypography.inputCenter-timeTypography.stepCenter)<2);
     await page.locator('.task-time-limit').hover();
     assert.equal(await page.locator('.task-time-limit .day-unit').evaluate(el=>getComputedStyle(el).opacity),'0');
     await page.getByRole('button',{name:'增加时间限制',exact:true}).click();
@@ -383,6 +394,12 @@ async function main() {
     await page.waitForFunction(()=>document.querySelectorAll('.runtime-log-row').length===1);
     assert(Math.abs(await page.locator('.runtime-log-board').evaluate(el=>el.getBoundingClientRect().height)-shortLogHeight)<1);
     assert.match(await page.locator('.log-hero-controls').innerText(), /成功/);
+    const logCount=page.locator('.log-hero-controls .record-stats strong').first();
+    assert.equal(await logCount.innerText(),'23.46k');
+    await logCount.hover();
+    await page.getByRole('tooltip').filter({hasText:'23456'}).waitFor();
+    await page.locator('.log-hero-controls .record-stats strong').nth(1).hover();
+    assert.equal(await page.getByRole('tooltip').isVisible(),false);
     assert.match(await page.locator('.log-hero-controls').innerText(), /失败/);
     assert.equal(await page.locator('.stat-icon-success svg').count(), 1);
     await Promise.all([
@@ -589,6 +606,11 @@ async function main() {
     const context = { Vue: { createApp: options => ({ mount: () => { context.options = options; } }) }, TagPicker: {} };
     vm.runInNewContext(fs.readFileSync(path.join(web, 'config.js'), 'utf8'), context);
     const card = context.options.methods.makeCard.call({ overwriteFieldOptions: [{ value: 'title' }], cardHues: [105] }, { OVERWRITE_FIELDS: [] });
+    assert.equal(context.options.methods.formatStat(9999),'9999');
+    assert.equal(context.options.methods.formatStat(10000),'10.00k');
+    assert.equal(context.options.methods.formatStat(12345),'12.35k');
+    assert.equal(context.options.methods.statTooltip(9999),null);
+    assert.equal(context.options.methods.statTooltip(12345),'12345');
     const timeState = {editingTask:{time_limit_hours:0}};
     context.options.methods.stepTaskTime.call(timeState,0.5);
     assert.equal(timeState.editingTask.time_limit_hours,0.5);

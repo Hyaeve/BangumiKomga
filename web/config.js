@@ -183,6 +183,8 @@ createApp({
   async mounted() { document.addEventListener('keydown', this.closeTopModal); document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
   beforeUnmount() { document.removeEventListener('keydown', this.closeTopModal); document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
   methods: {
+    formatStat(value) { const count = Number(value) || 0; return count > 9999 ? `${(count / 1000).toFixed(2)}k` : String(count); },
+    statTooltip(value) { return Number(value) > 9999 ? String(value) : null; },
     closeTopModal(event) {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (document.querySelector('.tag-picker-panel')) {
