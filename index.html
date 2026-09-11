@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260911-3">
+<link rel="stylesheet" href="final-overrides.css?v=20260911-5">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -643,16 +643,18 @@
 <tag-picker id="task-functions" label="任务功能" v-model="editingTask.functions" :options="taskTypeOptions" placeholder="请选择任务功能" single>
 </tag-picker>
 </div>
+<div class="task-schedule-row">
 <fieldset class="task-text-field cron-picker">
 <legend>Cron 表达式</legend>
 <input v-model.trim="editingTask.cron" inputmode="text" spellcheck="false" placeholder="0 6 * * *" aria-label="Cron 表达式">
 </fieldset>
-<label class="retention-input task-time-limit"><span class="field-label">时间限制</span>
+<fieldset class="task-text-field retention-input task-time-limit"><legend>时间限制</legend>
 <input v-model.number="editingTask.time_limit_hours" type="number" min="0" step="0.5" aria-label="时间限制">
 <span class="day-unit">h</span><span class="day-stepper">
 <button type="button" @click.prevent="stepTaskTime(0.5)" aria-label="增加时间限制"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
 <button type="button" @click.prevent="stepTaskTime(-0.5)" aria-label="减少时间限制"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span>
-</label>
+</fieldset>
+</div>
 <div v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" class="task-option-switches" :class="{'completion-switches':editingTask.functions.includes('metadata_completion')}">
 <button v-if="editingTask.functions.includes('metadata_completion')" type="button" class="task-ai-toggle" :class="{active:editingTask.ai_completion}" :aria-pressed="editingTask.ai_completion" @click="editingTask.ai_completion=!editingTask.ai_completion">
 <span aria-hidden="true" class="task-toggle-switch"></span>AI补全</button>
