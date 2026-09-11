@@ -34,6 +34,7 @@ def task_details(task, state):
     hours = task.get("time_limit_hours") or 0
     rows.append(f"时间限制：{hours} h" if hours else "时间限制：不限时")
     if functions != ["card_collage_refresh"]:
+        rows.append(f"包含分卷：{'开启' if task.get('include_volumes', True) else '关闭'}")
         rows.extend([f"元数据：{field_names(task.get('fields'))}",
                      f"包含锁定：{'开启' if options['include_locked'] else '关闭'}；完成锁定：{'开启' if options['lock_completed'] else '关闭'}"])
     if "metadata_correction" in functions:

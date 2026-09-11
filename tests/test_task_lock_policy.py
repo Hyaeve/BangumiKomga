@@ -9,6 +9,35 @@ from tools.ai_completion import complete_unmatched
 
 
 class TaskLockPolicyTests(unittest.TestCase):
+    def test_volume_scope_for_each_metadata_task(self):
+        settings = dict(OPENAI_BASE_URL="url", OPENAI_API_KEY="key", OPENAI_MODEL="model")
+        for kind in ("translation", "correction", "completion"):
+            for include in (True, False):
+                with self.subTest(kind=kind, include=include):
+                    client, series = self.client({"summary": "English" if kind == "translation" else "繁體簡介"})
+                    book = {"id": "b", "name": "第一卷", "metadata": deepcopy(series["metadata"])}
+                    client.iter_series_books.return_value = iter([book])
+                    client.get_specific_book.return_value = deepcopy(book)
+                    if kind == "translation":
+                        with patch("tools.translation_task.translate_summary_to_zh", return_value="中文简介"):
+                            translate_library(client, "l", settings, Mock(), Mock(), ["summary"], include_volumes=include)
+                    elif kind == "correction":
+                        correct_library(client, "l", {}, Mock(), Mock(), ["summary"], ["simplify"], include_volumes=include)
+                    else:
+                        series["metadata"]["summary"] = ""
+                        book["metadata"]["summary"] = ""
+                        client.get_specific_series.return_value = deepcopy(series)
+                        client.get_specific_book.return_value = deepcopy(book)
+                        with patch("tools.ai_completion.search_metadata", return_value={"summary": "中文简介"}):
+                            complete_unmatched(client, series, ["summary"], {}, False, Mock(), Mock(), include_volumes=include)
+                    client.update_series_metadata.assert_called_once()
+                    if include:
+                        client.iter_series_books.assert_called_once_with("s")
+                        client.update_book_metadata.assert_called_once()
+                    else:
+                        client.iter_series_books.assert_not_called()
+                        client.update_book_metadata.assert_not_called()
+
     def client(self, metadata):
         item = {"id": "s", "name": "测试漫画", "metadata": metadata}
         client = Mock()

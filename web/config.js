@@ -8,6 +8,8 @@ createApp({
       loginForm: { username: '', password: '' },
       showLoginPassword: false,
       loginBackground: [],
+      loginBackgroundReady: false,
+      loginBackgroundPending: false,
       proxyTesting: false,
       aiTesting: false,
       aiSaving: false,
@@ -170,7 +172,7 @@ createApp({
     }
   },
   watch: {
-    authenticated(value) { clearInterval(this.loginBackgroundTimer); if (!value) this.loadLoginBackground(); else this.loginBackground = []; },
+    authenticated(value) { clearInterval(this.loginBackgroundTimer); this.loginBackgroundReady = false; if (!value) this.loadLoginBackground(); else this.loginBackground = []; },
     recordSearch() { this.recordPage = 1; this.loadRecords(); },
     logSearch() { this.logPage = 1; this.loadLogs(); },
     'editingTask.functions'(values, previous) {
@@ -179,6 +181,7 @@ createApp({
       this.editingTask.operations = [];
       this.editingTask.ai_completion = false;
       this.editingTask.include_locked = false;
+      this.editingTask.include_volumes = true;
       this.editingTask.lock_completed = false;
     },
     view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => { window.scrollTo({top:0,behavior:'instant'}); this.decorateFieldLabels(); }); },
@@ -231,6 +234,7 @@ createApp({
       let pending = false;
       try {
         const data = await this.api('/api/login-background'); pending = !!data.pending;
+        this.loginBackgroundPending = pending;
         if (!this.authenticated) {
           const previous = new Map(this.loginBackground.map(item=>[item.sourceUrl || item.url,item]));
           this.loginBackground = (data.items || []).map(item=>{
@@ -238,12 +242,22 @@ createApp({
             if (old && !old.failed) return old;
             return {...item,sourceUrl:item.url,failed:false,loaded:old?.loaded && !old?.failed,url:old?.failed ? `${item.url}${item.url.includes('?')?'&':'?'}retry=${Date.now()}` : item.url};
           });
+          if (this.checkLoginBackgroundReady) this.checkLoginBackgroundReady();
         }
       } catch (_) { /* Keep successfully loaded covers during transient manifest failures. */ }
       clearInterval(this.loginBackgroundTimer);
       if (!this.authenticated) this.loginBackgroundTimer = setInterval(() => this.loadLoginBackground(), pending ? 2000 : 60000);
     },
-    markLoginCoverFailed(cover, event) { cover.failed = true; cover.loaded = false; event.target.style.visibility = 'hidden'; },
+    checkLoginBackgroundReady() {
+      this.$nextTick(() => {
+        const images = [...document.querySelectorAll('.login-backdrop img')];
+        const settled = images.every(img => img.complete && (
+          (img.naturalWidth > 0 && img.classList.contains('loaded')) || img.style.visibility === 'hidden'));
+        if (!this.loginBackgroundPending && images.length && settled && images.some(img => img.naturalWidth > 0)) this.loginBackgroundReady = true;
+      });
+    },
+    markLoginCoverLoaded(cover, event) { cover.failed = false; cover.loaded = true; event.target.style.visibility = 'visible'; this.checkLoginBackgroundReady(); },
+    markLoginCoverFailed(cover, event) { cover.failed = true; cover.loaded = false; event.target.style.visibility = 'hidden'; this.checkLoginBackgroundReady(); },
     async login() {
       try { await this.api('/api/auth/login', { method: 'POST', body: JSON.stringify(this.loginForm) }); this.authenticated = true; this.credentialForm.username = this.loginForm.username; this.loginForm.password = ''; await this.loadApp(); }
       catch (error) { this.notify(error.message, true); }
@@ -394,9 +408,9 @@ createApp({
     startLiveRefresh() { clearInterval(this.liveRefreshTimer); this.liveRefreshTimer = null; if (!this.authenticated || document.hidden || !['records', 'logs'].includes(this.view)) return; this.liveRefreshTimer = setInterval(() => { if (this.view === 'records') this.loadRecords(); else if (this.view === 'logs') this.loadLogs(); }, 4000); },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
     stepTaskTime(amount) { this.editingTask.time_limit_hours = Math.max(0, Math.round((Number(this.editingTask.time_limit_hours || 0) + amount) * 2) / 2); },
-    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], operations: [], ai_completion: false, include_locked: false, lock_completed: false, card_ids: [], cron: '0 6 * * *', time_limit_hours: 2, enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
+    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], operations: [], ai_completion: false, include_volumes: true, include_locked: false, lock_completed: false, card_ids: [], cron: '0 6 * * *', time_limit_hours: 2, enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
     toggleTaskOperation(value) { const values = this.editingTask.operations; this.editingTask.operations = values.includes(value) ? values.filter(item=>item!==value) : [...values,value]; },
-    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, time_limit_hours: task.time_limit_hours || 0, operations: (task.operations || []).filter(value=>value!=='include_locked'), include_locked: task.include_locked ?? (task.operations || []).includes('include_locked'), lock_completed: task.lock_completed ?? this.taskType(task)==='summary_translation', ai_completion: !!task.ai_completion, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields?.length ? task.fields : this.taskType(task) === 'summary_translation' ? ['summary'] : [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
+    editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, include_volumes: task.include_volumes ?? true, time_limit_hours: task.time_limit_hours || 0, operations: (task.operations || []).filter(value=>value!=='include_locked'), include_locked: task.include_locked ?? (task.operations || []).includes('include_locked'), lock_completed: task.lock_completed ?? this.taskType(task)==='summary_translation', ai_completion: !!task.ai_completion, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields?.length ? task.fields : this.taskType(task) === 'summary_translation' ? ['summary'] : [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
     validCronExpression(value) { const parts = String(value || '').trim().split(/\s+/); return parts.length === 5 && parts.every(part => /^[0-9A-Za-z*?,/\-]+$/.test(part)); },
     async saveTask() { if (!this.editingTask) return; this.editingTask.functions = this.editingTask.functions.slice(0, 1); if (!this.editingTask.functions.length) { this.notify('请选择任务功能', true); return; } if (this.editingTask.functions[0] !== 'card_collage_refresh' && !this.editingTask.fields.length) { this.notify('请至少选择一个元数据项', true); return; } if (this.editingTask.functions.includes('metadata_correction')) { const ops = this.editingTask.operations || []; if (!ops.some(value => ['simplify','extract_title'].includes(value))) { this.notify('请选择繁转简或标题提取', true); return; } if (!ops.includes('simplify') && !this.editingTask.fields.includes('title')) { this.notify('标题提取需要选择标题元数据', true); return; } } if (!this.validCronExpression(this.editingTask.cron)) { this.notify('请输入有效的五段 Cron 表达式', true); return; } if (!this.editingTask.card_ids.length) { this.notify('请至少选择一个媒体库', true); return; } if (!this.editingTask.name.trim()) this.editingTask.name = this.uniqueTaskName(this.taskTypeLabel(this.editingTask.functions[0]), this.editingTask.id); try { const data = await this.api('/api/tasks', { method: 'POST', body: JSON.stringify(this.editingTask) }); this.tasks = data.items || []; this.config.METADATA_TASKS = this.tasks; this.editingTask = null; this.notify('计划任务已保存'); } catch (error) { this.notify(error.message, true); } },
     requestDeleteTask(task) { this.deletingTask = task; },

@@ -28,6 +28,7 @@ TASK_COMPLETION_FIELDS = None
 TASK_AI_COMPLETION = False
 TASK_INCLUDE_LOCKED = False
 TASK_LOCK_COMPLETED = False
+TASK_INCLUDE_VOLUMES = True
 
 
 def _complete_unmatched_with_ai(series, only_novel):
@@ -50,7 +51,8 @@ def _complete_unmatched_with_ai(series, only_novel):
     log(f"Bangumi 匹配无结果，开始 AI 联网补全\n媒体项目：{series.get('name', '')}\n"
         f"所选元数据：{', '.join(sorted(TASK_COMPLETION_FIELDS or []))}", "info")
     complete_unmatched(komga, series, TASK_COMPLETION_FIELDS or [], vars(config), only_novel, record, log,
-                       include_locked=TASK_INCLUDE_LOCKED, lock_completed=TASK_LOCK_COMPLETED)
+                       include_locked=TASK_INCLUDE_LOCKED, lock_completed=TASK_LOCK_COMPLETED,
+                       include_volumes=TASK_INCLUDE_VOLUMES)
 
 
 def _record_server_id(library_id):
@@ -801,7 +803,7 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
     """
     刷新书元数据
     """
-    if subject_id == None:
+    if not TASK_INCLUDE_VOLUMES or subject_id == None:
         return
     is_novel = _is_novel_series({"libraryId": library_id}) if library_id else False
 

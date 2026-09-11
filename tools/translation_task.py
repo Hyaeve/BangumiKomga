@@ -10,7 +10,7 @@ TRANSLATION_FIELDS = {"title": "标题", "summary": "简介", "publisher": "出�
 
 
 def translate_library(komga, library_id, settings, on_update, on_log, fields=None,
-                      include_locked=False, lock_completed=True):
+                      include_locked=False, lock_completed=True, include_volumes=True):
     if not all(settings.get(key) for key in ("OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL")):
         raise ValueError("请先保存完整的 AI URL、密钥和模型")
     selected = list(dict.fromkeys(["summary"] if fields is None else fields))
@@ -98,6 +98,7 @@ def translate_library(komga, library_id, settings, on_update, on_log, fields=Non
 
     for series in komga.iter_library_series(library_id):
         process(series, "series", series.get("name", ""))
-        for book in komga.iter_series_books(series["id"]):
-            process(book, "volume", series.get("name", ""))
+        if include_volumes:
+            for book in komga.iter_series_books(series["id"]):
+                process(book, "volume", series.get("name", ""))
     return counts

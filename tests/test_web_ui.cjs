@@ -511,7 +511,9 @@ async function main() {
     await page.getByRole('button', { name: '任务功能', exact: true }).click();
     assert.match(await page.getByRole('dialog', {name:'任务功能候选项'}).locator('.tag-picker-option').first().innerText(), /元数据修正/);
     await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据修正', { exact: true }).click();
-    assert.equal(await page.getByRole('switch').count(), 4);
+    assert.equal(await page.getByRole('switch').count(), 5);
+    assert.equal(await page.getByRole('switch', {name:'包含分卷',exact:true}).getAttribute('aria-checked'), 'true');
+    await page.getByRole('switch', {name:'包含分卷',exact:true}).click();
     const switchRows = await page.locator('.task-option-switches > button').evaluateAll(elements=>elements.map(element=>{
       const box=element.getBoundingClientRect(); return {x:box.x,y:box.y};
     }));
@@ -534,6 +536,7 @@ async function main() {
     await page.locator('.task-card.metadata_correction').waitFor();
     assert.deepEqual(tasks.at(-1).operations, ['simplify', 'extract_title']);
     assert.equal(tasks.at(-1).include_locked, true);
+    assert.equal(tasks.at(-1).include_volumes, false);
     assert.equal(tasks.at(-1).lock_completed, true);
     assert.deepEqual(tasks.at(-1).fields, ['title', 'summary', 'publisher', 'authors']);
     assert(tasks.at(-1).card_ids[0].includes('::'));
@@ -553,19 +556,21 @@ async function main() {
     }));
     await page.screenshot({ path: path.join(output, 'correction-task-cards.png') });
     await page.locator('.task-card.metadata_correction').click();
+    assert.equal(await page.getByRole('heading', {name:'编辑计划任务',exact:true}).count(), 1);
+    assert.equal(await page.getByRole('switch', {name:'包含分卷',exact:true}).getAttribute('aria-checked'), 'false');
     assert.equal(await page.getByRole('switch', {name:'繁转简',exact:true}).getAttribute('aria-checked'), 'true');
     assert.equal(await page.getByRole('switch', {name:'完成锁定',exact:true}).getAttribute('aria-checked'), 'true');
     await page.getByRole('button', { name: '任务功能', exact: true }).click();
     await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据补全').click();
-    assert.equal(await page.getByRole('switch').count(), 2);
+    assert.equal(await page.getByRole('switch').count(), 3);
     assert.equal(await page.getByRole('switch', {name:'包含锁定',exact:true}).getAttribute('aria-checked'), 'false');
     const aiCompletion = page.getByRole('button', { name: 'AI补全', exact: true });
     assert.deepEqual(await page.locator('.completion-switches > button').allTextContents().then(values=>values.map(value=>value.trim())),
-      ['AI补全','包含锁定','完成锁定']);
+      ['AI补全','包含分卷','包含锁定','完成锁定']);
     const completionBoxes = await page.locator('.completion-switches > button').evaluateAll(elements=>elements.map(element=>{
       const box=element.getBoundingClientRect(); return {top:box.top,height:box.height,width:box.width};
     }));
-    assert(completionBoxes.every(box=>Math.abs(box.top-completionBoxes[0].top)<1 &&
+    assert(completionBoxes.slice(0,3).every(box=>Math.abs(box.top-completionBoxes[0].top)<1 &&
       Math.abs(box.height-completionBoxes[0].height)<1 && Math.abs(box.width-completionBoxes[0].width)<1));
     assert.equal(await aiCompletion.getAttribute('aria-pressed'), 'false');
     await aiCompletion.click();
@@ -575,11 +580,23 @@ async function main() {
     const mobileSwitches = await page.locator('.completion-switches > button').evaluateAll(elements=>elements.map(element=>{
       const box=element.getBoundingClientRect(); return {y:box.y,right:box.right,overflow:element.scrollWidth>element.clientWidth+1};
     }));
-    assert.equal(mobileSwitches.length,3);
-    assert(mobileSwitches.every(box=>Math.abs(box.y-mobileSwitches[0].y)<1 && box.right<=390 && !box.overflow));
+    assert.equal(mobileSwitches.length,4);
+    assert(mobileSwitches.slice(0,3).every(box=>Math.abs(box.y-mobileSwitches[0].y)<1 && box.right<=390 && !box.overflow));
+    assert(mobileSwitches[3].y>mobileSwitches[0].y && mobileSwitches[3].right<=390 && !mobileSwitches[3].overflow);
     await page.locator('.task-modal').getByRole('button', { name: '取消', exact: true }).click();
+    let releaseCover, coverRequested;
+    const heldCover = new Promise(resolve=>{releaseCover=resolve;});
+    const requestedCover = new Promise(resolve=>{coverRequested=resolve;});
+    await page.route('**/test-cover/*', async route=>{
+      if (route.request().url().endsWith('/2')) { coverRequested(); await heldCover; }
+      await route.continue();
+    });
     await page.locator('.sidebar-logout').click();
     await page.locator('.login-card').waitFor();
+    await requestedCover;
+    assert.equal(await page.locator('.login-backdrop.ready').count(),0);
+    releaseCover();
+    await page.locator('.login-backdrop.ready').waitFor({state:'attached'});
     assert.equal(await page.getByRole('textbox', {name:'用户名',exact:true}).inputValue(), '');
     assert.equal(await page.locator('.login-input input').last().inputValue(), '');
     await page.waitForFunction(() => [...document.querySelectorAll('.login-backdrop img')].length > 0 &&

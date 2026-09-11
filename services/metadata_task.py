@@ -26,6 +26,7 @@ def main():
     scraper.TASK_AI_COMPLETION = bool(request.get("ai_completion"))
     scraper.TASK_INCLUDE_LOCKED = bool(request.get("include_locked"))
     scraper.TASK_LOCK_COMPLETED = bool(request.get("lock_completed"))
+    scraper.TASK_INCLUDE_VOLUMES = bool(request.get("include_volumes", True))
     def lock_existing(item, card, kind, series_name):
         if not scraper.TASK_LOCK_COMPLETED:
             return
@@ -48,7 +49,7 @@ def main():
         for item in scraper.komga.iter_library_series(card["LIBRARY"]):
             item["is_novel"] = media_type(card) == "book"
             lock_existing(item, card, "series", item.get("name", ""))
-            if scraper.TASK_LOCK_COMPLETED:
+            if scraper.TASK_LOCK_COMPLETED and scraper.TASK_INCLUDE_VOLUMES:
                 for book in scraper.komga.iter_series_books(item["id"]):
                     lock_existing(book, card, "volume", item.get("name", ""))
             series.append(item)

@@ -122,7 +122,7 @@ def search_metadata(name, fields, settings, only_novel=False, context="", on_log
 
 
 def complete_unmatched(komga, series, fields, settings, only_novel, on_update, on_log,
-                       include_locked=False, lock_completed=False):
+                       include_locked=False, lock_completed=False, include_volumes=True):
     """Fill only selected empty/unlocked fields after normal matching failed."""
     if "thumbnail" in fields:
         on_log("AI补全不会生成或下载封面；未匹配到封面时保留原图", "warning")
@@ -150,5 +150,6 @@ def complete_unmatched(komga, series, fields, settings, only_novel, on_update, o
             on_log(f"{item.get('name', '')}：AI补全写入失败", "error")
 
     update(series, "series")
-    for book in komga.iter_series_books(series["id"]):
-        update(book, "volume")
+    if include_volumes:
+        for book in komga.iter_series_books(series["id"]):
+            update(book, "volume")

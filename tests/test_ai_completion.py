@@ -86,6 +86,22 @@ class AICompletionTests(unittest.TestCase):
         branches = [node for node in ast.walk(refresh) if isinstance(node, ast.If) and ast.unparse(node.test) == "subject_id is None"]
         self.assertTrue(any("_complete_unmatched_with_ai" in ast.unparse(node) and "no subject in bangumi" in ast.unparse(node) for node in branches))
 
+    def test_disabled_volumes_skip_bangumi_book_flow_before_any_io(self):
+        tree = ast.parse((Path(__file__).parents[1] / "core/refresh_metadata.py").read_text(encoding="utf-8"))
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "refresh_book_metadata")
+        # No clients are provided: a disabled scope must return before accessing either API.
+        scope = {"TASK_INCLUDE_VOLUMES": False}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), "<volume-scope>", "exec"), scope)
+        self.assertIsNone(scope["refresh_book_metadata"](123, "s", True, ["title"], "l"))
+
+    def test_completion_worker_receives_volume_scope(self):
+        with patch.object(web_backend, "_configured_library_context",
+                          return_value={"s::l": {"server_id": "s", "library_id": "l"}}), \
+             patch.object(web_backend, "_run_managed") as run:
+            for include in (True, False):
+                web_backend._complete_task_libraries(["s::l"], {"fields": ["summary"], "include_volumes": include})
+                self.assertEqual(run.call_args.args[1]["include_volumes"], include)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -228,7 +228,7 @@ class TaskConfigPersistenceTests(unittest.TestCase):
                     {"id": "correction", "functions": ["metadata_correction"], "fields": ["title", "summary"],
                      "operations": ["simplify", "extract_title", "include_locked"], "card_ids": ["s::lib"]},
                     {"id": "completion", "functions": ["metadata_completion"], "fields": ["summary"],
-                     "ai_completion": True, "card_ids": ["s::lib"], "time_limit_hours": 1.5},
+                     "ai_completion": True, "include_volumes": False, "card_ids": ["s::lib"], "time_limit_hours": 1.5},
                 ]})
                 # Force loading only config.py, as after a backup restore.
                 (root / "state.json").unlink()
@@ -238,6 +238,8 @@ class TaskConfigPersistenceTests(unittest.TestCase):
                 self.assertFalse(tasks[0]["lock_completed"])
                 self.assertEqual(tasks[0]["fields"], ["title", "summary"])
                 self.assertTrue(tasks[1]["ai_completion"])
+                self.assertTrue(tasks[0]["include_volumes"])
+                self.assertFalse(tasks[1]["include_volumes"])
                 self.assertEqual(tasks[0]["time_limit_hours"], 0)
                 self.assertEqual(tasks[1]["time_limit_hours"], 1.5)
 

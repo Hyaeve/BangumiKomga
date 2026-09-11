@@ -14,9 +14,11 @@ def main():
         web_backend._refresh_card_collages(targets)
     elif function == "metadata_correction":
         web_backend._translate_task_libraries(targets, task.get("fields", []),
-                                             correction=[value for value in task.get("operations", []) if value != "include_locked"], **task_lock_options(task))
+                                             correction=[value for value in task.get("operations", []) if value != "include_locked"],
+                                             include_volumes=bool(task.get("include_volumes", True)), **task_lock_options(task))
     elif function == "summary_translation":
-        web_backend._translate_task_libraries(targets, task.get("fields") or ["summary"], **task_lock_options(task))
+        web_backend._translate_task_libraries(targets, task.get("fields") or ["summary"],
+                                             include_volumes=bool(task.get("include_volumes", True)), **task_lock_options(task))
     else:
         raise ValueError("Unknown task function")
 

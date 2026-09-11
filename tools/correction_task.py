@@ -13,7 +13,7 @@ OPERATIONS = {"simplify", "extract_title", "include_locked"}
 
 
 def correct_library(komga, library_id, settings, on_update, on_log, fields, operations, only_novel=False,
-                    include_locked=False, lock_completed=False):
+                    include_locked=False, lock_completed=False, include_volumes=True):
     selected = list(dict.fromkeys(fields))
     options = set(operations)
     include_locked = include_locked or "include_locked" in options
@@ -101,6 +101,7 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
 
     for series in komga.iter_library_series(library_id):
         process(series, "series", series.get("name", ""))
-        for book in komga.iter_series_books(series["id"]):
-            process(book, "volume", series.get("name", ""))
+        if include_volumes:
+            for book in komga.iter_series_books(series["id"]):
+                process(book, "volume", series.get("name", ""))
     return counts
