@@ -612,30 +612,31 @@ async function main() {
       animation.pause();
       animation.currentTime=0;
       const startY=new DOMMatrix(getComputedStyle(el).transform).m42;
-      animation.currentTime=450;
+      animation.currentTime=525;
       const style=getComputedStyle(el);
       return {duration:parseFloat(style.animationDuration),delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),startY,y:new DOMMatrix(style.transform).m42};
     });
-    assert.equal(entrance.duration,1.8);
+    assert.equal(entrance.duration,2.1);
     assert.equal(entrance.delay,0);
     assert(entrance.opacity>0 && entrance.opacity<1);
-    assert.equal(entrance.startY,18);
+    assert.equal(entrance.startY,20);
     assert(entrance.y<entrance.startY);
     assert(await page.locator('.login-column-reveal').evaluateAll(columns=>columns.every(el=>getComputedStyle(el).animationName==='none')));
     await page.screenshot({path:path.join(output,'login-background-emerging.png')});
     const settling = await page.locator('.login-backdrop').evaluate(el=>{
       const animation=el.getAnimations().find(item=>item.animationName==='login-backdrop-emerge');
-      return [1044,1700,1790,1800].map(time=>{
+      return [1008,1428,1764,2100].map(time=>{
         animation.currentTime=time;
         const style=getComputedStyle(el);
         const matrix=new DOMMatrix(style.transform);
         return {y:matrix.m42,scale:Math.hypot(matrix.a,matrix.b),opacity:Number(style.opacity)};
       });
     });
-    assert.equal(settling[0].y,-3);
+    assert.equal(settling[0].y,-6);
     assert(settling.every(item=>item.opacity>=.99));
     assert.equal(settling[0].scale,1);
-    assert(Math.abs(settling[2].y)<Math.abs(settling[1].y));
+    assert.equal(settling[1].y,2);
+    assert.equal(settling[2].y,-1);
     assert.equal(settling[3].y,0);
     assert.equal(settling[3].scale,1);
     await page.locator('.login-backdrop').evaluate(el=>{

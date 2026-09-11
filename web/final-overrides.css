@@ -1220,7 +1220,7 @@
 /* Login artwork is limited to media cards explicitly published as backgrounds. */
 .login-screen { background: #e8ebee; isolation: isolate; }
 .login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; opacity: 0; }
-.login-backdrop.ready { animation: login-backdrop-emerge 1.8s both; }
+.login-backdrop.ready { animation: login-backdrop-emerge 2.1s both; }
 .login-backdrop::after { content: none; }
 .login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
 .login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
@@ -1229,9 +1229,11 @@
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.2s ease; }
 .login-cover-column img.loaded { opacity: 1; visibility: visible; }
 @keyframes login-backdrop-emerge {
-  0% { opacity: 0; transform: translateY(18px); filter: blur(4px) saturate(.82); animation-timing-function: cubic-bezier(.16,.72,.3,1); }
-  58% { opacity: 1; transform: translateY(-3px); filter: blur(0) saturate(1); animation-timing-function: cubic-bezier(.42,0,.58,1); }
-  100% { opacity: 1; transform: translateY(0); filter: blur(0) saturate(1); }
+  0% { opacity: 0; transform: translateY(20px); filter: blur(5px) saturate(.78) brightness(1.08); animation-timing-function: cubic-bezier(.14,.74,.28,1); }
+  48% { opacity: 1; transform: translateY(-6px); filter: blur(0) saturate(1.03) brightness(1.02); animation-timing-function: cubic-bezier(.34,0,.4,1); }
+  68% { opacity: 1; transform: translateY(2px); filter: blur(0) saturate(1) brightness(1); animation-timing-function: cubic-bezier(.36,0,.64,1); }
+  84% { opacity: 1; transform: translateY(-1px); filter: blur(0) saturate(1) brightness(1); animation-timing-function: cubic-bezier(.36,0,.64,1); }
+  100% { opacity: 1; transform: translateY(0); filter: blur(0) saturate(1) brightness(1); }
 }
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
 .login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
