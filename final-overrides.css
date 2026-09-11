@@ -1541,6 +1541,11 @@
 .task-schedule-row { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin-top: 18px; align-items: stretch; }
 .task-schedule-row > .task-text-field { margin: 0 !important; }
 .task-schedule-row .task-time-limit input { padding-right: 32px !important; }
+.task-time-control { position: relative; }
+.task-schedule-row .task-text-field input,
+.task-schedule-row .task-time-limit .day-unit { font-family: inherit !important; font-size: 16px !important; font-weight: 400; line-height: 1.5; }
+.task-schedule-row .task-time-limit .day-unit,
+.task-schedule-row .task-time-limit .day-stepper { top: 50%; bottom: auto; transform: translateY(-50%); }
 .strategy-card #service-mode { margin: 18px 0 0; }
 .strategy-card #service-mode .tag-picker-chip { white-space: normal; }
 .task-option-switches { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 18px; margin-top: 18px; }
@@ -1575,7 +1580,7 @@
   transition: background-color .24s ease, color .24s ease, box-shadow .24s ease;
 }
 .sidebar .nav-item.active {
-  background: rgba(177,157,232,.22);
+  background: rgba(165,141,220,.38);
   color: #61508e;
   box-shadow: inset 0 0 0 1px rgba(163,140,216,.24), inset 0 1px 0 rgba(255,255,255,.85), 0 5px 16px rgba(130,107,176,.09);
 }
@@ -1590,7 +1595,7 @@
   animation: nav-highlight-breathe 5s ease-in-out infinite alternate;
 }
 .sidebar .nav-item.active .nav-icon { color: #7560a4; }
-.sidebar .nav-item.active:hover { background-color: rgba(177,157,232,.32); }
+.sidebar .nav-item.active:hover { background-color: rgba(165,141,220,.46); }
 .sidebar .nav-item:focus-visible { outline: 2px solid #8b76b4; outline-offset: 3px; }
 @keyframes nav-highlight-breathe { from { opacity: .35; } to { opacity: .9; } }
 @media (prefers-reduced-motion: reduce) {

@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260911-5">
+<link rel="stylesheet" href="final-overrides.css?v=20260911-6">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -118,7 +118,7 @@
 <path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/>
 </svg>
 </span>
-<strong>{{recordStats.total}}</strong>
+<strong :data-tooltip="statTooltip(recordStats.total)" :tabindex="statTooltip(recordStats.total) ? 0 : null">{{formatStat(recordStats.total)}}</strong>
 <span>记录</span>
 </div>
 <div>
@@ -128,7 +128,7 @@
 <path d="M12 7.5v5l3.5 2"/>
 </svg>
 </span>
-<strong>{{recordStats.today}}</strong>
+<strong :data-tooltip="statTooltip(recordStats.today)" :tabindex="statTooltip(recordStats.today) ? 0 : null">{{formatStat(recordStats.today)}}</strong>
 <span>今日</span>
 </div>
 <div class="comic">
@@ -138,7 +138,7 @@
 <path d="M19.5 5.5A2.5 2.5 0 0 0 17 3h-3.5v16H17a2.5 2.5 0 0 1 2.5 2.5Z"/>
 </svg>
 </span>
-<strong>{{recordStats.comic}}</strong>
+<strong :data-tooltip="statTooltip(recordStats.comic)" :tabindex="statTooltip(recordStats.comic) ? 0 : null">{{formatStat(recordStats.comic)}}</strong>
 <span>漫画</span>
 </div>
 <div class="novel">
@@ -148,7 +148,7 @@
 <path d="M6 4.5v15M9.5 8h5M9.5 11h5M9.5 14h3.5"/>
 </svg>
 </span>
-<strong>{{recordStats.novel}}</strong>
+<strong :data-tooltip="statTooltip(recordStats.novel)" :tabindex="statTooltip(recordStats.novel) ? 0 : null">{{formatStat(recordStats.novel)}}</strong>
 <span>小说</span>
 </div>
 </div>
@@ -177,7 +177,7 @@
 <path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/>
 </svg>
 </span>
-<strong>{{logStats.total}}</strong>
+<strong :data-tooltip="statTooltip(logStats.total)" :tabindex="statTooltip(logStats.total) ? 0 : null">{{formatStat(logStats.total)}}</strong>
 <span>日志</span>
 </div>
 <div>
@@ -187,7 +187,7 @@
 <path d="M12 7.5v5l3.5 2"/>
 </svg>
 </span>
-<strong>{{logStats.today}}</strong>
+<strong :data-tooltip="statTooltip(logStats.today)" :tabindex="statTooltip(logStats.today) ? 0 : null">{{formatStat(logStats.today)}}</strong>
 <span>今日</span>
 </div>
 <div>
@@ -196,7 +196,7 @@
 <circle cx="12" cy="12" r="8.5"/><path d="m8 12 3 3 5-6"/>
 </svg>
 </span>
-<strong>{{logStats.success}}</strong>
+<strong :data-tooltip="statTooltip(logStats.success)" :tabindex="statTooltip(logStats.success) ? 0 : null">{{formatStat(logStats.success)}}</strong>
 <span>成功</span>
 </div>
 <div>
@@ -205,7 +205,7 @@
 <circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6m0-6-6 6"/>
 </svg>
 </span>
-<strong>{{logStats.failed}}</strong>
+<strong :data-tooltip="statTooltip(logStats.failed)" :tabindex="statTooltip(logStats.failed) ? 0 : null">{{formatStat(logStats.failed)}}</strong>
 <span>失败</span>
 </div>
 </div>
@@ -649,10 +649,12 @@
 <input v-model.trim="editingTask.cron" inputmode="text" spellcheck="false" placeholder="0 6 * * *" aria-label="Cron 表达式">
 </fieldset>
 <fieldset class="task-text-field retention-input task-time-limit"><legend>时间限制</legend>
+<div class="task-time-control">
 <input v-model.number="editingTask.time_limit_hours" type="number" min="0" step="0.5" aria-label="时间限制">
 <span class="day-unit">h</span><span class="day-stepper">
 <button type="button" @click.prevent="stepTaskTime(0.5)" aria-label="增加时间限制"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
 <button type="button" @click.prevent="stepTaskTime(-0.5)" aria-label="减少时间限制"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span>
+</div>
 </fieldset>
 </div>
 <div v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" class="task-option-switches" :class="{'completion-switches':editingTask.functions.includes('metadata_completion')}">
@@ -759,7 +761,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260911-3">
+<script src="config.js?v=20260911-6">
 </script>
 </body>
 </html>
