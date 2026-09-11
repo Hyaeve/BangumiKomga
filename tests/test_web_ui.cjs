@@ -611,11 +611,12 @@ async function main() {
       animation.pause();
       animation.currentTime=0;
       const startY=new DOMMatrix(getComputedStyle(el).transform).m42;
-      animation.currentTime=6500;
+      animation.currentTime=13000;
       const style=getComputedStyle(el);
-      return {delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),startY,y:new DOMMatrix(style.transform).m42};
+      return {duration:parseFloat(style.animationDuration),delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),startY,y:new DOMMatrix(style.transform).m42};
     }));
-    assert(entrance.every((item,index)=>Math.abs(item.delay-index*.4)<.001));
+    assert(entrance.every(item=>item.duration===24));
+    assert(entrance.every((item,index)=>Math.abs(item.delay-index*.6)<.001));
     assert(entrance.every(item=>item.opacity===1));
     assert(entrance.every((item,index)=>index%2===0 ? item.startY<0 && item.y<0 : item.startY>0 && item.y>0));
     assert(entrance.every(item=>Math.abs(item.startY)>1000 && Math.abs(item.y)<Math.abs(item.startY)));
