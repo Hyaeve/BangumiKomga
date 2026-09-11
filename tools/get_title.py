@@ -2,6 +2,7 @@ import re
 from zhconv import convert
 
 from corpus.vocabulary import ALL_VOCABULARY
+from tools.title_rules import bracket_title
 
 
 def get_title_candidates(name):
@@ -21,11 +22,9 @@ def get_title_candidates(name):
         if value and value not in candidates:
             candidates.append(value)
 
-    bracketed = re.findall(r"\[\s*([^\[\]]+?)\s*\]", raw)
-    if bracketed:
-        value = bracketed[0].strip()
-        if value and value not in candidates:
-            candidates.append(value)
+    value = bracket_title(raw)
+    if value and value not in candidates:
+        candidates.append(value)
 
     return candidates
 

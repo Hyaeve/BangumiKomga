@@ -25,6 +25,7 @@ from tools.komga_path import item_path
 from services.media_policy import media_type, scrape_enabled
 from services.task_execution import TaskExecutor, TaskStopped, TaskTimedOut, task_time_limit
 from tools.task_lock_policy import task_lock_options
+from tools.title_rules import normalize_filter_terms
 from tools.activity_details import config_changes, task_details, target_names
 from tools.komga_cover import read_series_cover
 
@@ -321,6 +322,7 @@ def save_state(data: dict) -> dict:
             "operations": [str(value) for value in (item.get("operations") or []) if value != "include_locked"],
             "ai_completion": bool(item.get("ai_completion", False)),
             "include_volumes": bool(item.get("include_volumes", True)),
+            "filter_terms": "\n".join(normalize_filter_terms(item.get("filter_terms"))),
             **task_lock_options(item),
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
             "cron": str(item.get("cron") or "0 6 * * *").strip(),
@@ -491,7 +493,7 @@ def _complete_task_libraries(target_ids, task):
         _run_managed("services.metadata_task", request)
 
 
-def _translate_task_libraries(target_ids, fields=None, correction=None, include_locked=False, lock_completed=None, include_volumes=True):
+def _translate_task_libraries(target_ids, fields=None, correction=None, include_locked=False, lock_completed=None, include_volumes=True, filter_terms=None):
     from tools.translation_task import translate_library
     from tools.db import init_sqlite3, record_scrape_event
     action = "元数据修正" if correction is not None else "AI翻译"
@@ -533,7 +535,8 @@ def _translate_task_libraries(target_ids, fields=None, correction=None, include_
                     from tools.correction_task import correct_library
                     counts = correct_library(komga, library_id, state, record, log, fields, correction,
                                              only_novel=media_type(card), include_locked=include_locked,
-                                             lock_completed=bool(lock_completed), include_volumes=include_volumes)
+                                             lock_completed=bool(lock_completed), include_volumes=include_volumes,
+                                             filter_terms=filter_terms)
                 else:
                     counts = translate_library(komga, library_id, state, record, log, fields=fields,
                                                include_locked=include_locked,
@@ -546,6 +549,8 @@ def _translate_task_libraries(target_ids, fields=None, correction=None, include_
     finally:
         conn.close()
     if failures:
+        if correction is not None:
+            raise ValueError(f"{failures} 项元数据修正或写入失败，成功写入的过滤及修正已保留，详见运行日志")
         raise ValueError(f"{failures} 项元数据翻译或写入失败，已保留原文，详见运行日志")
 
 
@@ -1468,6 +1473,7 @@ class Handler(BaseHTTPRequestHandler):
                 task["operations"] = list(task.get("operations") or [])
                 task["ai_completion"] = bool(task.get("ai_completion", False))
                 task["include_volumes"] = bool(task.get("include_volumes", True))
+                task["filter_terms"] = "\n".join(normalize_filter_terms(task.get("filter_terms")))
                 task.update(task_lock_options(task))
                 task["operations"] = [value for value in task["operations"] if value != "include_locked"]
                 if task["type"] in ("summary_translation", "metadata_correction"):

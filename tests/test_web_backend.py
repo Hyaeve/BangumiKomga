@@ -226,7 +226,8 @@ class TaskConfigPersistenceTests(unittest.TestCase):
                  patch.object(web_backend, "WEB_STATE", root / "state.json"):
                 web_backend.save_state({"METADATA_TASKS": [
                     {"id": "correction", "functions": ["metadata_correction"], "fields": ["title", "summary"],
-                     "operations": ["simplify", "extract_title", "include_locked"], "card_ids": ["s::lib"]},
+                     "operations": ["simplify", "extract_title", "include_locked"], "card_ids": ["s::lib"],
+                     "filter_terms": " [Vchan] \r\n广告\n\n广告"},
                     {"id": "completion", "functions": ["metadata_completion"], "fields": ["summary"],
                      "ai_completion": True, "include_volumes": False, "card_ids": ["s::lib"], "time_limit_hours": 1.5},
                 ]})
@@ -234,6 +235,8 @@ class TaskConfigPersistenceTests(unittest.TestCase):
                 (root / "state.json").unlink()
                 tasks = web_backend._read_state()["METADATA_TASKS"]
                 self.assertEqual(tasks[0]["operations"], ["simplify", "extract_title"])
+                self.assertEqual(tasks[0]["filter_terms"], "[Vchan]\n广告")
+                self.assertEqual(tasks[1]["filter_terms"], "")
                 self.assertTrue(tasks[0]["include_locked"])
                 self.assertFalse(tasks[0]["lock_completed"])
                 self.assertEqual(tasks[0]["fields"], ["title", "summary"])

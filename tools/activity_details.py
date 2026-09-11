@@ -38,6 +38,9 @@ def task_details(task, state):
         rows.extend([f"元数据：{field_names(task.get('fields'))}",
                      f"包含锁定：{'开启' if options['include_locked'] else '关闭'}；完成锁定：{'开启' if options['lock_completed'] else '关闭'}"])
     if "metadata_correction" in functions:
+        if "extract_title" in task.get("operations", []):
+            from tools.title_rules import normalize_filter_terms
+            rows.append("过滤词条：" + "、".join(normalize_filter_terms(task.get("filter_terms"))))
         rows.append("修正选项：" + "、".join({"simplify":"繁转简","extract_title":"标题提取"}.get(value,value)
                     for value in task.get("operations", []) if value != "include_locked"))
     if "metadata_completion" in functions:

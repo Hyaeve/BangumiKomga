@@ -1,8 +1,9 @@
 """Selected-field metadata correction; existing lock states are preserved."""
 from copy import deepcopy
+import re
 
 from zhconv import convert
-from tools.title_rules import explicit_title
+from tools.title_rules import explicit_title, normalize_filter_terms
 from tools.title_recognition import recognize_title
 from tools.komga_path import item_path
 from tools.execution_outcomes import record_outcome
@@ -13,7 +14,7 @@ OPERATIONS = {"simplify", "extract_title", "include_locked"}
 
 
 def correct_library(komga, library_id, settings, on_update, on_log, fields, operations, only_novel=False,
-                    include_locked=False, lock_completed=False, include_volumes=True):
+                    include_locked=False, lock_completed=False, include_volumes=True, filter_terms=None):
     selected = list(dict.fromkeys(fields))
     options = set(operations)
     include_locked = include_locked or "include_locked" in options
@@ -24,8 +25,21 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
     if options & {"extract_title"} and "simplify" not in options and "title" not in selected:
         raise ValueError("标题提取需要选择标题元数据")
     counts = {"updated": 0, "skipped": 0, "failed": 0}
+    terms = normalize_filter_terms(filter_terms)
+    pattern = re.compile("|".join(re.escape(term) for term in sorted(terms, key=len, reverse=True))) if terms else None
+
+    def filtered_title(value):
+        if not pattern:
+            return value
+        # Repeat only while shortening, so removal cannot leave another configured term behind.
+        while True:
+            filtered = pattern.sub("", value)
+            if filtered == value:
+                return filtered.strip()
+            value = filtered
 
     def corrected(value, field):
+        completed = True
         if field == "authors":
             if not isinstance(value, list):
                 raise ValueError("作者数据格式无效")
@@ -35,21 +49,33 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
                     if not isinstance(author, dict) or not isinstance(author.get("name"), str):
                         raise ValueError("作者数据格式无效")
                     author["name"] = convert(author["name"], "zh-cn")
-            return result
+            return result, completed
         if not isinstance(value, str):
             raise ValueError("文本数据格式无效")
         result = value
         if field == "title" and "extract_title" in options:
+            result = filtered_title(result)
+            if not result.strip():
+                raise ValueError("过滤后标题为空，保留当前标题且不锁定")
+            filtered = result
             title = explicit_title(result)
             if not title:
                 title = recognize_title(result, only_novel=only_novel, settings=settings)
             if title:
-                result = title
+                result = filtered_title(title)
+                if not result.strip():
+                    result, completed = filtered, False
+            elif filtered != value:
+                result, completed = filtered, False
             else:
                 raise ValueError("标题提取失败或未配置 AI，保留当前标题且不锁定")
         if "simplify" in options:
             result = convert(result, "zh-cn")
-        return result
+        if field == "title" and "extract_title" in options:
+            result = filtered_title(result)
+            if not result.strip():
+                raise ValueError("过滤后标题为空，保留当前标题且不锁定")
+        return result, completed
 
     def update(item, kind, series_name):
         original = item.get("metadata") or {}
@@ -61,10 +87,14 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
             if "simplify" not in options and field != "title":
                 continue
             try:
-                result = corrected(value, field)
+                result, completed = corrected(value, field)
                 if result != value:
                     payload[field] = result
-                if lock_completed and not locked(original, field):
+                if not completed:
+                    record_outcome(kind, item["id"], failed=True)
+                    counts["failed"] += 1
+                    on_log(f"{item.get('name', '')} / 标题：标题提取未成功，仍应用过滤词条，不新增锁定", "warning")
+                if completed and lock_completed and not locked(original, field):
                     payload[field + "Lock"] = True
             except ValueError as exc:
                 record_outcome(kind, item["id"], failed=True)
