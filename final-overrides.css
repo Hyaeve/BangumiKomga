@@ -1220,7 +1220,7 @@
 /* Login artwork is limited to media cards explicitly published as backgrounds. */
 .login-screen { background: #e8ebee; isolation: isolate; }
 .login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; opacity: 0; }
-.login-backdrop.ready { animation: login-backdrop-emerge 2.4s cubic-bezier(.22,.61,.36,1) both; }
+.login-backdrop.ready { animation: login-backdrop-emerge 3.6s both; }
 .login-backdrop::after { content: none; }
 .login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
 .login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
@@ -1229,9 +1229,9 @@
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.2s ease; }
 .login-cover-column img.loaded { opacity: 1; visibility: visible; }
 @keyframes login-backdrop-emerge {
-  0% { opacity: 0; transform: translateY(24px) scale(1.025); }
-  70% { opacity: 1; transform: translateY(-3px) scale(1.002); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  0% { opacity: 0; transform: translate(-6px,32px) rotate(-.3deg) scale(1.035); animation-timing-function: cubic-bezier(.2,.65,.3,1); }
+  55% { opacity: 1; transform: translate(1px,-7px) rotate(.06deg) scale(1.008); animation-timing-function: cubic-bezier(.42,0,.58,1); }
+  100% { opacity: 1; transform: translate(0,0) rotate(0deg) scale(1); }
 }
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
 .login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
