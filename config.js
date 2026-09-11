@@ -232,14 +232,14 @@ createApp({
           this.loginBackground = (data.items || []).map(item=>{
             const old = previous.get(item.url);
             if (old && !old.failed) return old;
-            return {...item,sourceUrl:item.url,failed:false,url:old?.failed ? `${item.url}${item.url.includes('?')?'&':'?'}retry=${Date.now()}` : item.url};
+            return {...item,sourceUrl:item.url,failed:false,loaded:old?.loaded && !old?.failed,url:old?.failed ? `${item.url}${item.url.includes('?')?'&':'?'}retry=${Date.now()}` : item.url};
           });
         }
       } catch (_) { /* Keep successfully loaded covers during transient manifest failures. */ }
       clearInterval(this.loginBackgroundTimer);
       if (!this.authenticated) this.loginBackgroundTimer = setInterval(() => this.loadLoginBackground(), pending ? 2000 : 60000);
     },
-    markLoginCoverFailed(cover, event) { cover.failed = true; event.target.style.visibility = 'hidden'; },
+    markLoginCoverFailed(cover, event) { cover.failed = true; cover.loaded = false; event.target.style.visibility = 'hidden'; },
     async login() {
       try { await this.api('/api/auth/login', { method: 'POST', body: JSON.stringify(this.loginForm) }); this.authenticated = true; this.credentialForm.username = this.loginForm.username; this.loginForm.password = ''; await this.loadApp(); }
       catch (error) { this.notify(error.message, true); }
