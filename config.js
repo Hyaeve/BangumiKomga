@@ -408,7 +408,33 @@ createApp({
     startLiveRefresh() { clearInterval(this.liveRefreshTimer); this.liveRefreshTimer = null; if (!this.authenticated || document.hidden || !['records', 'logs'].includes(this.view)) return; this.liveRefreshTimer = setInterval(() => { if (this.view === 'records') this.loadRecords(); else if (this.view === 'logs') this.loadLogs(); }, 4000); },
     async loadTasks() { try { const data = await this.api('/api/tasks'); this.tasks = data.items || []; } catch (error) { this.notify(error.message, true); } },
     stepTaskTime(amount) { this.editingTask.time_limit_hours = Math.max(0, Math.round((Number(this.editingTask.time_limit_hours || 0) + amount) * 2) / 2); },
-    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], operations: [], filter_terms: '', ai_completion: false, include_volumes: true, include_locked: false, lock_completed: false, card_ids: [], cron: '0 6 * * *', time_limit_hours: 2, enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
+    newTask() { this.editingTask = { id: '', name: '', functions: [], fields: [], operations: [], filter_terms: '', filter_regex: false, ai_completion: false, include_volumes: true, include_locked: false, lock_completed: false, card_ids: [], cron: '0 6 * * *', time_limit_hours: 2, enabled: true }; this.$nextTick(() => this.decorateFieldLabels()); },
+    resizeFilterByKey(event) {
+      if (!['ArrowUp','ArrowDown','Home'].includes(event.key)) return;
+      event.preventDefault();
+      const input = event.currentTarget.parentElement.querySelector('textarea');
+      input.style.height = `${event.key === 'Home' ? 144 : Math.max(96, input.offsetHeight + (event.key === 'ArrowUp' ? -24 : 24))}px`;
+    },
+    startFilterResize(event) {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const handle = event.currentTarget;
+      const input = handle.parentElement.querySelector('textarea');
+      const startY = event.clientY, startHeight = input.offsetHeight;
+      const move = next => { input.style.height = `${Math.max(96, startHeight + next.clientY - startY)}px`; };
+      const end = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', end);
+        handle.removeEventListener('pointercancel', end);
+        handle.removeEventListener('lostpointercapture', end);
+        if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', end);
+      handle.addEventListener('pointercancel', end);
+      handle.addEventListener('lostpointercapture', end);
+      handle.setPointerCapture(event.pointerId);
+    },
     toggleTaskOperation(value) { const values = this.editingTask.operations; this.editingTask.operations = values.includes(value) ? values.filter(item=>item!==value) : [...values,value]; },
     editTask(task) { if (this.taskDragMoved) { this.taskDragMoved = false; return; } this.editingTask = { ...task, include_volumes: task.include_volumes ?? true, time_limit_hours: task.time_limit_hours || 0, operations: (task.operations || []).filter(value=>value!=='include_locked'), include_locked: task.include_locked ?? (task.operations || []).includes('include_locked'), lock_completed: task.lock_completed ?? this.taskType(task)==='summary_translation', ai_completion: !!task.ai_completion, cron: task.cron || '0 6 * * *', functions: [...(task.functions || (task.type ? [task.type] : [])).slice(0, 1)], fields: [...(task.fields?.length ? task.fields : this.taskType(task) === 'summary_translation' ? ['summary'] : [])], card_ids: [...(task.card_ids || [])].map(value => this.normalizeTaskLibraryKey(value)) }; this.$nextTick(() => this.decorateFieldLabels()); },
     validCronExpression(value) { const parts = String(value || '').trim().split(/\s+/); return parts.length === 5 && parts.every(part => /^[0-9A-Za-z*?,/\-]+$/.test(part)); },
