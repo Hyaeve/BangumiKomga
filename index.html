@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260911-8">
+<link rel="stylesheet" href="final-overrides.css?v=20260911-9">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -470,28 +470,20 @@
 <button type="button" class="secondary" @click="save">保存</button>
 </div>
 </section>
-              <section class="setting-card strategy-card">
-<h3>基本设置</h3>
-<tag-picker id="service-mode" label="运行模式" v-model="serviceModeChoice" :options="serviceModeOptions" :single="true"></tag-picker>
-<template v-if="config.BANGUMI_KOMGA_SERVICE_TYPE==='poll'">
-<label>轮询间隔（秒）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_INTERVAL" type="number" min="5" @change="save">
-</label>
-<label>全量刷新周期（轮询次数）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL" type="number" min="1" @change="save">
-</label>
-</template>
-<div class="retention-fields">
-<label class="retention-input"><span class="field-label">记录保留</span><input v-model.number="config.RECORD_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
-<span class="day-unit">天</span><span class="day-stepper">
-<button type="button" @click.prevent="stepRetention('RECORD_RETENTION_DAYS',1)" aria-label="增加记录保留天数"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
-<button type="button" @click.prevent="stepRetention('RECORD_RETENTION_DAYS',-1)" aria-label="减少记录保留天数"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span>
-</label>
-<label class="retention-input"><span class="field-label">日志保留</span><input v-model.number="config.LOG_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
-<span class="day-unit">天</span><span class="day-stepper">
-<button type="button" @click.prevent="stepRetention('LOG_RETENTION_DAYS',1)" aria-label="增加日志保留天数"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
-<button type="button" @click.prevent="stepRetention('LOG_RETENTION_DAYS',-1)" aria-label="减少日志保留天数"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span>
-</label>
+              <section class="setting-card ai-card">
+<h3>AI 配置</h3>
+<label>OpenAI URL<input v-model.trim="config.OPENAI_BASE_URL" placeholder="https://api.openai.com/v1"></label>
+<label>API 密钥<div class="secret-input">
+<input v-model.trim="config.OPENAI_API_KEY" :type="showOpenAiKey?'text':'password'" autocomplete="off">
+<button type="button" class="eye-button" @click="showOpenAiKey=!showOpenAiKey" aria-label="显示或隐藏 OpenAI API 密钥">
+<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+</button></div></label>
+<label>模型<input v-model.trim="config.OPENAI_MODEL" placeholder="例如：gpt-4o-mini"></label>
+<div class="proxy-actions ai-actions">
+<button type="button" class="secondary" :disabled="aiTesting || aiSaving" @click="testAi">{{aiTesting?'测试中…':'测试'}}</button>
+<button type="button" class="primary" :disabled="aiTesting || aiSaving" @click="saveAi">{{aiSaving?'保存中…':'保存'}}</button>
 </div>
-<small class="settings-note">默认 30 天，最大 365 天，过期记录和日志自动删除。</small>
+<p v-if="aiMessage" class="proxy-feedback" :class="{error:aiError}" role="status">{{aiMessage}}</p>
 </section>
             </div>
             <div class="settings-column settings-right">
@@ -562,26 +554,6 @@
 <div v-if="!config.KOMGA_SERVERS.length" class="empty-inline">请添加至少一个 Komga 服务</div>
 </section>
               <div class="settings-network-row">
-              <section class="setting-card ai-card">
-<div class="ai-card-head">
-<h3>AI 配置</h3>
-<button class="primary ai-save" @click="save">保存</button>
-</div>
-<label>OpenAI URL<input v-model.trim="config.OPENAI_BASE_URL" placeholder="https://api.openai.com/v1">
-</label>
-<label>API 密钥<div class="secret-input">
-<input v-model.trim="config.OPENAI_API_KEY" :type="showOpenAiKey?'text':'password'" autocomplete="off">
-<button type="button" class="eye-button" @click="showOpenAiKey=!showOpenAiKey" aria-label="显示或隐藏 OpenAI API 密钥">
-<svg viewBox="0 0 24 24">
-<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/>
-<circle cx="12" cy="12" r="2.5"/>
-</svg>
-</button>
-</div>
-</label>
-<label>模型<input v-model.trim="config.OPENAI_MODEL" placeholder="例如：gpt-4o-mini">
-</label>
-</section>
               <section class="setting-card proxy-card">
 <h3>代理配置</h3>
 <label>代理地址<input v-model.trim="config.OUTBOUND_PROXY_URL" placeholder="http://127.0.0.1:7890" autocomplete="off" @input="proxyMessage=''">
@@ -591,6 +563,25 @@
 <button class="primary" :disabled="proxySaving || proxyTesting" @click="saveProxy">{{proxySaving?'保存中…':'保存'}}</button>
 </div>
 <p v-if="proxyMessage" class="proxy-feedback" :class="{error:proxyError}" role="status">{{proxyMessage}}</p>
+</section>
+              <section class="setting-card strategy-card">
+<h3>基本设置</h3>
+<tag-picker id="service-mode" label="运行模式" v-model="serviceModeChoice" :options="serviceModeOptions" :single="true"></tag-picker>
+<template v-if="config.BANGUMI_KOMGA_SERVICE_TYPE==='poll'">
+<label>轮询间隔（秒）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_INTERVAL" type="number" min="5" @change="save"></label>
+<label>全量刷新周期（轮询次数）<input v-model.number="config.BANGUMI_KOMGA_SERVICE_POLL_REFRESH_ALL_METADATA_INTERVAL" type="number" min="1" @change="save"></label>
+</template>
+<div class="retention-fields">
+<label class="retention-input"><span class="field-label">记录保留</span><input v-model.number="config.RECORD_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
+<span class="day-unit">天</span><span class="day-stepper">
+<button type="button" @click.prevent="stepRetention('RECORD_RETENTION_DAYS',1)" aria-label="增加记录保留天数"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+<button type="button" @click.prevent="stepRetention('RECORD_RETENTION_DAYS',-1)" aria-label="减少记录保留天数"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span></label>
+<label class="retention-input"><span class="field-label">日志保留</span><input v-model.number="config.LOG_RETENTION_DAYS" type="number" min="1" max="365" @change="save">
+<span class="day-unit">天</span><span class="day-stepper">
+<button type="button" @click.prevent="stepRetention('LOG_RETENTION_DAYS',1)" aria-label="增加日志保留天数"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+<button type="button" @click.prevent="stepRetention('LOG_RETENTION_DAYS',-1)" aria-label="减少日志保留天数"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></span></label>
+</div>
+<small class="settings-note">默认 30 天，最大 365 天，过期记录和日志自动删除。</small>
 </section>
               </div>
             </div>
@@ -761,7 +752,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260911-8">
+<script src="config.js?v=20260911-9">
 </script>
 </body>
 </html>
