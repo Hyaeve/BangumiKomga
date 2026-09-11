@@ -1227,7 +1227,7 @@
 .login-column-reveal { min-width: 0; }
 .login-column-reveal:nth-child(even) .login-cover-column { margin-top: -90px; animation-direction: alternate-reverse; animation-duration: 115s; }
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.2s ease; }
-.login-cover-column img.loaded { opacity: 1; visibility: visible; }
+.login-cover-column img.loaded { opacity: 1; visibility: visible; transition: none; }
 @keyframes login-backdrop-emerge {
   0% { opacity: 0; filter: saturate(.88) brightness(1.08); animation-timing-function: cubic-bezier(.16,.7,.28,1); }
   52% { opacity: .88; filter: saturate(1.03) brightness(1.025); animation-timing-function: cubic-bezier(.36,0,.42,1); }

@@ -10,17 +10,17 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260911-20">
+<link rel="stylesheet" href="final-overrides.css?v=20260911-21">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
   <div id="app" v-cloak>
     <section v-if="!authenticated" class="login-screen">
-      <div v-if="loginBackground.length" class="login-backdrop" :class="{ready:loginBackground.some(cover=>cover.loaded)}" aria-hidden="true">
+      <div v-if="loginBackground.length" class="login-backdrop" :class="{ready:loginBackgroundReady}" aria-hidden="true">
         <div class="login-backdrop-grid">
           <div v-for="(column,index) in loginBackgroundColumns" :key="index" class="login-column-reveal">
             <div class="login-cover-column">
-              <img v-for="(cover,coverIndex) in column" :key="`${coverIndex}-${cover.url}`" :class="{loaded:cover.loaded}" :src="cover.url" alt="" @load="cover.failed=false;cover.loaded=true;$event.target.style.visibility='visible'" @error="markLoginCoverFailed(cover,$event)">
+              <img v-for="(cover,coverIndex) in column" :key="`${coverIndex}-${cover.url}`" :class="{loaded:cover.loaded}" :src="cover.url" alt="" @load="markLoginCoverLoaded(cover,$event)" @error="markLoginCoverFailed(cover,$event)">
             </div>
           </div>
         </div>
@@ -627,7 +627,7 @@
     <div v-if="editingTask" class="modal-backdrop" @click.self="editingTask=null">
 <form class="modal task-modal" @submit.prevent="saveTask">
 <button type="button" class="modal-close" @click="editingTask=null">×</button>
-<h2>新建计划任务</h2>
+<h2>{{editingTask.id ? '编辑计划任务' : '新建计划任务'}}</h2>
 <div class="task-form-row">
 <fieldset class="task-text-field">
 <legend>任务名称</legend>
@@ -657,6 +657,7 @@
 <button v-for="option in correctionOptions" :key="option.value" type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.operations.includes(option.value)}" :aria-checked="editingTask.operations.includes(option.value)" @click="toggleTaskOperation(option.value)">
 <span aria-hidden="true" class="task-toggle-switch"></span>{{option.label}}</button>
 </template>
+<button type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.include_volumes}" :aria-checked="editingTask.include_volumes" @click="editingTask.include_volumes=!editingTask.include_volumes"><span aria-hidden="true" class="task-toggle-switch"></span>包含分卷</button>
 <button type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.include_locked}" :aria-checked="editingTask.include_locked" @click="editingTask.include_locked=!editingTask.include_locked">
 <span aria-hidden="true" class="task-toggle-switch"></span>包含锁定</button>
 <button type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.lock_completed}" :aria-checked="editingTask.lock_completed" @click="editingTask.lock_completed=!editingTask.lock_completed">
@@ -754,7 +755,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260911-10">
+<script src="config.js?v=20260911-21">
 </script>
 </body>
 </html>
