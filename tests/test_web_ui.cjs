@@ -272,6 +272,12 @@ async function main() {
     const timeLimit = page.getByRole('spinbutton',{name:'时间限制',exact:true});
     assert.equal(await timeLimit.inputValue(),'0');
     assert.equal(await timeLimit.getAttribute('step'),'0.5');
+    const scheduleFields = await page.locator('.task-schedule-row > fieldset').evaluateAll(elements=>elements.map(el=>{
+      const box=el.getBoundingClientRect(), style=getComputedStyle(el), title=getComputedStyle(el.querySelector('legend'));
+      return {y:box.y,height:box.height,width:box.width,border:style.borderColor,font:title.fontSize,color:title.color};
+    }));
+    assert.equal(scheduleFields.length,2);
+    assert.deepEqual(scheduleFields[0],scheduleFields[1]);
     await page.locator('.task-time-limit').hover();
     assert.equal(await page.locator('.task-time-limit .day-unit').evaluate(el=>getComputedStyle(el).opacity),'0');
     await page.getByRole('button',{name:'增加时间限制',exact:true}).click();
