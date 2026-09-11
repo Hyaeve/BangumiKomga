@@ -397,7 +397,7 @@ async function main() {
     assert(Math.abs(await page.locator('.runtime-log-board').evaluate(el=>el.getBoundingClientRect().height)-shortLogHeight)<1);
     assert.match(await page.locator('.log-hero-controls').innerText(), /成功/);
     const logCount=page.locator('.log-hero-controls .record-stats strong').first();
-    assert.equal(await logCount.innerText(),'23.46k');
+    assert.equal(await logCount.innerText(),'23.5k');
     await logCount.hover();
     await page.getByRole('tooltip').filter({hasText:'23456'}).waitFor();
     await page.locator('.log-hero-controls .record-stats strong').nth(1).hover();
@@ -614,8 +614,8 @@ async function main() {
     vm.runInNewContext(fs.readFileSync(path.join(web, 'config.js'), 'utf8'), context);
     const card = context.options.methods.makeCard.call({ overwriteFieldOptions: [{ value: 'title' }], cardHues: [105] }, { OVERWRITE_FIELDS: [] });
     assert.equal(context.options.methods.formatStat(9999),'9999');
-    assert.equal(context.options.methods.formatStat(10000),'10.00k');
-    assert.equal(context.options.methods.formatStat(12345),'12.35k');
+    assert.equal(context.options.methods.formatStat(10000),'10.0k');
+    assert.equal(context.options.methods.formatStat(12345),'12.3k');
     assert.equal(context.options.methods.statTooltip(9999),null);
     assert.equal(context.options.methods.statTooltip(12345),'12345');
     const timeState = {editingTask:{time_limit_hours:0}};
