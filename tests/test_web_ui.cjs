@@ -209,7 +209,7 @@ async function main() {
     await page.getByRole('button', { name: '全量刮削', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('.context-menu'));
     assert.deepEqual(refreshRequests.at(-1), { full: true, target_id: 'fixture::lib-0' });
-    await page.locator('.nav-item').nth(2).click();
+    await page.locator('.nav-item').filter({hasText:'计划任务'}).click();
     await page.locator('.task-card').first().waitFor();
     const taskCards = await page.locator('.task-card').evaluateAll(cards => cards.map(card => {
       const rect = card.getBoundingClientRect();
@@ -329,7 +329,7 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('.task-modal').getByRole('button', { name: '取消', exact: true }).click();
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.locator('.nav-item').nth(1).click();
+    await page.locator('.nav-item').filter({hasText:'刮削记录'}).click();
     await page.locator('.record-item').first().waitFor();
     await Promise.all([
       page.waitForResponse(response => response.url().includes('/api/scrape-records?') && response.url().includes('offset=50')),
@@ -506,7 +506,7 @@ async function main() {
     await page.locator('.collapse-btn').click();
     await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().width > 235);
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.locator('.nav-item').nth(2).click();
+    await page.locator('.nav-item').filter({hasText:'计划任务'}).click();
     await page.getByRole('button', { name: /新建任务/ }).click();
     await page.getByRole('button', { name: '任务功能', exact: true }).click();
     assert.match(await page.getByRole('dialog', {name:'任务功能候选项'}).locator('.tag-picker-option').first().innerText(), /元数据修正/);

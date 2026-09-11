@@ -101,8 +101,8 @@ createApp({
       },
       navItems: [
         { id: 'scrape', label: '媒体卡片', title: '媒体卡片', subtitle: '为不同媒体库配置独立的匹配规则' },
-        { id: 'records', label: '刮削记录', title: '刮削记录', subtitle: '按书籍查看每一卷的元数据匹配结果' },
         { id: 'tasks', label: '计划任务', title: '计划任务', subtitle: '按媒体库安排元数据补全任务' },
+        { id: 'records', label: '刮削记录', title: '刮削记录', subtitle: '按书籍查看每一卷的元数据匹配结果' },
         { id: 'logs', label: '运行日志', title: '运行日志', subtitle: '查看后台操作与刮削执行轨迹' },
         { id: 'settings', label: '系统设置', title: '系统设置', subtitle: '连接服务、Bangumi 密钥与账号安全' }
       ],
