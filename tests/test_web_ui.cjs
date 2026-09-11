@@ -619,8 +619,8 @@ async function main() {
     assert.equal(entrance.duration,3.6);
     assert.equal(entrance.delay,0);
     assert(entrance.opacity>0 && entrance.opacity<1);
-    assert.equal(entrance.startY,32);
-    assert(entrance.y<entrance.startY);
+    assert.equal(entrance.startY,0);
+    assert.equal(entrance.y,0);
     assert(await page.locator('.login-column-reveal').evaluateAll(columns=>columns.every(el=>getComputedStyle(el).animationName==='none')));
     await page.screenshot({path:path.join(output,'login-background-emerging.png')});
     const settling = await page.locator('.login-backdrop').evaluate(el=>{
@@ -628,14 +628,16 @@ async function main() {
       return [1980,3500,3590,3600].map(time=>{
         animation.currentTime=time;
         const style=getComputedStyle(el);
-        return {y:new DOMMatrix(style.transform).m42,opacity:Number(style.opacity)};
+        const matrix=new DOMMatrix(style.transform);
+        return {y:matrix.m42,scale:Math.hypot(matrix.a,matrix.b),opacity:Number(style.opacity)};
       });
     });
-    assert.equal(settling[0].y,-7);
-    assert(settling.every(item=>item.opacity===1));
-    assert(Math.abs(settling[2].y)<.01);
-    assert(Math.abs(settling[2].y)<Math.abs(settling[1].y));
+    assert.equal(settling[0].y,0);
+    assert(settling.every(item=>item.opacity>=.99));
+    assert(settling[0].scale>1);
+    assert(Math.abs(settling[2].scale-1)<Math.abs(settling[1].scale-1));
     assert.equal(settling[3].y,0);
+    assert.equal(settling[3].scale,1);
     await page.locator('.login-backdrop').evaluate(el=>{
       el.getAnimations().find(item=>item.animationName==='login-backdrop-emerge').finish();
     });

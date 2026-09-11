@@ -1229,9 +1229,9 @@
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.2s ease; }
 .login-cover-column img.loaded { opacity: 1; visibility: visible; }
 @keyframes login-backdrop-emerge {
-  0% { opacity: 0; transform: translate(-6px,32px) rotate(-.3deg) scale(1.035); animation-timing-function: cubic-bezier(.2,.65,.3,1); }
-  55% { opacity: 1; transform: translate(1px,-7px) rotate(.06deg) scale(1.008); animation-timing-function: cubic-bezier(.42,0,.58,1); }
-  100% { opacity: 1; transform: translate(0,0) rotate(0deg) scale(1); }
+  0% { opacity: 0; transform: translate(0,0) rotate(-.2deg) scale(.78); filter: blur(3px); animation-timing-function: cubic-bezier(.2,.65,.3,1); }
+  58% { opacity: 1; transform: translate(0,0) rotate(.04deg) scale(1.018); filter: blur(0); animation-timing-function: cubic-bezier(.42,0,.58,1); }
+  100% { opacity: 1; transform: translate(0,0) rotate(0deg) scale(1); filter: blur(0); }
 }
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
 .login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
