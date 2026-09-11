@@ -23,7 +23,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from tools.komga_path import item_path
 from services.media_policy import media_type, scrape_enabled
-from services.task_execution import TaskExecutor, TaskStopped
+from services.task_execution import TaskExecutor, TaskStopped, TaskTimedOut, task_time_limit
 from tools.task_lock_policy import task_lock_options
 from tools.activity_details import config_changes, task_details, target_names
 from tools.komga_cover import read_series_cover
@@ -323,6 +323,7 @@ def save_state(data: dict) -> dict:
             **task_lock_options(item),
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
             "cron": str(item.get("cron") or "0 6 * * *").strip(),
+            "time_limit_hours": task_time_limit(item.get("time_limit_hours", 0)),
             "schedule": str(item.get("schedule") or item.get("cron") or "0 6 * * *").strip(),
             "enabled": bool(item.get("enabled", True)),
             "last_run": str(item.get("last_run") or ""),
@@ -452,6 +453,9 @@ def _start_task(task):
                 result_labels.append("card_collage")
             _write_activity("计划任务：完成", details + f"\n结果：执行完成\n耗时：{time.monotonic()-started:.1f} 秒")
             return "+".join(result_labels) or "task"
+        except TaskTimedOut:
+            _write_activity("计划任务：超时停止", details + f"\n结果：达到时间限制，已停止；已完成的修改保留\n耗时：{time.monotonic()-started:.1f} 秒", level="error")
+            raise
         except TaskStopped:
             _write_activity("计划任务：停止", details + f"\n结果：已停止，已完成的修改保留\n耗时：{time.monotonic()-started:.1f} 秒")
             raise
@@ -461,7 +465,8 @@ def _start_task(task):
     context = _configured_library_context()
     targets = [f"{context[key]['server_id']}::{context[key]['library_id']}"
                if key in context else key for key in target_ids]
-    return TASK_EXECUTOR.submit(str(task["id"]), targets, worker)
+    return TASK_EXECUTOR.submit(str(task["id"]), targets, worker,
+                                timeout_seconds=task_time_limit(task.get("time_limit_hours", 0)) * 3600)
 
 
 def _complete_task_libraries(target_ids, task):

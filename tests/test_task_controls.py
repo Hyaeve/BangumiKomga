@@ -10,7 +10,7 @@ from unittest.mock import patch
 import web_backend as backend
 from tools.db import init_sqlite3, record_scrape_event
 from tools.execution_outcomes import record_outcome
-from services.task_execution import TaskExecutor
+from services.task_execution import TaskExecutor, task_time_limit
 
 
 def wait_until(predicate):
@@ -32,6 +32,40 @@ class TaskControlTests(unittest.TestCase):
             self.executor.stop(key)
         wait_until(lambda: not self.executor.snapshot()["running"])
         self.patcher.stop()
+
+    def test_time_limit_validation(self):
+        for value in (0, 0.5, 1, 2.5):
+            self.assertEqual(task_time_limit(value), value)
+        for value in (-1, 0.3, "nan", "inf", "bad"):
+            with self.assertRaises(ValueError):
+                task_time_limit(value)
+
+    def test_time_limit_terminates_real_worker_and_releases_queue(self):
+        with tempfile.TemporaryDirectory() as folder:
+            started, finished = Path(folder) / "started", Path(folder) / "finished"
+            def work():
+                self.executor.run_process("tests.task_sleep_worker",
+                    {"started": str(started), "finished": str(finished)})
+            self.executor.submit("limited", ["library"], work, timeout_seconds=0.5)
+            wait_until(lambda: not self.executor.snapshot()["running"])
+            self.assertEqual(self.executor.snapshot()["last_result"], "timed_out")
+            self.assertFalse(finished.exists())
+            completed = threading.Event()
+            self.executor.submit("next", ["library"], completed.set)
+            self.assertTrue(completed.wait(3))
+
+    def test_queued_time_does_not_consume_execution_limit(self):
+        release, entered = threading.Event(), threading.Event()
+        self.executor.submit("first", ["library"], lambda: release.wait(3))
+        def work():
+            remaining = self.executor.local.job["deadline"] - time.monotonic()
+            self.assertGreater(remaining, 0.15)
+            entered.set()
+        self.executor.submit("second", ["library"], work, timeout_seconds=0.2)
+        time.sleep(0.3)
+        self.assertFalse(entered.is_set())
+        release.set()
+        self.assertTrue(entered.wait(3))
 
     def test_real_worker_terminates_without_followup_write(self):
         with tempfile.TemporaryDirectory() as folder:
