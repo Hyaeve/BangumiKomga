@@ -1219,17 +1219,20 @@
 
 /* Login artwork is limited to media cards explicitly published as backgrounds. */
 .login-screen { background: #e8ebee; isolation: isolate; }
-.login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; }
+.login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; opacity: 0; }
+.login-backdrop.ready { animation: login-backdrop-emerge 2.4s cubic-bezier(.22,.61,.36,1) both; }
 .login-backdrop::after { content: none; }
 .login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
 .login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
-.login-column-reveal { min-width: 0; visibility: hidden; --entry-offset: -120%; }
-.login-column-reveal:nth-child(even) { --entry-offset: 120%; }
-.login-column-reveal.ready { visibility: visible; animation: login-column-emerge 24s cubic-bezier(.25,.46,.45,1) var(--column-delay,0s) both; }
+.login-column-reveal { min-width: 0; }
 .login-column-reveal:nth-child(even) .login-cover-column { margin-top: -90px; animation-direction: alternate-reverse; animation-duration: 115s; }
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.2s ease; }
 .login-cover-column img.loaded { opacity: 1; visibility: visible; }
-@keyframes login-column-emerge { from { transform: translateY(var(--entry-offset)); } to { transform: translateY(0); } }
+@keyframes login-backdrop-emerge {
+  0% { opacity: 0; transform: translateY(24px) scale(1.025); }
+  70% { opacity: 1; transform: translateY(-3px) scale(1.002); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
 .login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
 .login-card .login-input { display: flex; align-items: center; gap: 13px; height: 62px; padding: 0 15px; border: 1px solid #b6b6bf; border-radius: 15px; background: #fff; margin-top: 22px; }
@@ -1247,7 +1250,7 @@
   .login-screen .login-card { padding: 28px 24px; }
 }
 @media (prefers-reduced-motion: reduce) { .login-cover-column { animation: none; will-change: auto; } }
-@media (prefers-reduced-motion: reduce) { .login-column-reveal.ready { animation: none; opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .login-backdrop.ready { animation: none; opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .login-cover-column img, .login-cover-column img.loaded { transition: none; } }
 @media (max-width: 1000px) {
   .log-hero-controls { min-width: 0; width: 100%; }
