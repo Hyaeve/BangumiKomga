@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260911-23">
+<link rel="stylesheet" href="final-overrides.css?v=20260911-24">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -624,7 +624,7 @@
 </div>
 </div>
 </div>
-    <div v-if="editingTask" class="modal-backdrop" @click.self="editingTask=null">
+    <div v-if="editingTask" class="modal-backdrop task-editor-backdrop" @click.self="editingTask=null">
 <form class="modal task-modal" @submit.prevent="saveTask">
 <button type="button" class="modal-close" @click="editingTask=null">×</button>
 <h2>{{editingTask.id ? '编辑计划任务' : '新建计划任务'}}</h2>
@@ -663,6 +663,10 @@
 <button type="button" role="switch" class="task-ai-toggle" :class="{active:editingTask.lock_completed}" :aria-checked="editingTask.lock_completed" @click="editingTask.lock_completed=!editingTask.lock_completed">
 <span aria-hidden="true" class="task-toggle-switch"></span>完成锁定</button>
 </div>
+<fieldset v-if="editingTask.functions.includes('metadata_correction')" class="task-text-field task-filter-field">
+<legend>过滤词条</legend>
+<textarea v-model="editingTask.filter_terms" aria-label="过滤词条" spellcheck="false" placeholder="一行一个词条"></textarea>
+</fieldset>
 <tag-picker v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" id="task-metadata" label="元数据候选" v-model="editingTask.fields" :options="taskMetadataOptions" placeholder="请选择元数据">
 </tag-picker>
 <tag-picker v-if="editingTask.functions.length" id="task-libraries" label="应用媒体库" v-model="editingTask.card_ids" :options="taskLibraryOptions" placeholder="请选择媒体库">
@@ -755,7 +759,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260911-22">
+<script src="config.js?v=20260911-24">
 </script>
 </body>
 </html>
