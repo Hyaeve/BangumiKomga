@@ -667,11 +667,9 @@
 .task-filter-field textarea:is(:hover,:focus)::-webkit-scrollbar-thumb,
 .task-editor-backdrop::-webkit-scrollbar-thumb { background: #d0ccd6; border-radius: 4px; }
 .task-filter-field textarea::-webkit-scrollbar-corner { background: transparent; }
-.task-modal .filter-regex-option { display: flex !important; flex-direction: row; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 4px 5px; font-size: 12px; color: #7560a7; }
-.task-filter-field .filter-regex-option input { width: 14px; height: 14px; min-height: 0 !important; padding: 0 !important; accent-color: #8270ba; }
 .filter-textarea-wrap { position: relative; }
 .filter-resize-handle { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: #fff; color: #a89bb8; cursor: ns-resize; touch-action: none; }
-.filter-resize-handle::before { content: ""; position: absolute; width: 9px; height: 5px; border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; left: 7px; top: 10px; }
+.filter-resize-handle::before { content: ""; position: absolute; right: 3px; bottom: 3px; width: 10px; height: 10px; background: repeating-linear-gradient(135deg, transparent 0 2px, currentColor 2px 3px); clip-path: polygon(100% 0,100% 100%,0 100%); }
 .filter-resize-handle:hover { color: #7560a7; background: #f2eef7; }
 .filter-resize-handle:focus-visible { outline: 2px solid #b4a4d1; outline-offset: -2px; }
 .task-modal-backdrop,
@@ -1272,7 +1270,7 @@
 /* Login artwork is limited to media cards explicitly published as backgrounds. */
 .login-screen { background: #e8ebee; isolation: isolate; }
 .login-backdrop { position: absolute; inset: 0; overflow: hidden; z-index: -1; opacity: 0; }
-.login-backdrop.ready { animation: login-backdrop-emerge 1.4s both; }
+.login-backdrop.ready { animation: login-backdrop-emerge 2.8s cubic-bezier(.42,0,.35,1) both; }
 .login-backdrop::after { content: none; }
 .login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
 .login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
@@ -1281,9 +1279,7 @@
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.2s ease; }
 .login-cover-column img.loaded { opacity: 1; visibility: visible; transition: none; }
 @keyframes login-backdrop-emerge {
-  0% { opacity: 0; filter: saturate(.96) brightness(1.04); animation-timing-function: cubic-bezier(.18,.68,.3,1); }
-  48% { opacity: .92; filter: saturate(1.015) brightness(1.015); animation-timing-function: cubic-bezier(.3,0,.5,1); }
-  78% { opacity: .98; filter: saturate(1.005) brightness(1.005); animation-timing-function: cubic-bezier(.36,0,.64,1); }
+  0% { opacity: 0; filter: saturate(.98) brightness(1.015); }
   100% { opacity: 1; filter: saturate(1) brightness(1); }
 }
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
