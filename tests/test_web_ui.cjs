@@ -585,6 +585,8 @@ async function main() {
     await page.waitForFunction(() => [...document.querySelectorAll('.login-backdrop img')].length > 0 &&
       [...document.querySelectorAll('.login-backdrop img')].every(img=>img.complete&&img.naturalWidth));
     assert.equal(await page.locator('.login-cover-column').count(), 8);
+    assert.equal(await page.locator('.login-column-reveal.ready').count(), 8);
+    assert.equal(await page.locator('.login-column-reveal').first().evaluate(el=>getComputedStyle(el).animationName), 'none');
     assert.equal(await page.locator('.login-backdrop img').count(), 64);
     assert.equal(await page.locator('.login-backdrop').evaluate(el=>getComputedStyle(el,'::after').content), 'none');
     assert.equal(await page.locator('.login-input').first().evaluate(el=>getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)');
@@ -604,6 +606,23 @@ async function main() {
     await page.setViewportSize({width:1440,height:1000});
     await page.screenshot({path:path.join(output,'login-desktop.png')});
     await page.emulateMedia({reducedMotion:'no-preference'});
+    const entrance = await page.locator('.login-column-reveal').evaluateAll(columns=>columns.map(el=>{
+      const animation=el.getAnimations().find(item=>item.animationName==='login-column-emerge');
+      animation.pause();
+      animation.currentTime=1200;
+      const style=getComputedStyle(el);
+      return {delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),y:new DOMMatrix(style.transform).m42};
+    }));
+    assert(entrance.every((item,index)=>Math.abs(item.delay-index*.4)<.001));
+    assert(entrance[0].opacity>0 && entrance[0].opacity<1);
+    assert(entrance[0].y>0 && entrance[0].y<72);
+    assert(entrance[0].opacity>entrance[1].opacity);
+    assert.equal(entrance[7].opacity,0);
+    await page.screenshot({path:path.join(output,'login-columns-emerging.png')});
+    await page.locator('.login-column-reveal').evaluateAll(columns=>columns.forEach(el=>{
+      el.getAnimations().find(item=>item.animationName==='login-column-emerge').finish();
+    }));
+    assert.equal(await page.locator('.login-column-reveal').last().evaluate(el=>getComputedStyle(el).opacity),'1');
     const driftStart = await page.locator('.login-cover-column').first().evaluate(el=>getComputedStyle(el).transform);
     await page.waitForTimeout(300);
     const driftEnd = await page.locator('.login-cover-column').first().evaluate(el=>getComputedStyle(el).transform);
