@@ -1224,8 +1224,8 @@
 .login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
 .login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
 .login-cover-column:nth-child(even) { margin-top: -90px; animation-direction: alternate-reverse; animation-duration: 115s; }
-.login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.8s cubic-bezier(.22,.61,.36,1), visibility 0s linear 1.8s; }
-.login-cover-column img.loaded { opacity: 1; visibility: visible; transition: opacity 1.8s cubic-bezier(.22,.61,.36,1); }
+.login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 4s cubic-bezier(.4,0,.2,1); }
+.login-cover-column img.loaded { opacity: 1; visibility: visible; transition-delay: var(--cover-delay, 0s); }
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
 .login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
 .login-card .login-input { display: flex; align-items: center; gap: 13px; height: 62px; padding: 0 15px; border: 1px solid #b6b6bf; border-radius: 15px; background: #fff; margin-top: 22px; }
@@ -1243,6 +1243,7 @@
   .login-screen .login-card { padding: 28px 24px; }
 }
 @media (prefers-reduced-motion: reduce) { .login-cover-column { animation: none; will-change: auto; } }
+@media (prefers-reduced-motion: reduce) { .login-cover-column img, .login-cover-column img.loaded { transition: none; } }
 @media (max-width: 1000px) {
   .log-hero-controls { min-width: 0; width: 100%; }
   .record-path { grid-column: 1 / -1; }
