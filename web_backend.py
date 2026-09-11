@@ -1367,6 +1367,35 @@ class Handler(BaseHTTPRequestHandler):
                 result = _save_auth(username, password)
                 _write_activity("配置：保存账号", f"后台账号修改为 {username}")
                 self._json(200, result)
+            elif path in ("/api/ai/test", "/api/ai") and not self._authorized():
+                self._json(401, {"error": "请先登录"})
+            elif path == "/api/ai/test":
+                from tools.summary_translation import translate_summary_to_zh
+                body = self._body()
+                settings = _read_state()
+                for key in ("OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL"):
+                    settings[key] = str(body.get(key) or "").strip()
+                sample = "A young reader discovers a secret library and begins a new adventure."
+                try:
+                    translated = translate_summary_to_zh(sample, True, settings, strict=True)
+                    # Never echo credentials even if a provider includes them in its output.
+                    for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OUTBOUND_PROXY_URL"):
+                        if settings.get(key):
+                            translated = translated.replace(settings[key], "[已隐藏]")
+                    translated = translated[:2000]
+                    _write_activity("AI：测试翻译成功", f"接口调用成功，返回中文译文\n原文：{sample}\n译文：{translated}")
+                    self._json(200, {"message": "接口与中文翻译测试通过", "translation": translated})
+                except ValueError as exc:
+                    _write_activity("AI：测试翻译失败", str(exc), level="error")
+                    self._json(400, {"error": str(exc)})
+            elif path == "/api/ai":
+                body = self._body()
+                state = _read_state()
+                for key in ("OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL"):
+                    state[key] = str(body.get(key) or "").strip()
+                save_state(state)
+                _write_activity("配置：保存AI", "AI 接口配置已保存，凭据不写入日志")
+                self._json(200, {"saved": True})
             elif path == "/api/proxy/test" and self._require_auth():
                 from tools.proxy_settings import test_proxy
                 result = test_proxy(self._body().get("url", ""))

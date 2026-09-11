@@ -67,6 +67,8 @@ async function main() {
       else if (url.pathname === '/api/login-background') result = {items:state.KOMGA_LIBRARY_LIST.some(card=>card.LOGIN_BACKGROUND) ? Array.from({length:12}, (_,i)=>({url:`/test-cover/${i}`})) : []};
       else if (url.pathname === '/api/status') result = executionStatus;
       else if (url.pathname === '/api/proxy/test') result = {ok:true,message:'代理连接成功'};
+      else if (url.pathname === '/api/ai/test') result = {message:'接口与中文翻译测试通过',translation:'年轻读者发现秘密图书馆。'};
+      else if (url.pathname === '/api/ai') { Object.assign(state,body); result = {saved:true}; }
       else if (url.pathname === '/api/proxy') { state.OUTBOUND_PROXY_URL = body.url; result = {url:body.url}; }
       else if (url.pathname === '/api/tasks/run') {
         executionStatus = { running: true, tasks: {...executionStatus.tasks,[body.id]:{state:'running',stopping:false}} };
@@ -462,9 +464,14 @@ async function main() {
     await page.locator('.proxy-card').getByRole('button', {name:'保存',exact:true}).click();
     await page.getByText('代理配置已保存', {exact:true}).waitFor();
     assert.equal(state.OUTBOUND_PROXY_URL, 'http://127.0.0.1:7890');
-    const aiBox = await page.locator('.ai-card').boundingBox();
+    assert.equal(await page.locator('.settings-left > .ai-card').count(),1);
+    await page.locator('.ai-card').getByRole('button',{name:'测试',exact:true}).click();
+    await page.getByText('接口与中文翻译测试通过：年轻读者发现秘密图书馆。',{exact:true}).waitFor();
+    await page.locator('.ai-card').getByRole('button',{name:'保存',exact:true}).click();
+    await page.getByText('AI 配置已保存',{exact:true}).waitFor();
+    const aiBox = await page.locator('.strategy-card').boundingBox();
     const proxyBox = await page.locator('.proxy-card').boundingBox();
-    assert(Math.abs(aiBox.width-proxyBox.width)<1 && Math.abs(aiBox.y-proxyBox.y)<1, 'AI and proxy share equal-width columns');
+    assert(Math.abs(aiBox.width-proxyBox.width)<1 && Math.abs(aiBox.y-proxyBox.y)<1 && proxyBox.x<aiBox.x, 'proxy and basic settings share equal-width columns');
     await page.screenshot({ path: path.join(output, 'settings-desktop.png') });
     await page.setViewportSize({width:390,height:844});
     await page.locator('.proxy-card').scrollIntoViewIfNeeded();

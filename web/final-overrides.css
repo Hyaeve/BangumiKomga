@@ -1563,6 +1563,9 @@
 .runtime-log-row.error .runtime-log-detail, .runtime-log-row.critical .runtime-log-detail { color: #aa6d78; }
 .settings-network-row { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; flex: 1 1 auto; min-width: 0; }
 .settings-network-row .setting-card { min-width: 0; margin: 0 !important; }
+.settings-left .ai-card { flex: 1 1 auto; }
+.settings-network-row .strategy-card { grid-area: auto !important; }
+.ai-card .ai-actions button { width: 100%; }
 .settings-network-row .ai-card-head { flex-wrap: wrap; gap: 10px; }
 .proxy-card { display: flex; flex-direction: column; }
 .proxy-card h3 { margin: 0 0 22px !important; }

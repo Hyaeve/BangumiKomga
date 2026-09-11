@@ -9,6 +9,10 @@ createApp({
       showLoginPassword: false,
       loginBackground: [],
       proxyTesting: false,
+      aiTesting: false,
+      aiSaving: false,
+      aiMessage: '',
+      aiError: false,
       proxySaving: false,
       proxyMessage: '',
       proxyError: false,
@@ -306,6 +310,19 @@ createApp({
     },
     collectConfig() { const next = { ...this.config, KOMGA_LIBRARY_LIST: this.cards.filter(card => card.id).map(card => ({ LIBRARY: card.id, SERVER_ID: card.serverId, IS_NOVEL_ONLY: card.mediaType === 'book', MEDIA_TYPE: card.mediaType, SCRAPE_ENABLED: card.scrapeEnabled, REQUIRED_FIELDS: card.rules, OVERWRITE_FIELDS: card.overwriteFields, TRANSLATE_SUMMARY_TO_ZH: false, AI_RECOGNITION: card.aiRecognition, SORT_VOLUMES: card.sortVolumes, LOGIN_BACKGROUND: card.loginBackground })) }; if (this.komgaAuthMode === 'key') { next.KOMGA_EMAIL = ''; next.KOMGA_EMAIL_PASSWORD = ''; } else { next.KOMGA_API_KEY = ''; } return next; },
     stepRetention(key, step) { this.config[key] = Math.max(1, Math.min(365, Number(this.config[key] || 30) + step)); this.save(); },
+    aiSettings() { return Object.fromEntries(['OPENAI_BASE_URL','OPENAI_API_KEY','OPENAI_MODEL'].map(key=>[key,this.config[key]])); },
+    async testAi() {
+      this.aiTesting = true; this.aiMessage = '';
+      try { const result = await this.api('/api/ai/test',{method:'POST',body:JSON.stringify(this.aiSettings())}); this.aiError = false; this.aiMessage = `${result.message}：${result.translation}`; }
+      catch(error) { this.aiError = true; this.aiMessage = error.message; }
+      finally { this.aiTesting = false; }
+    },
+    async saveAi() {
+      this.aiSaving = true; this.aiMessage = '';
+      try { await this.api('/api/ai',{method:'POST',body:JSON.stringify(this.aiSettings())}); this.aiError = false; this.aiMessage = 'AI 配置已保存'; }
+      catch(error) { this.aiError = true; this.aiMessage = error.message; }
+      finally { this.aiSaving = false; }
+    },
     async testProxy() {
       const url = this.config.OUTBOUND_PROXY_URL;
       this.proxyTesting = true; this.proxyMessage = '';

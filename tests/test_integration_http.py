@@ -103,6 +103,41 @@ class IntegrationHTTPTests(unittest.TestCase):
         settings = {**self.settings, "OPENAI_BASE_URL": self.url + "/v1/chat/completions"}
         self.assertIn("图书馆", translate_summary_to_zh("A library.", True, settings))
 
+    def test_ai_test_endpoint_calls_translation_and_audits_both_results(self):
+        import requests
+        server = ThreadingHTTPServer(("127.0.0.1", 0), web_backend.Handler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        url = f"http://127.0.0.1:{server.server_port}/api/ai/test"
+        try:
+            with patch.object(web_backend, "_read_state", return_value={}), \
+                 patch.object(web_backend, "SESSIONS", {"ai-test"}), \
+                 patch.object(web_backend, "_write_activity") as audit, \
+                 patch.object(web_backend, "save_state") as save:
+                self.assertEqual(requests.post(url, json=self.settings).status_code, 401)
+                response = requests.post(url, json=self.settings, cookies={"bk_session":"ai-test"})
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("图书馆", response.json()["translation"])
+                self.assertEqual(audit.call_args.args[0], "AI：测试翻译成功")
+                self.assertNotIn("fixture-ai", str(audit.call_args))
+                response = requests.post(url, json={**self.settings,"OPENAI_API_KEY":""}, cookies={"bk_session":"ai-test"})
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(audit.call_args.args[0], "AI：测试翻译失败")
+                save.assert_not_called()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_strict_translation_rejects_empty_and_untranslated_output(self):
+        from unittest.mock import Mock
+        for content in ("", "A library.", "some unrelated English text"):
+            response = Mock()
+            response.json.return_value = {"choices":[{"message":{"content":content}}]}
+            with patch("tools.summary_translation.requests.post", return_value=response):
+                with self.assertRaises(ValueError):
+                    translate_summary_to_zh("A library.", True, self.settings, strict=True)
+
     def test_task_dispatch_records_path_and_identity(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

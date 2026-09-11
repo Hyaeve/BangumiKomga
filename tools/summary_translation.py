@@ -24,7 +24,7 @@ def summary_is_chinese(value):
     return chinese >= 2 and chinese >= letters
 
 
-def translate_summary_to_zh(summary: str, enabled_override=None, settings=None, field="summary") -> str:
+def translate_summary_to_zh(summary: str, enabled_override=None, settings=None, field="summary", strict=False) -> str:
     """Return a Simplified Chinese translation, or the source on any failure."""
     text = (summary or "").strip()
     if settings is None:
@@ -36,6 +36,8 @@ def translate_summary_to_zh(summary: str, enabled_override=None, settings=None, 
     enabled = bool(settings.get("TRANSLATE_SUMMARY_TO_ZH", False)) if enabled_override is None else bool(enabled_override)
 
     if not text or not enabled or not (base_url and api_key and model):
+        if strict:
+            raise ValueError("请填写 AI 接口地址、密钥和模型")
         return text
     if not urlsplit(base_url).path.strip("/"):
         base_url += "/v1"
@@ -70,7 +72,11 @@ def translate_summary_to_zh(summary: str, enabled_override=None, settings=None, 
         if isinstance(content, list):
             content = "\n".join(part.get("text", "") for part in content if isinstance(part, dict))
         translated = content.strip() if isinstance(content, str) else ""
+        if strict and (not translated or translated == text or not summary_is_chinese(translated)):
+            raise ValueError("接口未返回有效中文译文")
         return translated or text
     except (KeyError, IndexError, TypeError, ValueError, requests.RequestException) as exc:
+        if strict:
+            raise ValueError("AI 翻译测试失败，请检查接口、密钥、模型及返回的中文译文") from None
         logger.warning("简介中文翻译失败，保留原文：%s", exc)
         return text
