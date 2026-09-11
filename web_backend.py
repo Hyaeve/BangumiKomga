@@ -25,7 +25,7 @@ from tools.komga_path import item_path
 from services.media_policy import media_type, scrape_enabled
 from services.task_execution import TaskExecutor, TaskStopped, TaskTimedOut, task_time_limit
 from tools.task_lock_policy import task_lock_options
-from tools.title_rules import normalize_filter_terms
+from tools.title_rules import normalize_filter_terms, compile_title_filters
 from tools.activity_details import config_changes, task_details, target_names
 from tools.komga_cover import read_series_cover
 
@@ -323,6 +323,7 @@ def save_state(data: dict) -> dict:
             "ai_completion": bool(item.get("ai_completion", False)),
             "include_volumes": bool(item.get("include_volumes", True)),
             "filter_terms": "\n".join(normalize_filter_terms(item.get("filter_terms"))),
+            "filter_regex": bool(item.get("filter_regex", False)),
             **task_lock_options(item),
             "card_ids": [str(card_id) for card_id in (item.get("card_ids") or [])],
             "cron": str(item.get("cron") or "0 6 * * *").strip(),
@@ -333,6 +334,9 @@ def save_state(data: dict) -> dict:
         }
         for item in (merged.get("METADATA_TASKS") or [])
     ]
+    for task in merged["METADATA_TASKS"]:
+        if task["filter_regex"]:
+            compile_title_filters(task["filter_terms"], True)
     with STATE_LOCK:
         WEB_STATE.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
         _write_config(merged)
@@ -493,7 +497,7 @@ def _complete_task_libraries(target_ids, task):
         _run_managed("services.metadata_task", request)
 
 
-def _translate_task_libraries(target_ids, fields=None, correction=None, include_locked=False, lock_completed=None, include_volumes=True, filter_terms=None):
+def _translate_task_libraries(target_ids, fields=None, correction=None, include_locked=False, lock_completed=None, include_volumes=True, filter_terms=None, filter_regex=False):
     from tools.translation_task import translate_library
     from tools.db import init_sqlite3, record_scrape_event
     action = "元数据修正" if correction is not None else "AI翻译"
@@ -536,7 +540,7 @@ def _translate_task_libraries(target_ids, fields=None, correction=None, include_
                     counts = correct_library(komga, library_id, state, record, log, fields, correction,
                                              only_novel=media_type(card), include_locked=include_locked,
                                              lock_completed=bool(lock_completed), include_volumes=include_volumes,
-                                             filter_terms=filter_terms)
+                                             filter_terms=filter_terms, filter_regex=filter_regex)
                 else:
                     counts = translate_library(komga, library_id, state, record, log, fields=fields,
                                                include_locked=include_locked,
@@ -1474,6 +1478,13 @@ class Handler(BaseHTTPRequestHandler):
                 task["ai_completion"] = bool(task.get("ai_completion", False))
                 task["include_volumes"] = bool(task.get("include_volumes", True))
                 task["filter_terms"] = "\n".join(normalize_filter_terms(task.get("filter_terms")))
+                task["filter_regex"] = bool(task.get("filter_regex", False))
+                if task["filter_regex"]:
+                    try:
+                        compile_title_filters(task["filter_terms"], True)
+                    except ValueError as exc:
+                        self._json(400, {"error": str(exc)})
+                        return
                 task.update(task_lock_options(task))
                 task["operations"] = [value for value in task["operations"] if value != "include_locked"]
                 if task["type"] in ("summary_translation", "metadata_correction"):

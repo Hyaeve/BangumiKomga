@@ -48,11 +48,46 @@ class CorrectionTests(unittest.TestCase):
 
     def test_worker_forwards_saved_filter_terms(self):
         request = {"function": "metadata_correction", "task": {"fields": ["title"],
-                   "operations": ["extract_title"], "card_ids": ["s::l"], "filter_terms": "[Vchan]\n广告"}}
+                   "operations": ["extract_title"], "card_ids": ["s::l"], "filter_terms": "[Vchan]\n广告",
+                   "filter_regex": True}}
         with patch("services.task_worker.sys.stdin", io.StringIO(json.dumps(request))), \
              patch("web_backend._translate_task_libraries") as run:
             task_worker.main()
         self.assertEqual(run.call_args.kwargs["filter_terms"], "[Vchan]\n广告")
+        self.assertTrue(run.call_args.kwargs["filter_regex"])
+
+    def test_regex_filter_before_title_rules_and_failed_ai(self):
+        for raw, expression, expected in [
+            ("[Vchan] 你的女友", r"^\[[^\]]+\]\s*", "你的女友"),
+            ("vol.12 你的女友", r"(?i)^VOL\.\d+\s*", "你的女友"),
+            ("AB你的女友", r"^.{2}", "你的女友"),
+            ("[Vchan] 《你的女友》 完结", r"^\[[^\]]+\]\s*" + "\n完结$", "你的女友"),
+        ]:
+            with self.subTest(raw=raw):
+                self.setUp()
+                self.series["metadata"]["title"] = raw
+                with patch("tools.correction_task.recognize_title", return_value=""):
+                    self.run_task(["title"], ["extract_title"], filter_terms=expression,
+                                  filter_regex=True, include_volumes=False)
+                self.client.update_series_metadata.assert_called_once_with("s", {"title": expected})
+
+    def test_invalid_regex_rejected_before_reading_media(self):
+        with self.assertRaisesRegex(ValueError, "第 2 条正则无效"):
+            self.run_task(["title"], ["extract_title"], filter_terms="广告\n[",
+                          filter_regex=True)
+        self.client.iter_library_series.assert_not_called()
+        self.client.update_series_metadata.assert_not_called()
+
+    def test_regex_that_matches_whole_title_does_not_erase_it(self):
+        self.run_task(["title"], ["extract_title"], filter_terms=".*", filter_regex=True, include_volumes=False)
+        self.client.update_series_metadata.assert_not_called()
+
+    def test_regex_original_matches_are_removed_if_ai_reintroduces_them(self):
+        self.series["metadata"]["title"] = "[Vchan] 你的女友"
+        with patch("tools.correction_task.recognize_title", return_value="[Vchan] 你的女友"):
+            self.run_task(["title"], ["extract_title"], filter_terms=r"\[[^\]]+\]",
+                          filter_regex=True, include_volumes=False)
+        self.client.update_series_metadata.assert_called_once_with("s", {"title": "你的女友"})
 
     def test_prefix_bracket_enters_ai_stage(self):
         self.series["metadata"]["title"] = "[Vchan] 你的女友"

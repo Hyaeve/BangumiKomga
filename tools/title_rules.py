@@ -7,6 +7,21 @@ def normalize_filter_terms(value):
     return list(dict.fromkeys(line.strip() for line in lines if isinstance(line, str) and line.strip()))
 
 
+def compile_title_filters(value, use_regex=False):
+    terms = normalize_filter_terms(value)
+    if not terms:
+        return []
+    if not use_regex:
+        return [re.compile("|".join(re.escape(term) for term in sorted(terms, key=len, reverse=True)))]
+    patterns = []
+    for index, term in enumerate(terms, 1):
+        try:
+            patterns.append(re.compile(term))
+        except re.error as exc:
+            raise ValueError(f"过滤词条第 {index} 条正则无效：{exc.msg}") from None
+    return patterns
+
+
 def bracket_title(name):
     raw = str(name or "").strip()
     groups = re.findall(r"\[([^\[\]]+)\]", raw)

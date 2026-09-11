@@ -40,6 +40,7 @@ def task_details(task, state):
     if "metadata_correction" in functions:
         if "extract_title" in task.get("operations", []):
             from tools.title_rules import normalize_filter_terms
+            rows.append("过滤模式：" + ("正则表达式" if task.get("filter_regex") else "原文匹配"))
             rows.append("过滤词条：" + "、".join(normalize_filter_terms(task.get("filter_terms"))))
         rows.append("修正选项：" + "、".join({"simplify":"繁转简","extract_title":"标题提取"}.get(value,value)
                     for value in task.get("operations", []) if value != "include_locked"))

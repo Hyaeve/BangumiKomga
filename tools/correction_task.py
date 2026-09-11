@@ -1,9 +1,8 @@
 """Selected-field metadata correction; existing lock states are preserved."""
 from copy import deepcopy
-import re
 
 from zhconv import convert
-from tools.title_rules import explicit_title, normalize_filter_terms
+from tools.title_rules import explicit_title, compile_title_filters
 from tools.title_recognition import recognize_title
 from tools.komga_path import item_path
 from tools.execution_outcomes import record_outcome
@@ -14,7 +13,7 @@ OPERATIONS = {"simplify", "extract_title", "include_locked"}
 
 
 def correct_library(komga, library_id, settings, on_update, on_log, fields, operations, only_novel=False,
-                    include_locked=False, lock_completed=False, include_volumes=True, filter_terms=None):
+                    include_locked=False, lock_completed=False, include_volumes=True, filter_terms=None, filter_regex=False):
     selected = list(dict.fromkeys(fields))
     options = set(operations)
     include_locked = include_locked or "include_locked" in options
@@ -25,21 +24,29 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
     if options & {"extract_title"} and "simplify" not in options and "title" not in selected:
         raise ValueError("标题提取需要选择标题元数据")
     counts = {"updated": 0, "skipped": 0, "failed": 0}
-    terms = normalize_filter_terms(filter_terms)
-    pattern = re.compile("|".join(re.escape(term) for term in sorted(terms, key=len, reverse=True))) if terms else None
+    patterns = compile_title_filters(filter_terms, filter_regex) if "extract_title" in options and "title" in selected else []
 
-    def filtered_title(value):
-        if not pattern:
+    def filtered_title(value, matched=None):
+        if not patterns:
             return value
+        if filter_regex:
+            def remove(match):
+                if matched is not None and match.group():
+                    matched.add(match.group())
+                return ""
+            for pattern in patterns:
+                value = pattern.sub(remove, value)
+            return value.strip()
         # Repeat only while shortening, so removal cannot leave another configured term behind.
         while True:
-            filtered = pattern.sub("", value)
+            filtered = patterns[0].sub("", value)
             if filtered == value:
                 return filtered.strip()
             value = filtered
 
     def corrected(value, field):
         completed = True
+        matched = set()
         if field == "authors":
             if not isinstance(value, list):
                 raise ValueError("作者数据格式无效")
@@ -54,7 +61,7 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
             raise ValueError("文本数据格式无效")
         result = value
         if field == "title" and "extract_title" in options:
-            result = filtered_title(result)
+            result = filtered_title(result, matched)
             if not result.strip():
                 raise ValueError("过滤后标题为空，保留当前标题且不锁定")
             filtered = result
@@ -62,7 +69,7 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
             if not title:
                 title = recognize_title(result, only_novel=only_novel, settings=settings)
             if title:
-                result = filtered_title(title)
+                result = title if filter_regex else filtered_title(title)
                 if not result.strip():
                     result, completed = filtered, False
             elif filtered != value:
@@ -72,7 +79,13 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
         if "simplify" in options:
             result = convert(result, "zh-cn")
         if field == "title" and "extract_title" in options:
-            result = filtered_title(result)
+            if filter_regex:
+                # Remove only the original matches from AI output, not another prefix via ^.
+                for term in sorted(matched, key=len, reverse=True):
+                    result = result.replace(term, "")
+                result = result.strip()
+            else:
+                result = filtered_title(result)
             if not result.strip():
                 raise ValueError("过滤后标题为空，保留当前标题且不锁定")
         return result, completed

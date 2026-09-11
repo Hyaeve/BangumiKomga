@@ -528,21 +528,37 @@ async function main() {
     const filterInput = page.getByRole('textbox', {name:'过滤词条',exact:true});
     const filterText = '[Vchan]\n[广告]\n' + Array.from({length:24},(_,index)=>`测试词条${index}`).join('\n');
     await filterInput.fill(filterText);
+    const regexMode = page.getByRole('checkbox',{name:'正则表达式',exact:true});
+    assert.equal(await regexMode.isChecked(),false);
+    await regexMode.check();
+    assert(await page.locator('.filter-regex-option').evaluate(el=>{
+      const [input,text]=[...el.children].map(node=>node.getBoundingClientRect());
+      return Math.abs(input.y+input.height/2-text.y-text.height/2)<2;
+    }));
     const filterLayout = await filterInput.evaluate(el=>{
       const css=getComputedStyle(el);
       el.scrollTop=el.scrollHeight;
       return {height:el.clientHeight,scrollTop:el.scrollTop,resize:css.resize,scrollbar:css.scrollbarWidth};
     });
     assert(filterLayout.height<=144 && filterLayout.scrollTop>0);
-    assert.equal(filterLayout.resize,'both');
+    assert.equal(filterLayout.resize,'none');
     assert.equal(filterLayout.scrollbar,'thin');
     await filterInput.scrollIntoViewIfNeeded();
     const beforeResize = await filterInput.boundingBox();
+    const resizeHandle = page.getByRole('button',{name:'调整过滤词条高度',exact:true});
+    await resizeHandle.hover();
+    assert.equal(await resizeHandle.evaluate(el=>getComputedStyle(el).cursor),'ns-resize');
     await page.mouse.move(beforeResize.x+beforeResize.width-3,beforeResize.y+beforeResize.height-3);
     await page.mouse.down();
     await page.mouse.move(beforeResize.x+beforeResize.width-3,beforeResize.y+beforeResize.height+100,{steps:10});
     await page.mouse.up();
     assert((await filterInput.boundingBox()).height>beforeResize.height+50);
+    assert.equal((await filterInput.boundingBox()).width,beforeResize.width);
+    await resizeHandle.focus();
+    await resizeHandle.press('Home');
+    assert.equal((await filterInput.boundingBox()).height,144);
+    await resizeHandle.press('ArrowDown');
+    assert.equal((await filterInput.boundingBox()).height,168);
     await filterInput.evaluate(el=>{el.style.height='1100px';});
     await page.locator('.task-modal .modal-actions').scrollIntoViewIfNeeded();
     const bottomActions = await page.locator('.task-modal .modal-actions').boundingBox();
@@ -562,6 +578,7 @@ async function main() {
     assert.deepEqual(tasks.at(-1).operations, ['simplify', 'extract_title']);
     assert.equal(tasks.at(-1).include_locked, true);
     assert.equal(tasks.at(-1).filter_terms, filterText);
+    assert.equal(tasks.at(-1).filter_regex,true);
     assert.equal(tasks.at(-1).include_volumes, false);
     assert.equal(tasks.at(-1).lock_completed, true);
     assert.deepEqual(tasks.at(-1).fields, ['title', 'summary', 'publisher', 'authors']);
@@ -582,6 +599,7 @@ async function main() {
     }));
     await page.screenshot({ path: path.join(output, 'correction-task-cards.png') });
     await page.locator('.task-card.metadata_correction').click();
+    assert.equal(await page.getByRole('checkbox',{name:'正则表达式',exact:true}).isChecked(),true);
     assert.equal(await page.getByRole('textbox',{name:'过滤词条',exact:true}).inputValue(), filterText);
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('textbox',{name:'过滤词条',exact:true}).evaluate(el=>{el.style.height='950px';});
@@ -664,11 +682,11 @@ async function main() {
       animation.pause();
       animation.currentTime=0;
       const startY=new DOMMatrix(getComputedStyle(el).transform).m42;
-      animation.currentTime=450;
+      animation.currentTime=350;
       const style=getComputedStyle(el);
       return {duration:parseFloat(style.animationDuration),delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),startY,y:new DOMMatrix(style.transform).m42,filter:style.filter};
     });
-    assert.equal(entrance.duration,1.8);
+    assert.equal(entrance.duration,1.4);
     assert.equal(entrance.delay,0);
     assert(entrance.opacity>0 && entrance.opacity<1);
     assert.equal(entrance.startY,0);
@@ -678,7 +696,7 @@ async function main() {
     await page.screenshot({path:path.join(output,'login-background-emerging.png')});
     const settling = await page.locator('.login-backdrop').evaluate(el=>{
       const animation=el.getAnimations().find(item=>item.animationName==='login-backdrop-emerge');
-      return [450,936,1368,1800].map(time=>{
+      return [350,672,1092,1400].map(time=>{
         animation.currentTime=time;
         const style=getComputedStyle(el);
         const matrix=new DOMMatrix(style.transform);

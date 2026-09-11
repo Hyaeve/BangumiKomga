@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260911-24">
+<link rel="stylesheet" href="final-overrides.css?v=20260911-25">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -665,7 +665,11 @@
 </div>
 <fieldset v-if="editingTask.functions.includes('metadata_correction')" class="task-text-field task-filter-field">
 <legend>过滤词条</legend>
+<label class="filter-regex-option"><input type="checkbox" v-model="editingTask.filter_regex"><span>正则表达式</span></label>
+<div class="filter-textarea-wrap">
 <textarea v-model="editingTask.filter_terms" aria-label="过滤词条" spellcheck="false" placeholder="一行一个词条"></textarea>
+<button type="button" class="filter-resize-handle" aria-label="调整过滤词条高度" @pointerdown="startFilterResize" @keydown="resizeFilterByKey"></button>
+</div>
 </fieldset>
 <tag-picker v-if="editingTask.functions.some(value => ['metadata_completion','summary_translation','metadata_correction'].includes(value))" id="task-metadata" label="元数据候选" v-model="editingTask.fields" :options="taskMetadataOptions" placeholder="请选择元数据">
 </tag-picker>
@@ -759,7 +763,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260911-24">
+<script src="config.js?v=20260911-25">
 </script>
 </body>
 </html>
