@@ -88,8 +88,8 @@ async function main() {
       else if (url.pathname === '/api/tasks') {
         if (req.method === 'POST') {
           const existing = tasks.findIndex(task => task.id === body.id);
-          if (existing >= 0) tasks.splice(existing, 1);
-          tasks.push({ ...body, id: body.id || 'saved-task' });
+          if (existing >= 0) tasks.splice(existing, 1, {...body});
+          else tasks.push({ ...body, id: body.id || 'saved-task' });
         }
         result = { items: tasks };
       }
@@ -270,7 +270,7 @@ async function main() {
     assert.equal(await page.locator('.cron-picker').count(), 1);
     assert.equal(await page.locator('.cron-picker input').inputValue(), '0 6 * * *');
     const timeLimit = page.getByRole('spinbutton',{name:'时间限制',exact:true});
-    assert.equal(await timeLimit.inputValue(),'0');
+    assert.equal(await timeLimit.inputValue(),'2');
     assert.equal(await timeLimit.getAttribute('step'),'0.5');
     const scheduleFields = await page.locator('.task-schedule-row > fieldset').evaluateAll(elements=>elements.map(el=>{
       const box=el.getBoundingClientRect(), style=getComputedStyle(el), title=getComputedStyle(el.querySelector('legend'));
@@ -292,9 +292,9 @@ async function main() {
     await page.locator('.task-time-limit').hover();
     assert.equal(await page.locator('.task-time-limit .day-unit').evaluate(el=>getComputedStyle(el).opacity),'0');
     await page.getByRole('button',{name:'增加时间限制',exact:true}).click();
-    assert.equal(await timeLimit.inputValue(),'0.5');
+    assert.equal(await timeLimit.inputValue(),'2.5');
     await page.getByRole('button',{name:'减少时间限制',exact:true}).click();
-    assert.equal(await timeLimit.inputValue(),'0');
+    assert.equal(await timeLimit.inputValue(),'2');
     await page.getByRole('button',{name:'减少时间限制',exact:true}).evaluate(el=>el.blur());
     await page.locator('.task-modal h2').hover();
     assert.equal(await page.locator('.task-time-limit .day-unit').evaluate(el=>getComputedStyle(el).opacity),'1');

@@ -159,6 +159,47 @@ class RecordPathTests(unittest.TestCase):
 
 
 class TaskConfigPersistenceTests(unittest.TestCase):
+    def test_edit_keeps_order_and_new_task_defaults_to_two_hours(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+        from urllib.request import Request, urlopen
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(web_backend, "CONFIG_DIR", root), \
+                 patch.object(web_backend, "CONFIG_FILE", root / "config.py"), \
+                 patch.object(web_backend, "WEB_STATE", root / "state.json"), \
+                 patch.object(web_backend, "SESSIONS", {"test-session"}), \
+                 patch.object(web_backend, "_write_activity"):
+                tasks = [{"id": key, "name": key, "functions": ["card_collage_refresh"],
+                          "card_ids": ["s::lib"], "time_limit_hours": hours}
+                         for key, hours in [("last", 0), ("first", 1.5), ("middle", 3)]]
+                web_backend.save_state({"METADATA_TASKS": tasks})
+                server = ThreadingHTTPServer(("127.0.0.1", 0), web_backend.Handler)
+                thread = threading.Thread(target=server.serve_forever)
+                thread.start()
+                def save(task):
+                    request = Request(f"http://127.0.0.1:{server.server_port}/api/tasks",
+                        data=json.dumps(task).encode(),
+                        headers={"Cookie": "bk_session=test-session", "Content-Type": "application/json"})
+                    with urlopen(request) as response:
+                        return json.load(response)["items"]
+                try:
+                    for task in tasks:
+                        payload = {key: value for key, value in task.items() if key != "time_limit_hours"}
+                        payload["name"] += " edited"
+                        saved = save(payload)
+                        self.assertEqual([item["id"] for item in saved], ["last", "first", "middle"])
+                        self.assertEqual([item["time_limit_hours"] for item in saved], [0, 1.5, 3])
+                    saved = save({"name": "new", "functions": ["card_collage_refresh"]})
+                    self.assertEqual(saved[-1]["time_limit_hours"], 2)
+                    self.assertEqual([item["id"] for item in saved[:-1]], ["last", "first", "middle"])
+                    (root / "state.json").unlink()
+                    self.assertEqual(web_backend._read_state()["METADATA_TASKS"], saved)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join()
+
     def test_media_policy_survives_config_reload_and_legacy_translation_is_removed(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -1411,7 +1411,13 @@ class Handler(BaseHTTPRequestHandler):
                 if task["type"] not in labels:
                     self._json(400, {"error": "无效的任务功能"})
                     return
-                tasks = [item for item in (state.get("METADATA_TASKS") or []) if item.get("id") != task["id"]]
+                original_tasks = state.get("METADATA_TASKS") or []
+                task_index = next((index for index, item in enumerate(original_tasks)
+                                   if item.get("id") == task["id"]), len(original_tasks))
+                previous_task = original_tasks[task_index] if task_index < len(original_tasks) else None
+                task["time_limit_hours"] = task.get("time_limit_hours",
+                    previous_task.get("time_limit_hours", 0) if previous_task is not None else 2)
+                tasks = [item for item in original_tasks if item.get("id") != task["id"]]
                 task["name"] = str(task.get("name") or "").strip()
                 if not task["name"]:
                     base_name = labels.get(task["type"], "计划任务")
@@ -1450,7 +1456,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 task["schedule"] = task["cron"]
                 task["enabled"] = bool(task.get("enabled", True))
-                tasks.append(task)
+                tasks.insert(task_index, task)
                 state["METADATA_TASKS"] = tasks
                 result = save_state(state)
                 _write_activity("计划任务：保存", task_details(task, result))
