@@ -609,15 +609,16 @@ async function main() {
     const entrance = await page.locator('.login-column-reveal').evaluateAll(columns=>columns.map(el=>{
       const animation=el.getAnimations().find(item=>item.animationName==='login-column-emerge');
       animation.pause();
-      animation.currentTime=1200;
+      animation.currentTime=0;
+      const startY=new DOMMatrix(getComputedStyle(el).transform).m42;
+      animation.currentTime=6500;
       const style=getComputedStyle(el);
-      return {delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),y:new DOMMatrix(style.transform).m42};
+      return {delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),startY,y:new DOMMatrix(style.transform).m42};
     }));
     assert(entrance.every((item,index)=>Math.abs(item.delay-index*.4)<.001));
-    assert(entrance[0].opacity>0 && entrance[0].opacity<1);
-    assert(entrance[0].y>0 && entrance[0].y<72);
-    assert(entrance[0].opacity>entrance[1].opacity);
-    assert.equal(entrance[7].opacity,0);
+    assert(entrance.every(item=>item.opacity===1));
+    assert(entrance.every((item,index)=>index%2===0 ? item.startY<0 && item.y<0 : item.startY>0 && item.y>0));
+    assert(entrance.every(item=>Math.abs(item.startY)>1000 && Math.abs(item.y)<Math.abs(item.startY)));
     await page.screenshot({path:path.join(output,'login-columns-emerging.png')});
     await page.locator('.login-column-reveal').evaluateAll(columns=>columns.forEach(el=>{
       el.getAnimations().find(item=>item.animationName==='login-column-emerge').finish();
