@@ -2,7 +2,7 @@
 from copy import deepcopy
 
 from zhconv import convert
-from tools.title_rules import explicit_title, compile_title_filters
+from tools.title_rules import explicit_title, title_filter_rules
 from tools.title_recognition import recognize_title
 from tools.komga_path import item_path
 from tools.execution_outcomes import record_outcome
@@ -24,22 +24,24 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
     if options & {"extract_title"} and "simplify" not in options and "title" not in selected:
         raise ValueError("标题提取需要选择标题元数据")
     counts = {"updated": 0, "skipped": 0, "failed": 0}
-    patterns = compile_title_filters(filter_terms, filter_regex) if "extract_title" in options and "title" in selected else []
+    rules = title_filter_rules(filter_terms, filter_regex) if "extract_title" in options and "title" in selected else []
 
     def filtered_title(value, matched=None):
-        if not patterns:
+        if not rules:
             return value
-        if filter_regex:
-            def remove(match):
-                if matched is not None and match.group():
-                    matched.add(match.group())
-                return ""
-            for pattern in patterns:
+        def remove(match):
+            if matched is not None and match.group():
+                matched.add(match.group())
+            return ""
+        # Anchored regex rules run once; only literal terms may be removed repeatedly.
+        if matched is not None:
+            for pattern, is_regex in rules:
                 value = pattern.sub(remove, value)
-            return value.strip()
-        # Repeat only while shortening, so removal cannot leave another configured term behind.
         while True:
-            filtered = patterns[0].sub("", value)
+            filtered = value
+            for pattern, is_regex in rules:
+                if not is_regex:
+                    filtered = pattern.sub(remove, filtered)
             if filtered == value:
                 return filtered.strip()
             value = filtered
@@ -69,7 +71,7 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
             if not title:
                 title = recognize_title(result, only_novel=only_novel, settings=settings)
             if title:
-                result = title if filter_regex else filtered_title(title)
+                result = title
                 if not result.strip():
                     result, completed = filtered, False
             elif filtered != value:
@@ -79,13 +81,9 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
         if "simplify" in options:
             result = convert(result, "zh-cn")
         if field == "title" and "extract_title" in options:
-            if filter_regex:
-                # Remove only the original matches from AI output, not another prefix via ^.
-                for term in sorted(matched, key=len, reverse=True):
-                    result = result.replace(term, "")
-                result = result.strip()
-            else:
-                result = filtered_title(result)
+            for term in sorted(matched, key=len, reverse=True):
+                result = result.replace(term, "")
+            result = filtered_title(result).strip()
             if not result.strip():
                 raise ValueError("过滤后标题为空，保留当前标题且不锁定")
         return result, completed

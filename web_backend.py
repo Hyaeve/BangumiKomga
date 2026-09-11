@@ -335,8 +335,7 @@ def save_state(data: dict) -> dict:
         for item in (merged.get("METADATA_TASKS") or [])
     ]
     for task in merged["METADATA_TASKS"]:
-        if task["filter_regex"]:
-            compile_title_filters(task["filter_terms"], True)
+        compile_title_filters(task["filter_terms"], task["filter_regex"])
     with STATE_LOCK:
         WEB_STATE.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
         _write_config(merged)
@@ -1479,12 +1478,11 @@ class Handler(BaseHTTPRequestHandler):
                 task["include_volumes"] = bool(task.get("include_volumes", True))
                 task["filter_terms"] = "\n".join(normalize_filter_terms(task.get("filter_terms")))
                 task["filter_regex"] = bool(task.get("filter_regex", False))
-                if task["filter_regex"]:
-                    try:
-                        compile_title_filters(task["filter_terms"], True)
-                    except ValueError as exc:
-                        self._json(400, {"error": str(exc)})
-                        return
+                try:
+                    compile_title_filters(task["filter_terms"], task["filter_regex"])
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
                 task.update(task_lock_options(task))
                 task["operations"] = [value for value in task["operations"] if value != "include_locked"]
                 if task["type"] in ("summary_translation", "metadata_correction"):

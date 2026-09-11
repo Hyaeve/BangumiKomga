@@ -89,6 +89,26 @@ class CorrectionTests(unittest.TestCase):
                           filter_regex=True, include_volumes=False)
         self.client.update_series_metadata.assert_called_once_with("s", {"title": "你的女友"})
 
+    def test_mixed_literal_and_regex_terms(self):
+        self.series["metadata"]["title"] = "[Vchan] 广告123 《你的女友》 完结"
+        with patch("tools.correction_task.recognize_title") as ai:
+            self.run_task(["title"], ["extract_title"],
+                          filter_terms="[Vchan]\n/广告\\d+/\n完结", include_volumes=False)
+        ai.assert_not_called()
+        self.client.update_series_metadata.assert_called_once_with("s", {"title": "你的女友"})
+
+    def test_mixed_regex_flags_and_anchored_single_pass(self):
+        self.series["metadata"]["title"] = "VOL.12 AB你的女友"
+        with patch("tools.correction_task.recognize_title", return_value=""):
+            self.run_task(["title"], ["extract_title"],
+                          filter_terms=r"/^vol\.\d+\s*/i" + "\n/^.{2}/", include_volumes=False)
+        self.client.update_series_metadata.assert_called_once_with("s", {"title": "你的女友"})
+
+    def test_mixed_invalid_regex_is_rejected(self):
+        for terms in ("[Vchan]\n/[/", "/广告/z"):
+            with self.assertRaisesRegex(ValueError, "正则"):
+                self.run_task(["title"], ["extract_title"], filter_terms=terms)
+
     def test_prefix_bracket_enters_ai_stage(self):
         self.series["metadata"]["title"] = "[Vchan] 你的女友"
         with patch("tools.correction_task.recognize_title", return_value="你的女友") as ai:

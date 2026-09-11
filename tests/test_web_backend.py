@@ -253,6 +253,13 @@ class TaskConfigPersistenceTests(unittest.TestCase):
                         "fields": ["title"], "operations": ["extract_title"],
                         "filter_regex": True, "filter_terms": "["}]})
                 self.assertEqual(web_backend._read_state()["METADATA_TASKS"], tasks)
+                web_backend.save_state({"METADATA_TASKS": [{
+                    "id": "mixed", "functions": ["metadata_correction"],
+                    "fields": ["title"], "operations": ["extract_title"],
+                    "filter_terms": "[Vchan]\n/广告\\d+/i"}]})
+                mixed = web_backend._read_state()["METADATA_TASKS"][0]
+                self.assertEqual(mixed["filter_terms"], "[Vchan]\n/广告\\d+/i")
+                self.assertFalse(mixed["filter_regex"])
 
 
 if __name__ == "__main__":

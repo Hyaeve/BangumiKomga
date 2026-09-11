@@ -526,15 +526,9 @@ async function main() {
     await page.getByRole('switch', {name:'包含锁定',exact:true}).click();
     await page.getByRole('switch', {name:'完成锁定',exact:true}).click();
     const filterInput = page.getByRole('textbox', {name:'过滤词条',exact:true});
-    const filterText = '[Vchan]\n[广告]\n' + Array.from({length:24},(_,index)=>`测试词条${index}`).join('\n');
+    const filterText = '[Vchan]\n/广告\\d+/i\n' + Array.from({length:24},(_,index)=>`测试词条${index}`).join('\n');
     await filterInput.fill(filterText);
-    const regexMode = page.getByRole('checkbox',{name:'正则表达式',exact:true});
-    assert.equal(await regexMode.isChecked(),false);
-    await regexMode.check();
-    assert(await page.locator('.filter-regex-option').evaluate(el=>{
-      const [input,text]=[...el.children].map(node=>node.getBoundingClientRect());
-      return Math.abs(input.y+input.height/2-text.y-text.height/2)<2;
-    }));
+    assert.equal(await page.getByRole('checkbox',{name:'正则表达式',exact:true}).count(),0);
     const filterLayout = await filterInput.evaluate(el=>{
       const css=getComputedStyle(el);
       el.scrollTop=el.scrollHeight;
@@ -578,7 +572,7 @@ async function main() {
     assert.deepEqual(tasks.at(-1).operations, ['simplify', 'extract_title']);
     assert.equal(tasks.at(-1).include_locked, true);
     assert.equal(tasks.at(-1).filter_terms, filterText);
-    assert.equal(tasks.at(-1).filter_regex,true);
+    assert.equal(tasks.at(-1).filter_regex,false);
     assert.equal(tasks.at(-1).include_volumes, false);
     assert.equal(tasks.at(-1).lock_completed, true);
     assert.deepEqual(tasks.at(-1).fields, ['title', 'summary', 'publisher', 'authors']);
@@ -599,7 +593,7 @@ async function main() {
     }));
     await page.screenshot({ path: path.join(output, 'correction-task-cards.png') });
     await page.locator('.task-card.metadata_correction').click();
-    assert.equal(await page.getByRole('checkbox',{name:'正则表达式',exact:true}).isChecked(),true);
+    assert.equal(await page.getByRole('checkbox',{name:'正则表达式',exact:true}).count(),0);
     assert.equal(await page.getByRole('textbox',{name:'过滤词条',exact:true}).inputValue(), filterText);
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('textbox',{name:'过滤词条',exact:true}).evaluate(el=>{el.style.height='950px';});
@@ -686,9 +680,10 @@ async function main() {
       const style=getComputedStyle(el);
       return {duration:parseFloat(style.animationDuration),delay:parseFloat(style.animationDelay),opacity:Number(style.opacity),startY,y:new DOMMatrix(style.transform).m42,filter:style.filter};
     });
-    assert.equal(entrance.duration,1.4);
+    assert.equal(entrance.duration,2.8);
     assert.equal(entrance.delay,0);
     assert(entrance.opacity>0 && entrance.opacity<1);
+    assert(entrance.opacity<.12, 'background eases in instead of flashing into view');
     assert.equal(entrance.startY,0);
     assert.equal(entrance.y,0);
     assert.doesNotMatch(entrance.filter,/blur/);
@@ -696,7 +691,7 @@ async function main() {
     await page.screenshot({path:path.join(output,'login-background-emerging.png')});
     const settling = await page.locator('.login-backdrop').evaluate(el=>{
       const animation=el.getAnimations().find(item=>item.animationName==='login-backdrop-emerge');
-      return [350,672,1092,1400].map(time=>{
+      return [350,1400,2400,2800].map(time=>{
         animation.currentTime=time;
         const style=getComputedStyle(el);
         const matrix=new DOMMatrix(style.transform);
@@ -721,6 +716,9 @@ async function main() {
     // Empty selections must remain empty when configuration is reloaded.
     const context = { Vue: { createApp: options => ({ mount: () => { context.options = options; } }) }, TagPicker: {} };
     vm.runInNewContext(fs.readFileSync(path.join(web, 'config.js'), 'utf8'), context);
+    const legacyFilters = context.options.methods.mixedFilterTask({filter_regex:true,filter_terms:'^VOL\\.\\d+\n[广告]'});
+    assert.equal(legacyFilters.filter_regex,false);
+    assert.equal(legacyFilters.filter_terms,'/^VOL\\.\\d+/\n/[广告]/');
     const card = context.options.methods.makeCard.call({ overwriteFieldOptions: [{ value: 'title' }], cardHues: [105] }, { OVERWRITE_FIELDS: [] });
     assert.equal(context.options.methods.formatStat(9999),'9999');
     assert.equal(context.options.methods.formatStat(10000),'10.0k');
