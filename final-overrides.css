@@ -1538,6 +1538,8 @@
 .day-stepper svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 .retention-input:hover .day-unit, .retention-input:focus-within .day-unit { opacity: 0; }
 .retention-input:hover .day-stepper, .retention-input:focus-within .day-stepper { opacity: 1; }
+.task-time-limit { display: block; margin: 18px 0; }
+.task-time-limit input { width: 100%; }
 .strategy-card #service-mode { margin: 18px 0 0; }
 .strategy-card #service-mode .tag-picker-chip { white-space: normal; }
 .task-option-switches { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 18px; margin-top: 18px; }
