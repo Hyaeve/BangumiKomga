@@ -125,12 +125,12 @@ class ScrapeRecordGroupingTests(unittest.TestCase):
         grouped = web_backend._group_scrape_records(rows)
 
         self.assertEqual(len(grouped), 1)
-        self.assertEqual(grouped[0]["volume_count"], 2)
+        self.assertEqual(grouped[0]["volume_count"], 3)
         self.assertEqual(grouped[0]["source_path"], "/books/volume-1.cbz")
         self.assertEqual(grouped[0]["metadata_fields"], ["number", "title", "summary", "numberSort"])
         self.assertEqual(
             [volume["source_path"] for volume in grouped[0]["volumes"]],
-            ["/books/volume-1.cbz", "/books/volume-2.cbz"],
+            ["/books/volume-1.cbz", "", "/books/volume-2.cbz"],
         )
 
 

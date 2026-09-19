@@ -196,12 +196,12 @@ class PagedHistoryTests(unittest.TestCase):
 
     def test_volume_details_are_paged_without_loss(self):
         row = backend._read_scrape_records(search="Book 000")[0]
-        self.assertEqual(row["volume_count"], 110)
+        self.assertEqual(row["volume_count"], 111)
         self.assertEqual(len(row["volumes"]), 50)
         pages = [backend._read_record_details(row["id"], offset) for offset in (0, 50, 100)]
-        self.assertEqual([len(page["items"]) for page in pages], [50, 50, 10])
-        self.assertEqual(len({item["id"] for page in pages for item in page["items"]}), 110)
-        self.assertEqual(pages[0]["total"], 110)
+        self.assertEqual([len(page["items"]) for page in pages], [50, 50, 11])
+        self.assertEqual(len({item["id"] for page in pages for item in page["items"]}), 111)
+        self.assertEqual(pages[0]["total"], 111)
 
     def test_logs_are_capped_at_100_and_filtered_before_pagination(self):
         first = backend._read_runtime_logs(1000, with_total=True)

@@ -9,6 +9,32 @@ from tools.db import init_sqlite3, record_scrape_event
 
 
 class RecordComparisonTests(unittest.TestCase):
+    def test_new_snapshot_event_is_visible_even_with_legacy_series_history(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, conn = init_sqlite3(root / "recordsRefreshed.db")
+            context = {"s::lib": {"server_id": "s", "library_id": "lib", "server_name": "服务"}}
+            with patch.object(web_backend, "ROOT", root), \
+                    patch.object(web_backend, "_configured_library_context", return_value=context), \
+                    patch.object(web_backend, "_cleanup_expired_records"), \
+                    patch.object(web_backend, "_schedule_path_backfill"):
+                record_scrape_event(conn, "漫画", "书名", "lib", "库", ["title"],
+                                    event_kind="series", server_id="s", source_title="书名")
+                old = web_backend._read_scrape_records()[0]
+                record_scrape_event(conn, "漫画", "书名", "lib", "库", ["summary"],
+                                    event_kind="series", server_id="s", source_title="书名",
+                                    metadata_before={"summary": "旧简介"}, metadata_after={"summary": "新简介"})
+                new = web_backend._read_scrape_records()[0]
+                self.assertNotEqual(old["id"], new["id"])
+                self.assertEqual(old["group_key"], new["group_key"])
+                self.assertEqual([item["id"] for item in new["volumes"]], [2, 1])
+                self.assertEqual(new["volume_count"], 2)
+                comparison = web_backend._read_record_comparison(new["volumes"][0]["id"])
+                self.assertEqual(comparison["before"], {"summary": "旧简介"})
+                self.assertEqual(comparison["after"], {"summary": "新简介"})
+                self.assertEqual([item["id"] for item in web_backend._read_record_details(new["id"])["items"]], [2, 1])
+            conn.close()
+
     def test_snapshots_are_persistent_scoped_and_not_in_list(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

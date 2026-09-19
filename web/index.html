@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260920-1">
+<link rel="stylesheet" href="final-overrides.css?v=20260920-3">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -42,6 +42,7 @@
             </svg>
           </button>
         </label>
+        <label class="login-remember"><input type="checkbox" v-model="loginForm.remember"><span>保持登录</span></label>
         <button class="primary login-button" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>进入后台
 </button>
       </form>
@@ -301,7 +302,7 @@
 <span>操作</span>
 </div>
 <div class="record-list">
-<template v-for="record in sortedRecords" :key="record.id">
+<template v-for="record in sortedRecords" :key="recordGroupKey(record)">
 <article class="record-item grouped-record" :class="{expanded:recordExpanded(record), 'record-clickable': !record.volume_count}" :tabindex="record.volume_count ? null : 0" @click="!record.volume_count && openRecordComparison(record)" @keydown.enter.self="!record.volume_count && openRecordComparison(record)">
 <div class="record-main">
 <div class="record-title-row">
@@ -784,7 +785,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260920-1">
+<script src="config.js?v=20260920-3">
 </script>
 </body>
 </html>

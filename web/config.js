@@ -5,7 +5,7 @@ createApp({
   data() {
     return {
       authenticated: false,
-      loginForm: { username: '', password: '' },
+      loginForm: { username: '', password: '', remember: false },
       showLoginPassword: false,
       loginBackground: [],
       loginBackgroundReady: false,
@@ -264,7 +264,7 @@ createApp({
       try { await this.api('/api/auth/login', { method: 'POST', body: JSON.stringify(this.loginForm) }); this.authenticated = true; this.credentialForm.username = this.loginForm.username; this.loginForm.password = ''; await this.loadApp(); }
       catch (error) { this.notify(error.message, true); }
     },
-    async logout() { await this.api('/api/auth/logout', { method: 'POST', body: '{}' }); this.loginForm = {username:'',password:''}; this.showLoginPassword = false; this.authenticated = false; },
+    async logout() { await this.api('/api/auth/logout', { method: 'POST', body: '{}' }); this.loginForm = {username:'',password:'',remember:false}; this.showLoginPassword = false; this.authenticated = false; },
     async loadApp() {
       const config = await this.api('/api/config'); this.applyConfig(config);
       if (this.config.KOMGA_BASE_URL && (this.komgaAuthMode === 'key' ? this.config.KOMGA_API_KEY : (this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD))) await this.loadLibraries(false);
@@ -390,7 +390,7 @@ createApp({
         if (request !== this.recordRequest) return;
         const items = records.items || [];
         await Promise.all(items.map(async record => {
-          const previous = this.records.find(item => item.id === record.id);
+          const previous = this.records.find(item => this.recordGroupKey(item) === this.recordGroupKey(record));
           if (!previous?.volume_offset || !this.recordExpanded(record)) return;
           const offset = Math.min(previous.volume_offset, Math.max(0, Math.ceil(record.volume_count / 50)-1)*50);
           const details = await this.api(`/api/scrape-records/details?id=${encodeURIComponent(record.id)}&offset=${offset}`);
@@ -477,8 +477,9 @@ createApp({
       return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
     },
     comparisonChanged(field) { return JSON.stringify(this.recordComparison?.before?.[field]) !== JSON.stringify(this.recordComparison?.after?.[field]); },
-    toggleRecord(record) { const index = this.expandedRecordIds.indexOf(record.id); if (index >= 0) this.expandedRecordIds.splice(index, 1); else this.expandedRecordIds.push(record.id); },
-    recordExpanded(record) { return this.expandedRecordIds.includes(record.id); },
+    recordGroupKey(record) { return record.group_key || JSON.stringify([record.server_id || '', record.library_id || '', record.item_type || '', (record.source_title || record.item_title || '').trim().toLowerCase()]); },
+    toggleRecord(record) { const key = this.recordGroupKey(record); const index = this.expandedRecordIds.indexOf(key); if (index >= 0) this.expandedRecordIds.splice(index, 1); else this.expandedRecordIds.push(key); },
+    recordExpanded(record) { return this.expandedRecordIds.includes(this.recordGroupKey(record)); },
     async changeDetailPage(record, delta) { const offset = Math.max(0, (record.volume_offset || 0) + delta * 50); try { const data = await this.api(`/api/scrape-records/details?id=${encodeURIComponent(record.id)}&offset=${offset}`); record.volumes = data.items || []; record.volume_count = data.total; record.volume_offset = offset; } catch(error) { this.notify(error.message, true); } },
     formatRecordTime(value) { return String(value || '').replace('T', ' ').replace(/-/g, '/').replace(/\.\d{3}Z?$/, ''); },
     cardServerName(card) { return this.config.KOMGA_SERVERS.find(server => server.id === card.serverId)?.name || 'Komga 服务'; },

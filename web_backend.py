@@ -101,6 +101,7 @@ def _run_managed(module, payload):
 def _stop_task(task_id):
     return TASK_EXECUTOR.stop(task_id)
 SESSIONS = set()
+REMEMBER_SECONDS = 30 * 24 * 60 * 60
 PREVIEW_CACHE = {}
 PREVIEW_CACHE_FILE = DATA_DIR / "cover_collage_cache.json"
 PREVIEW_CACHE_LOCK = threading.RLock()
@@ -206,6 +207,30 @@ def _save_auth(username, password):
     state["WEB_ADMIN_PASSWORD_HASH"] = data["password_hash"]
     _write_config(state)
     return {"username": username}
+
+
+def _remembered_session(token, *, create=False, remove=False):
+    """Persist only token digests, bound to current credentials and an expiry."""
+    if not token:
+        return False
+    path = CONFIG_DIR / "web_sessions.db"
+    if not create and not path.exists():
+        return False
+    with STATE_LOCK:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        auth = _read_auth()
+        fingerprint = hashlib.sha256(json.dumps(auth, sort_keys=True).encode()).hexdigest()
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS sessions (digest TEXT PRIMARY KEY, expires REAL, credentials TEXT)")
+            conn.execute("DELETE FROM sessions WHERE expires<=? OR credentials<>?", (time.time(), fingerprint))
+            if remove:
+                conn.execute("DELETE FROM sessions WHERE digest=?", (digest,))
+            elif create:
+                conn.execute("INSERT INTO sessions VALUES (?,?,?)", (digest, time.time() + REMEMBER_SECONDS, fingerprint))
+            valid = conn.execute("SELECT 1 FROM sessions WHERE digest=?", (digest,)).fetchone() is not None
+            conn.commit()
+        return valid
 
 
 def _read_state() -> dict:
@@ -741,10 +766,12 @@ def _group_scrape_records(rows):
         key = (str(row.get("server_id") or ""), str(row.get("library_id") or ""), str(row.get("item_type") or ""), title.casefold())
         groups.setdefault(key, []).append(row)
     result = []
-    for rows_for_book in groups.values():
-        primary_index = next((i for i, row in enumerate(rows_for_book) if _is_series_scrape_row(row)), 0)
-        primary = dict(rows_for_book[primary_index])
-        details = [dict(row) for i, row in enumerate(rows_for_book) if i != primary_index]
+    for key, rows_for_book in groups.items():
+        rows_for_book = sorted(rows_for_book, key=lambda row: row["id"], reverse=True)
+        primary = dict(rows_for_book[0])
+        # The aggregate header must not hide the newest event and its snapshot.
+        details = rows_for_book if len(rows_for_book) > 1 else []
+        primary["group_key"] = hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()
         fields = []
         for row in rows_for_book:
             for field in row.get("metadata_fields") or []:
@@ -826,16 +853,16 @@ def _read_scrape_records(limit=50, offset=0, search="", newest=True, with_total=
         ), ranked AS (
             SELECT u.id,ROW_NUMBER() OVER (
                 PARTITION BY u.sid,u.lid,u.item_type,LOWER(u.title)
-                ORDER BY (u.kind='series') DESC,u.id DESC) AS position
+                ORDER BY u.id DESC) AS position
             FROM unique_rows u JOIN page p ON u.sid=p.sid AND u.lid=p.lid
                 AND u.item_type=p.item_type AND LOWER(u.title)=p.title_key
-        ) SELECT id FROM ranked WHERE position<=51""", [*params, limit, offset]).fetchall()
+        ) SELECT id FROM ranked WHERE position<=50""", [*params, limit, offset]).fetchall()
     visible = _group_scrape_records(_read_scrape_rows([row[0] for row in rows]))
     for record in visible:
         key = (record["server_id"], record["library_id"], record["item_type"], record["source_title"].lower())
         group = next((item for item in page_groups if item[:4] == key), None)
         if group:
-            record.update(recorded_at=group[4], record_count=group[5], volume_count=group[5]-1, volume_offset=0)
+            record.update(recorded_at=group[4], record_count=group[5], volume_count=group[5] if group[5] > 1 else 0, volume_offset=0)
     visible.sort(key=lambda row: (row["recorded_at"], row["id"]), reverse=newest)
     _schedule_path_backfill(visible)
     return {"items": visible, "total": total} if with_total else visible
@@ -849,7 +876,7 @@ def _read_record_details(record_id, offset=0):
     with closing(sqlite3.connect(ROOT / "recordsRefreshed.db")) as conn:
         clause = """ FROM unique_rows u JOIN unique_rows p ON p.id=?
             AND u.sid=p.sid AND u.lid=p.lid AND u.item_type=p.item_type
-            AND LOWER(u.title)=LOWER(p.title) WHERE u.id<>p.id"""
+            AND LOWER(u.title)=LOWER(p.title)"""
         total = conn.execute(query + "SELECT COUNT(*)" + clause, [*params, primary_id]).fetchone()[0]
         rows = conn.execute(query + "SELECT u.id" + clause + " ORDER BY u.id DESC LIMIT 50 OFFSET ?",
                             [*params, primary_id, max(0, offset)]).fetchall()
@@ -1192,7 +1219,8 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def _authorized(self):
-        return self._session_token() in SESSIONS
+        token = self._session_token()
+        return token in SESSIONS or _remembered_session(token)
 
     def _require_auth(self):
         if self._authorized():
@@ -1375,12 +1403,17 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(401, {"error": "账号或密码错误"})
                     return
                 token = secrets.token_urlsafe(32)
-                SESSIONS.add(token)
+                remember = body.get("remember") is True
+                if remember:
+                    _remembered_session(token, create=True)
+                else:
+                    SESSIONS.add(token)
                 _write_activity("按钮：登录", f"账号 {auth['username']} 登录后台")
                 raw = json.dumps({"authenticated": True, "username": auth["username"]}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Set-Cookie", f"bk_session={token}; Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Set-Cookie", f"bk_session={token}; Path=/; HttpOnly; SameSite=Strict" +
+                                 (f"; Max-Age={REMEMBER_SECONDS}" if remember else ""))
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
@@ -1388,8 +1421,15 @@ class Handler(BaseHTTPRequestHandler):
                 token = self._session_token()
                 if token:
                     SESSIONS.discard(token)
+                    _remembered_session(token, remove=True)
                 _write_activity("按钮：退出登录", "用户退出后台")
-                self._json(200, {"authenticated": False})
+                raw = b'{"authenticated":false}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Set-Cookie", "bk_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
             elif path == "/api/auth/credentials" and self._require_auth():
                 body = self._body()
                 username = str(body.get("username", "")).strip()

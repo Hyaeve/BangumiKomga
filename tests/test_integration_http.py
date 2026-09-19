@@ -153,6 +153,10 @@ class IntegrationHTTPTests(unittest.TestCase):
                 with closing(conn):
                     row = conn.execute("SELECT source_path,komga_id,server_id FROM scrape_records").fetchone()
                 self.assertEqual(row, ("/data/漫画/原书名", "s1", "server"))
+                comparison = web_backend._read_record_comparison(1)
+                self.assertIsInstance(comparison["before"], dict)
+                self.assertIsInstance(comparison["after"], dict)
+                self.assertNotEqual(comparison["before"]["summary"], comparison["after"]["summary"])
 
     def test_legacy_path_resolved_even_without_local_id_history(self):
         record = {"source_title": "原书名", "library_id": "lib", "event_kind": "series"}

@@ -361,6 +361,13 @@ async function main() {
     assert.equal(await page.locator('.record-volumes').count(), 0);
     assert.equal(await page.locator('.record-comparison-modal').count(), 0);
     await page.locator('.record-expand').click();
+    scrapeRecords[0].id = 'book:lib-0:100';
+    await Promise.all([
+      page.waitForResponse(response => response.url().includes('/api/scrape-records?')),
+      page.getByRole('button', {name:'刷新刮削记录',exact:true}).click()
+    ]);
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('.record-volumes').count(), 1, 'new primary event must not collapse the group on refresh');
     await page.locator('.record-volume.record-clickable').click();
     await page.locator('.comparison-side').first().waitFor();
     assert.match(await page.locator('.comparison-side').first().innerText(), /原始标题/);
@@ -673,6 +680,11 @@ async function main() {
     releaseCover();
     await page.locator('.login-backdrop.ready').waitFor({state:'attached'});
     assert.equal(await page.getByRole('textbox', {name:'用户名',exact:true}).inputValue(), '');
+    const rememberLogin = page.getByRole('checkbox', {name:'保持登录',exact:true});
+    assert.equal(await rememberLogin.isChecked(), false);
+    await rememberLogin.check();
+    assert.equal(await rememberLogin.isChecked(), true);
+    await rememberLogin.uncheck();
     assert.equal(await page.locator('.login-input input').last().inputValue(), '');
     await page.waitForFunction(() => [...document.querySelectorAll('.login-backdrop img')].length > 0 &&
       [...document.querySelectorAll('.login-backdrop img')].every(img=>img.complete&&img.naturalWidth));
