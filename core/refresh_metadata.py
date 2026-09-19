@@ -13,7 +13,7 @@ from tools.notification import send_notification
 from tools.summary_translation import translate_summary_to_zh, summary_is_chinese
 from tools.db import init_sqlite3, record_series_status, record_book_status, record_scrape_event, record_activity_log
 from tools.cache_time import TimeCacheManager
-from tools.komga_path import resolve_item_path
+from tools.komga_path import resolve_item_path, series_title_path
 from services.media_policy import media_type
 from api.bangumi_model import SubjectPlatform
 
@@ -349,6 +349,23 @@ def refresh_metadata(series_list=None):
                         matched_search_title = ai_title
                         match_source = "AI 识别"
                         logger.debug("AI 标题匹配成功 [%s]: %s", ai_title, series_name)
+
+            if subject_id is None and _ai_recognition_enabled_for_library(series.get("libraryId")):
+                path_context = series_title_path(komga, series)
+                if path_context:
+                    path_title = recognize_title(path_context, only_novel=search_mode, from_path=True)
+                    record_activity_log(conn, "匹配：AI 路径识别",
+                                        f"媒体项目：{series_name}\n路径上下文：{path_context}\n"
+                                        f"提取结果：{path_title or '未识别，继续原始名称兜底'}", source="scraper")
+                    if path_title and path_title not in title_candidates:
+                        title_candidates.append(path_title)
+                        search_results = bgm.search_subjects(path_title, FUZZ_SCORE_THRESHOLD, search_mode)
+                        if search_results:
+                            subject_id = search_results[0]["id"]
+                            metadata = search_results[0]
+                            matched_search_title = path_title
+                            match_source = "AI 路径识别"
+                            logger.debug("AI 路径匹配成功 [%s]: %s", path_title, series_name)
 
             if subject_id is None:
                 # The original full name is the last resort, even when the

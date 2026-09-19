@@ -682,6 +682,10 @@ async function main() {
     assert.equal(await page.getByRole('textbox', {name:'用户名',exact:true}).inputValue(), '');
     const rememberLogin = page.getByRole('checkbox', {name:'保持登录',exact:true});
     assert.equal(await rememberLogin.isChecked(), false);
+    const rememberBox = await rememberLogin.boundingBox();
+    const loginInputBox = await page.locator('.login-input').first().boundingBox();
+    assert(Math.abs(rememberBox.x - loginInputBox.x) < 1, 'remember checkbox aligns with input left edge');
+    assert.equal(await rememberLogin.evaluate(el=>getComputedStyle(el).borderRadius), '5px');
     await rememberLogin.check();
     assert.equal(await rememberLogin.isChecked(), true);
     await rememberLogin.uncheck();

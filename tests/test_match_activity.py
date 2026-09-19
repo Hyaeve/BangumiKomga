@@ -7,7 +7,8 @@ from unittest.mock import Mock
 
 
 class MatchActivityTests(unittest.TestCase):
-    def run_match(self, cached=False, needs_refresh=False, found=True, valid=True, write=True, available=True):
+    def run_match(self, cached=False, needs_refresh=False, found=True, valid=True, write=True, available=True,
+                  ai=False, ai_titles=None, searches=None, path_context=""):
         tree = ast.parse((Path(__file__).parents[1] / "core/refresh_metadata.py").read_text(encoding="utf-8"))
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
                      and node.name in {"refresh_metadata", "_log_match_result"}]
@@ -20,6 +21,7 @@ class MatchActivityTests(unittest.TestCase):
         metadata.isvalid, metadata.title = valid, "匹配标题"
         bgm = Mock()
         bgm.search_subjects.return_value = [{"id": 42, "platform": "漫画"}] if found else []
+        bgm.search_subjects.side_effect = searches
         bgm.get_subject_metadata.return_value = {"platform": "漫画"} if available else None
         komga = Mock()
         komga.update_series_metadata.return_value = write
@@ -28,14 +30,15 @@ class MatchActivityTests(unittest.TestCase):
                      TASK_AI_COMPLETION=False, TASK_COMPLETION_FIELDS=None,
                      USE_BANGUMI_THUMBNAIL=False, CREATE_FAILED_COLLECTION=False,
                      SubjectPlatform=SimpleNamespace(parse=lambda _: "comic", Comic="comic"),
-                     get_title_candidates=lambda _: ["书名"], recognize_title=Mock(),
+                     get_title_candidates=lambda _: ["书名"], recognize_title=Mock(side_effect=ai_titles),
+                     series_title_path=Mock(return_value=path_context),
                      record_activity_log=Mock(), record_scrape_event=Mock(),
                      record_series_status=Mock(return_value=(1, "")),
                      refresh_book_metadata=Mock(), send_notification=Mock(),
                      strftime=Mock(return_value=""), localtime=Mock(),
                      _media_type_for_library=lambda _: "comic", _required_fields_for_series=lambda _: [],
                      _series_needs_refresh=lambda *_: needs_refresh,
-                     _ai_recognition_enabled_for_library=lambda _: False,
+                     _ai_recognition_enabled_for_library=lambda _: ai,
                      _overwrite_fields_for_library=lambda _: ["title"],
                      _apply_summary_translation_policy=Mock(), _translation_enabled_for_library=lambda _: False,
                      _metadata_write_payload=lambda *_: {"title": "匹配标题"},
@@ -62,6 +65,33 @@ class MatchActivityTests(unittest.TestCase):
         self.assertEqual(call.args[1], "成功匹配")
         self.assertIn("匹配标题", call.args[2])
         self.assertEqual(call.kwargs["level"], "info")
+
+    def test_path_ai_runs_after_title_ai_search_fails(self):
+        scope = self.run_match(ai=True, ai_titles=["标题识别", "路径识别"],
+                               path_context="作品/卷册/01.cbz",
+                               searches=[[], [], [{"id": 42, "platform": "漫画"}]])
+        self.assertEqual([call.args[0] for call in scope["bgm"].search_subjects.call_args_list],
+                         ["书名", "标题识别", "路径识别"])
+        self.assertTrue(scope["recognize_title"].call_args.kwargs["from_path"])
+        self.assertEqual(scope["recognize_title"].call_args.kwargs["only_novel"], "comic")
+        self.assertEqual(scope["record_scrape_event"].call_args.kwargs["match_source"], "AI 路径识别")
+
+    def test_successful_title_ai_does_not_read_paths(self):
+        scope = self.run_match(ai=True, ai_titles=["标题识别"], searches=[[], [{"id": 42, "platform": "漫画"}]])
+        scope["series_title_path"].assert_not_called()
+
+    def test_path_failure_duplicates_and_missing_path_keep_raw_fallback(self):
+        for path, titles in [("作品/卷册/01.cbz", ["", ""]), ("作品/卷册/01.cbz", ["重复", "重复"]), ("", [""])]:
+            with self.subTest(path=path, titles=titles):
+                scope = self.run_match(ai=True, ai_titles=titles, path_context=path, found=False)
+                queries = [call.args[0] for call in scope["bgm"].search_subjects.call_args_list]
+                self.assertEqual(queries[-1], "原书名")
+                self.assertEqual(len(queries), len(set(queries)))
+
+    def test_disabled_ai_never_reads_paths(self):
+        scope = self.run_match(found=False)
+        scope["series_title_path"].assert_not_called()
+        scope["recognize_title"].assert_not_called()
 
     def test_failure_branches_log_failure(self):
         for options in ({"found": False}, {"valid": False}, {"write": False},

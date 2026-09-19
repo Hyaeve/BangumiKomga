@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 from tools.correction_task import correct_library
 from tools.title_rules import explicit_title
 from tools.get_title import get_title_candidates
+from tools.title_recognition import normalize_extracted_title, recognize_title
 from services import task_worker
 
 
@@ -67,9 +68,9 @@ class CorrectionTests(unittest.TestCase):
 
     def test_regex_filter_before_title_rules_and_failed_ai(self):
         for raw, expression, expected in [
-            ("[Vchan] 你的女友", r"^\[[^\]]+\]\s*", "你的女友"),
-            ("vol.12 你的女友", r"(?i)^VOL\.\d+\s*", "你的女友"),
-            ("AB你的女友", r"^.{2}", "你的女友"),
+            ("[Vchan] 你的女友", r"^\[[^\]]+\]\s*", None),
+            ("vol.12 你的女友", r"(?i)^VOL\.\d+\s*", None),
+            ("AB你的女友", r"^.{2}", None),
             ("[Vchan] 《你的女友》 完结", r"^\[[^\]]+\]\s*" + "\n完结$", "你的女友"),
         ]:
             with self.subTest(raw=raw):
@@ -78,7 +79,10 @@ class CorrectionTests(unittest.TestCase):
                 with patch("tools.correction_task.recognize_title", return_value=""):
                     self.run_task(["title"], ["extract_title"], filter_terms=expression,
                                   filter_regex=True, include_volumes=False)
-                self.client.update_series_metadata.assert_called_once_with("s", {"title": expected})
+                if expected is None:
+                    self.client.update_series_metadata.assert_not_called()
+                else:
+                    self.client.update_series_metadata.assert_called_once_with("s", {"title": expected})
 
     def test_invalid_regex_rejected_before_reading_media(self):
         with self.assertRaisesRegex(ValueError, "第 2 条正则无效"):
@@ -108,7 +112,7 @@ class CorrectionTests(unittest.TestCase):
 
     def test_mixed_regex_flags_and_anchored_single_pass(self):
         self.series["metadata"]["title"] = "VOL.12 AB你的女友"
-        with patch("tools.correction_task.recognize_title", return_value=""):
+        with patch("tools.correction_task.recognize_title", return_value="你的女友"):
             self.run_task(["title"], ["extract_title"],
                           filter_terms=r"/^vol\.\d+\s*/i" + "\n/^.{2}/", include_volumes=False)
         self.client.update_series_metadata.assert_called_once_with("s", {"title": "你的女友"})
@@ -132,13 +136,13 @@ class CorrectionTests(unittest.TestCase):
         ai.assert_not_called()
         self.client.update_series_metadata.assert_called_once_with("s", {"title": "真正标题"})
 
-    def test_failed_extraction_still_removes_terms_without_locking(self):
+    def test_failed_extraction_keeps_original_despite_filter_matches(self):
         self.series["metadata"]["title"] = "[Vchan] 你的女友 [广告]"
         with patch("tools.correction_task.recognize_title", return_value="") as ai:
             result = self.run_task(["title"], ["extract_title"], filter_terms="[Vchan]\n[广告]",
                                    lock_completed=True, include_volumes=False)
         ai.assert_called_once_with("你的女友", only_novel=True, settings={})
-        self.client.update_series_metadata.assert_called_once_with("s", {"title": "你的女友"})
+        self.client.update_series_metadata.assert_not_called()
         self.assertEqual(result["failed"], 1)
 
     def test_filter_cannot_be_reintroduced_by_ai(self):
@@ -151,7 +155,7 @@ class CorrectionTests(unittest.TestCase):
         for operations, fields, locked_title, include, title, terms, expected in [
             (["simplify"], ["title"], False, False, "广告標題", "广告", {"title": "广告标题"}),
             (["extract_title"], ["title"], True, False, "广告标题", "广告", None),
-            (["extract_title"], ["title"], True, True, "广告标题", "广告", {"title": "标题"}),
+            (["extract_title"], ["title"], True, True, "广告标题", "广告", None),
             (["extract_title"], ["title"], False, False, "广告", "广告", None),
             (["simplify", "extract_title"], ["summary"], False, False, "广告标题", "广告", None),
         ]:
@@ -193,6 +197,49 @@ class CorrectionTests(unittest.TestCase):
         with patch("tools.correction_task.recognize_title", return_value="正式名稱"):
             self.run_task(["title"], ["extract_title"])
         self.client.update_series_metadata.assert_called_once_with("s", {"title": "正式名稱"})
+
+    def test_invalid_ai_titles_preserve_series_and_volume_title_and_lock(self):
+        for value in ("", " ", '""', "“”", "空字符串", "null", "\u200b", None, [], "第一行\n第二行"):
+            for title_locked in (False, True):
+                with self.subTest(value=value, locked=title_locked):
+                    self.setUp()
+                    self.series["metadata"].update(title="原始書名[广告]", titleLock=title_locked)
+                    self.book["metadata"].update(title="原始卷名[广告]", titleLock=title_locked)
+                    before = deepcopy([self.series, self.book])
+                    with patch("tools.correction_task.recognize_title", return_value=value):
+                        result = self.run_task(["title"], ["extract_title", "simplify"],
+                                               filter_terms="[广告]", include_locked=True, lock_completed=True)
+                    self.client.update_series_metadata.assert_not_called()
+                    self.client.update_book_metadata.assert_not_called()
+                    self.updated.assert_not_called()
+                    self.assertEqual([self.series, self.book], before)
+                    self.assertEqual(result["failed"], 2)
+
+    def test_failure_preserves_title_while_other_fields_can_complete(self):
+        self.series["metadata"].update(title="原始書名[广告]", titleLock=True, summaryLock=False)
+        with patch("tools.correction_task.recognize_title", return_value="空字符串"):
+            self.run_task(["title", "summary"], ["extract_title", "simplify"],
+                          filter_terms="[广告]", include_locked=True, lock_completed=True, include_volumes=False)
+        self.client.update_series_metadata.assert_called_once_with("s", {"summary": "这是漫画简介", "summaryLock": True})
+
+    def test_final_filter_cannot_erase_extracted_title_or_change_lock(self):
+        self.series["metadata"].update(title="《广告》附件", titleLock=True)
+        self.run_task(["title"], ["extract_title"], filter_terms="附件\n/《广告》/",
+                      include_locked=True, lock_completed=True, include_volumes=False)
+        self.client.update_series_metadata.assert_not_called()
+        self.series["metadata"]["title"] = "原始名称"
+        with patch("tools.correction_task.recognize_title", return_value="广告"):
+            self.run_task(["title"], ["extract_title"], filter_terms="广告",
+                          include_locked=True, lock_completed=True, include_volumes=False)
+        self.client.update_series_metadata.assert_not_called()
+
+    def test_ai_failure_marker_is_rejected_at_response_boundary(self):
+        response = Mock()
+        response.json.return_value = {"choices": [{"message": {"content": "空字符串"}}]}
+        with patch("tools.title_recognition.requests.post", return_value=response):
+            self.assertEqual(recognize_title("原名", settings={
+                "OPENAI_BASE_URL": "http://fixture.invalid", "OPENAI_API_KEY": "fixture", "OPENAI_MODEL": "fixture"}), "")
+        self.assertEqual(normalize_extracted_title('"有效标题"'), "有效标题")
 
     def test_concurrent_edit_and_new_lock_respected(self):
         self.client.get_specific_series.return_value = deepcopy(self.series)

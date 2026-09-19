@@ -3,7 +3,7 @@ from copy import deepcopy
 
 from zhconv import convert
 from tools.title_rules import explicit_title, title_filter_rules
-from tools.title_recognition import recognize_title
+from tools.title_recognition import recognize_title, normalize_extracted_title
 from tools.komga_path import item_path
 from tools.execution_outcomes import record_outcome
 from tools.task_lock_policy import locked
@@ -65,27 +65,21 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
         if field == "title" and "extract_title" in options:
             result = filtered_title(result, matched)
             if not result.strip():
-                raise ValueError("过滤后标题为空，保留当前标题且不锁定")
-            filtered = result
+                raise ValueError("过滤后标题为空，保留原标题及原锁定状态")
             title = explicit_title(result)
             if not title:
                 title = recognize_title(result, only_novel=only_novel, settings=settings)
-            if title:
-                result = title
-                if not result.strip():
-                    result, completed = filtered, False
-            elif filtered != value:
-                result, completed = filtered, False
-            else:
-                raise ValueError("标题提取失败或未配置 AI，保留当前标题且不锁定")
+            result = normalize_extracted_title(title)
+            if not result:
+                raise ValueError("标题提取失败或未配置 AI，保留原标题及原锁定状态")
         if "simplify" in options:
             result = convert(result, "zh-cn")
         if field == "title" and "extract_title" in options:
             for term in sorted(matched, key=len, reverse=True):
                 result = result.replace(term, "")
             result = filtered_title(result).strip()
-            if not result.strip():
-                raise ValueError("过滤后标题为空，保留当前标题且不锁定")
+            if not normalize_extracted_title(result):
+                raise ValueError("过滤后标题为空或无效，保留原标题及原锁定状态")
         return result, completed
 
     def update(item, kind, series_name):
@@ -99,12 +93,11 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
                 continue
             try:
                 result, completed = corrected(value, field)
+                # Keep both the title and its lock untouched for any invalid result.
+                if field == "title" and not normalize_extracted_title(result):
+                    raise ValueError("修正标题为空或无效，保留原标题及原锁定状态")
                 if result != value:
                     payload[field] = result
-                if not completed:
-                    record_outcome(kind, item["id"], failed=True)
-                    counts["failed"] += 1
-                    on_log(f"{item.get('name', '')} / 标题：标题提取未成功，仍应用过滤词条，不新增锁定", "warning")
                 if completed and lock_completed and not locked(original, field):
                     payload[field + "Lock"] = True
             except ValueError as exc:
