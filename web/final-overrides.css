@@ -1665,6 +1665,10 @@
 .record-clickable { cursor: pointer; }
 .record-clickable:focus-visible { outline: 2px solid #8b76b4; outline-offset: -2px; }
 .record-comparison-modal { position: relative; width: min(1180px, calc(100vw - 40px)) !important; max-width: 1180px !important; max-height: 88vh; overflow-y: auto; padding: 28px; border-radius: 20px; }
+.record-comparison-modal,
+.record-comparison-modal textarea { scrollbar-width: none; -ms-overflow-style: none; }
+.record-comparison-modal::-webkit-scrollbar,
+.record-comparison-modal textarea::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .comparison-title { color: #747084; overflow-wrap: anywhere; margin: 8px 32px 24px 0; }
 .metadata-comparison { display: grid; grid-template-columns: minmax(0,1fr) 36px minmax(0,1fr); gap: 12px; position: relative; }
 .comparison-side:first-child { grid-column: 1; }

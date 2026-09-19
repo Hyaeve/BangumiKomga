@@ -381,6 +381,8 @@ async function main() {
     assert.equal(await page.locator('.record-volumes').count(), 1, 'background polling preserves expansion');
     await page.locator('.record-volume.record-clickable').click();
     await page.locator('.comparison-side').first().waitFor();
+    assert.equal(await page.locator('.record-comparison-modal .modal-close').count(), 0);
+    assert.equal(await page.locator('.record-comparison-modal').evaluate(el=>getComputedStyle(el).scrollbarWidth), 'none');
     assert.equal(await page.getByRole('textbox', {name:'修改前 标题',exact:true}).inputValue(), '原始标题');
     assert.equal(await page.getByRole('textbox', {name:'修改后 标题',exact:true}).inputValue(), '匹配标题');
     assert.equal(await page.locator('.comparison-field.changed').count(), 8);
@@ -394,6 +396,8 @@ async function main() {
     await page.screenshot({path:path.join(output,'record-comparison-desktop.png')});
     await page.setViewportSize({width:390,height:844});
     assert(await page.locator('.record-comparison-modal').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+    assert(await page.locator('.record-comparison-modal').evaluate(el=>{ el.scrollTop=100; return el.scrollTop>0; }));
+    await page.locator('.record-comparison-modal').evaluate(el=>{ el.scrollTop=0; });
     await page.screenshot({path:path.join(output,'record-comparison-mobile.png')});
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.record-comparison-modal').count(), 0);
@@ -418,7 +422,7 @@ async function main() {
     await page.locator('.grouped-record.record-clickable').waitFor();
     await page.locator('.record-book-title').click();
     await page.locator('.comparison-side').first().waitFor();
-    await page.getByRole('button', {name:'关闭对比',exact:true}).click();
+    await page.locator('.modal-backdrop:has(.record-comparison-modal)').click({position:{x:5,y:5}});
     assert.equal(await page.locator('.record-comparison-modal').count(), 0);
     scrapeRecords[0].volume_count = 1;
     await page.locator('.nav-item').nth(3).click();
