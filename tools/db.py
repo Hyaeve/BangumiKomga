@@ -1,4 +1,5 @@
 import sqlite3
+import json
 import threading
 from time import strftime, localtime
 from tools.log import logger
@@ -82,7 +83,7 @@ def init_sqlite3(db_path="recordsRefreshed.db"):
             recorded_at TEXT NOT NULL
         )"""
     )
-    for column, definition in (("source_title", "TEXT"), ("matched_title", "TEXT"), ("match_source", "TEXT"), ("event_kind", "TEXT"), ("source_path", "TEXT"), ("komga_id", "TEXT"), ("server_id", "TEXT")):
+    for column, definition in (("source_title", "TEXT"), ("matched_title", "TEXT"), ("match_source", "TEXT"), ("event_kind", "TEXT"), ("source_path", "TEXT"), ("komga_id", "TEXT"), ("server_id", "TEXT"), ("metadata_before", "TEXT"), ("metadata_after", "TEXT")):
         try:
             cursor.execute(f"ALTER TABLE scrape_records ADD COLUMN {column} {definition}")
         except sqlite3.OperationalError:
@@ -107,13 +108,13 @@ def init_sqlite3(db_path="recordsRefreshed.db"):
 def record_scrape_event(conn, item_type, item_title, library_id, library_name,
                         metadata_fields, status="success", source_title="",
                         matched_title="", match_source="", event_kind="volume", source_path="",
-                        komga_id="", server_id=""):
+                        komga_id="", server_id="", metadata_before=None, metadata_after=None):
     """Persist a compact, user-facing history entry for a metadata update."""
     with _record_lock:
         conn.execute(
             """INSERT INTO scrape_records
-            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at,source_title,matched_title,match_source,event_kind,source_path,komga_id,server_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (item_type,item_title,library_id,library_name,metadata_fields,status,recorded_at,source_title,matched_title,match_source,event_kind,source_path,komga_id,server_id,metadata_before,metadata_after)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item_type,
                 item_title,
@@ -129,6 +130,8 @@ def record_scrape_event(conn, item_type, item_title, library_id, library_name,
                 source_path or "",
                 str(komga_id or ""),
                 str(server_id or ""),
+                json.dumps(metadata_before, ensure_ascii=False) if metadata_before is not None else None,
+                json.dumps(metadata_after, ensure_ascii=False) if metadata_after is not None else None,
             ),
         )
         conn.commit()

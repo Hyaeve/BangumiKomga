@@ -47,6 +47,7 @@ def lock_existing_completion(komga, item, kind, fields, on_update, on_log):
         return
     if (komga.update_series_metadata if kind == "series" else komga.update_book_metadata)(item["id"], payload):
         from tools.komga_path import item_path
-        on_update({**item, "url": item_path(latest) or item_path(item)}, kind, list(payload))
+        on_update({**item, "url": item_path(latest) or item_path(item),
+                   "metadata_before": current, "metadata_after": {**current, **payload}}, kind, list(payload))
     else:
         on_log(f"{item.get('name', item['id'])}：已完成元数据锁定失败", "error")

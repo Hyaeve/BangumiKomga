@@ -41,6 +41,15 @@ class CorrectionTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(explicit_title(value), expected)
 
+    def test_success_callback_contains_before_and_after_snapshots(self):
+        self.run_task(["title"], ["extract_title"], include_volumes=False, lock_completed=True)
+        item = self.updated.call_args.args[0]
+        self.assertEqual(item["metadata_before"]["title"], "[萬古之王][作者]")
+        self.assertFalse(item["metadata_before"]["titleLock"])
+        self.assertEqual(item["metadata_after"]["title"], "萬古之王")
+        self.assertTrue(item["metadata_after"]["titleLock"])
+        self.assertEqual(item["metadata_before"]["summary"], item["metadata_after"]["summary"])
+
     def test_matching_candidates_do_not_treat_single_prefix_as_title(self):
         self.assertEqual(get_title_candidates("[Vchan] 你的女友"), [])
         self.assertEqual(get_title_candidates("[你的女友][Vchan]"), ["你的女友"])

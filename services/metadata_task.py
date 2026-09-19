@@ -37,7 +37,8 @@ def main():
                                 updated.get("name", ""), card["LIBRARY"], scraper._library_name(card["LIBRARY"]),
                                 changed, source_title=series_name, event_kind=event_kind,
                                 source_path=updated.get("url", ""), komga_id=updated["id"],
-                                server_id=request["server_id"], match_source="计划任务：已完整元数据锁定")
+                                server_id=request["server_id"], match_source="计划任务：已完整元数据锁定",
+                                metadata_before=updated.get("metadata_before"), metadata_after=updated.get("metadata_after"))
         def log(detail, level):
             record_activity_log(scraper.conn, "计划任务：元数据补全", detail, level=level, source="scheduler")
         try:

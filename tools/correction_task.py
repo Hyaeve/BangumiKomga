@@ -129,7 +129,8 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
             return
         counts["updated"] += 1
         record_outcome(kind, item["id"])
-        on_update({**item, "url": item_path(latest) or item_path(item)}, kind, series_name, list(payload))
+        on_update({**item, "url": item_path(latest) or item_path(item),
+                   "metadata_before": current, "metadata_after": {**current, **payload}}, kind, series_name, list(payload))
         on_log(f"{item.get('name', '')}：元数据修正完成（{', '.join(payload)}）", "info")
 
     def process(item, kind, series_name):

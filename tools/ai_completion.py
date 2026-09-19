@@ -145,7 +145,8 @@ def complete_unmatched(komga, series, fields, settings, only_novel, on_update, o
         payload = completion_payload(current, candidates, eligible, include_locked, lock_completed)
         if payload and (komga.update_series_metadata if kind == "series" else komga.update_book_metadata)(item["id"], payload):
             from tools.komga_path import item_path
-            on_update({**item, "url": item_path(detail) or item_path(item)}, kind, list(payload))
+            on_update({**item, "url": item_path(detail) or item_path(item),
+                       "metadata_before": current, "metadata_after": {**current, **payload}}, kind, list(payload))
         elif payload:
             on_log(f"{item.get('name', '')}：AI补全写入失败", "error")
 

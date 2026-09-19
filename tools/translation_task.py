@@ -85,7 +85,8 @@ def translate_library(komga, library_id, settings, on_update, on_log, fields=Non
             return
         counts["updated"] += 1
         record_outcome(kind, item["id"])
-        on_update({**item, "url": item_path(latest) or item_path(item)}, kind, series_name, changed_fields)
+        on_update({**item, "url": item_path(latest) or item_path(item),
+                   "metadata_before": current, "metadata_after": {**current, **payload}}, kind, series_name, changed_fields)
         on_log(f"{item.get('name', item['id'])}：已处理{'并锁定' if lock_completed else ''} {'、'.join(TRANSLATION_FIELDS[field] for field in changed_fields)}", "info")
 
     def process(item, kind, series_name):

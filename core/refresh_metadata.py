@@ -42,6 +42,7 @@ def _complete_unmatched_with_ai(series, only_novel):
             source_title=series["name"], event_kind=kind, source_path=item.get("url", ""),
             match_source="计划任务：AI补全（联网来源）", komga_id=item["id"],
             server_id=_record_server_id(series.get("libraryId")),
+            metadata_before=item.get("metadata_before"), metadata_after=item.get("metadata_after"),
         )
 
     def log(detail, level):
@@ -496,6 +497,8 @@ def refresh_metadata(series_list=None):
                     event_kind="series",
                     source_path=_record_path(series, "series"),
                     komga_id=series_id, server_id=_record_server_id(series.get("libraryId")),
+                    metadata_before=series.get("metadata") or {},
+                    metadata_after={**(series.get("metadata") or {}), **series_data},
                 )
         else:
             _log_match_result(series, "匹配失败", "已找到匹配条目，但 Komga 元数据写入失败", subject_id=subject_id)
@@ -792,6 +795,8 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 event_kind="volume",
                 source_path=source_path,
                 komga_id=book_id, server_id=_record_server_id(library_id),
+                metadata_before=current_metadata or {},
+                metadata_after={**(current_metadata or {}), **book_data},
             )
     else:
         record_book_status(
@@ -921,4 +926,6 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
                     event_kind="volume",
                     source_path=source_path,
                     komga_id=book_id, server_id=_record_server_id(library_id),
+                    metadata_before=book.get("metadata") or {},
+                    metadata_after={**(book.get("metadata") or {}), **book_data},
                 )

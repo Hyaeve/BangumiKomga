@@ -530,6 +530,7 @@ def _translate_task_libraries(target_ids, fields=None, correction=None, include_
                     source_title=source_title, match_source=f"计划任务：{action}",
                     event_kind=kind, source_path=str(item.get("url") or ""),
                     komga_id=item["id"], server_id=server_id,
+                    metadata_before=item.get("metadata_before"), metadata_after=item.get("metadata_after"),
                 )
 
             log = lambda detail, level: _write_activity(f"计划任务：{action}", detail, level=level)
@@ -855,6 +856,20 @@ def _read_record_details(record_id, offset=0):
     items = _read_scrape_rows([row[0] for row in rows])
     _schedule_path_backfill(items)
     return {"items": items, "total": total}
+
+
+def _read_record_comparison(record_id):
+    record_id = int(str(record_id).rsplit(":", 1)[-1])
+    visible = _read_scrape_rows([record_id])
+    if not visible:
+        return None
+    with closing(sqlite3.connect(ROOT / "recordsRefreshed.db")) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(scrape_records)")}
+        if not {"metadata_before", "metadata_after"}.issubset(columns):
+            return {"record": visible[0], "before": None, "after": None}
+        row = conn.execute("SELECT metadata_before,metadata_after FROM scrape_records WHERE id=?", (record_id,)).fetchone()
+    return {"record": visible[0], "before": json.loads(row[0]) if row and row[0] else None,
+            "after": json.loads(row[1]) if row and row[1] else None}
 
 
 def _backfill_source_paths(records):
@@ -1226,6 +1241,13 @@ class Handler(BaseHTTPRequestHandler):
                                                query.get("sort", ["newest"])[0] != "oldest", True))
         elif path == "/api/scrape-records/stats":
             self._json(200, _read_scrape_stats())
+        elif path == "/api/scrape-records/comparison":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                comparison = _read_record_comparison(query.get("id", [""])[0])
+                self._json(200 if comparison else 404, comparison or {"error": "记录不存在或不属于当前媒体卡片"})
+            except ValueError:
+                self._json(400, {"error": "记录参数无效"})
         elif path == "/api/scrape-records/details":
             query = parse_qs(urlparse(self.path).query)
             try:

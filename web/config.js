@@ -88,6 +88,7 @@ createApp({
       recordSearch: '',
       recordSortNewest: true,
       expandedRecordIds: [],
+      recordComparison: null,
       recordStats: { total: 0, today: 0, comic: 0, novel: 0 },
       cards: [],
       cardHues: [105, 270, 195, 35, 320, 155],
@@ -198,7 +199,8 @@ createApp({
         document.dispatchEvent(new Event('close-tag-pickers'));
         return;
       }
-      if (this.showCredentialConfirm) this.showCredentialConfirm = false;
+      if (this.recordComparison) this.recordComparison = null;
+      else if (this.showCredentialConfirm) this.showCredentialConfirm = false;
       else if (this.deletingTask) this.deletingTask = null;
       else if (this.showBangumiPreview) this.showBangumiPreview = false;
       else if (this.editingServer) this.editingServer = null;
@@ -459,6 +461,22 @@ createApp({
     taskLibraryKey(card) { return `${card.serverId || ''}::${card.id || ''}`; },
     normalizeTaskLibraryKey(value) { if (String(value).includes('::')) return String(value); const card = this.cards.find(item => item.id === String(value)); return card ? this.taskLibraryKey(card) : String(value); },
     uniqueTaskName(base, currentId = '') { const names = new Set(this.tasks.filter(task => task.id !== currentId).map(task => task.name)); if (!names.has(base)) return base; if (!names.has(`${base} 副本`)) return `${base} 副本`; let index = 2; while (names.has(`${base} 副本 ${index}`)) index += 1; return `${base} 副本 ${index}`; },
+    async openRecordComparison(record) {
+      this.recordComparison = { loading: true, record };
+      try {
+        const result = await this.api(`/api/scrape-records/comparison?id=${encodeURIComponent(record.id)}`);
+        if (this.recordComparison?.record === record) this.recordComparison = result;
+      } catch (error) {
+        if (this.recordComparison?.record === record) this.recordComparison = { record, error: error.message };
+      }
+    },
+    comparisonFields() { return [...new Set([...Object.keys(this.recordComparison?.before || {}), ...Object.keys(this.recordComparison?.after || {})])]; },
+    comparisonValue(value) {
+      if (value === undefined || value === null || value === '') return '—';
+      if (typeof value === 'boolean') return value ? '是' : '否';
+      return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+    },
+    comparisonChanged(field) { return JSON.stringify(this.recordComparison?.before?.[field]) !== JSON.stringify(this.recordComparison?.after?.[field]); },
     toggleRecord(record) { const index = this.expandedRecordIds.indexOf(record.id); if (index >= 0) this.expandedRecordIds.splice(index, 1); else this.expandedRecordIds.push(record.id); },
     recordExpanded(record) { return this.expandedRecordIds.includes(record.id); },
     async changeDetailPage(record, delta) { const offset = Math.max(0, (record.volume_offset || 0) + delta * 50); try { const data = await this.api(`/api/scrape-records/details?id=${encodeURIComponent(record.id)}&offset=${offset}`); record.volumes = data.items || []; record.volume_count = data.total; record.volume_offset = offset; } catch(error) { this.notify(error.message, true); } },

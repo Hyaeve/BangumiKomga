@@ -97,6 +97,7 @@ async function main() {
       }
       else if (url.pathname === '/api/refresh') { refreshRequests.push(body); result = { started: true }; }
       else if (url.pathname === '/api/scrape-records') result = { items: scrapeRecords, total: 125 };
+      else if (url.pathname === '/api/scrape-records/comparison') result = { record: { item_title: '第一卷' }, before: {title: '原始标题', summary: '原始简介', numberSort: 0}, after: {title: '匹配标题', summary: '更新简介', numberSort: 1} };
       else if (url.pathname === '/api/scrape-records/stats') result = { total: 12345, today: 1, comic: 12345, novel: 0 };
       else if (url.pathname === '/api/runtime-logs') result = { items: runtimeLogs, total: 230 };
       else if (url.pathname === '/api/runtime-logs/stats') result = { total: 23456, today: 1, success: 12, failed: 3 };
@@ -356,7 +357,23 @@ async function main() {
     const nextColors = await page.locator('.sort-arrows i').evaluateAll(items => items.map(item => getComputedStyle(item).color));
     assert.deepEqual(nextColors, [...initialColors].reverse());
     assert.equal(await page.locator('.record-title-row > small').isVisible(), false);
+    await page.locator('.record-book-title').click();
+    assert.equal(await page.locator('.record-volumes').count(), 0);
+    assert.equal(await page.locator('.record-comparison-modal').count(), 0);
     await page.locator('.record-expand').click();
+    await page.locator('.record-volume.record-clickable').click();
+    await page.locator('.comparison-side').first().waitFor();
+    assert.match(await page.locator('.comparison-side').first().innerText(), /原始标题/);
+    assert.match(await page.locator('.comparison-side').last().innerText(), /匹配标题/);
+    assert.equal(await page.locator('.comparison-field.changed').count(), 6);
+    await page.screenshot({path:path.join(output,'record-comparison-desktop.png')});
+    await page.setViewportSize({width:390,height:844});
+    assert(await page.locator('.record-comparison-modal').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+    await page.screenshot({path:path.join(output,'record-comparison-mobile.png')});
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.record-comparison-modal').count(), 0);
+    await page.setViewportSize({width:1440,height:1000});
+    assert.equal(await page.locator('.record-volumes').count(), 1);
     assert.equal(await page.locator('.record-volume-head > *').count(), 6);
     assert.match(await page.locator('.record-path').innerText(), /第一卷\.cbz/);
     await page.locator('.record-fields').hover();
@@ -368,6 +385,17 @@ async function main() {
     await page.locator('.record-volume:not(.record-volume-head) > span').first().hover();
     await page.locator('.floating-tooltip:not([hidden])').waitFor();
     assert.match(await page.locator('.floating-tooltip').innerText(), /长标题/);
+    scrapeRecords[0].volume_count = 0;
+    await page.locator('.record-refresh').count().then(async count => {
+      if (count) await page.locator('.record-refresh').click();
+      else await page.reload();
+    });
+    await page.locator('.grouped-record.record-clickable').waitFor();
+    await page.locator('.record-book-title').click();
+    await page.locator('.comparison-side').first().waitFor();
+    await page.getByRole('button', {name:'关闭对比',exact:true}).click();
+    assert.equal(await page.locator('.record-comparison-modal').count(), 0);
+    scrapeRecords[0].volume_count = 1;
     await page.locator('.nav-item').nth(3).click();
     await page.locator('.runtime-log-row').first().waitFor();
     assert.equal(await page.locator('.runtime-log-row > small').count(), 0);
@@ -702,7 +730,8 @@ async function main() {
     assert(settling.every((item,index)=>index===0 || item.opacity>settling[index-1].opacity));
     assert.equal(settling[3].opacity,1);
     assert(settling.every(item=>!item.filter.includes('blur')));
-    assert.equal(settling[3].filter,'saturate(1) brightness(1)');
+    assert.equal(settling[3].filter,'none');
+    assert(await page.locator('.login-cover-column').evaluateAll(columns=>columns.every(el=>getComputedStyle(el).animationTimingFunction==='linear')));
     await page.locator('.login-backdrop').evaluate(el=>{
       el.getAnimations().find(item=>item.animationName==='login-backdrop-emerge').finish();
     });
