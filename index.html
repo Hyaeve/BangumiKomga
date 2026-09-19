@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260912-1">
+<link rel="stylesheet" href="final-overrides.css?v=20260920-1">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -302,7 +302,7 @@
 </div>
 <div class="record-list">
 <template v-for="record in sortedRecords" :key="record.id">
-<article class="record-item grouped-record" :class="{expanded:recordExpanded(record)}" @click="toggleRecord(record)">
+<article class="record-item grouped-record" :class="{expanded:recordExpanded(record), 'record-clickable': !record.volume_count}" :tabindex="record.volume_count ? null : 0" @click="!record.volume_count && openRecordComparison(record)" @keydown.enter.self="!record.volume_count && openRecordComparison(record)">
 <div class="record-main">
 <div class="record-title-row">
 <button v-if="record.volume_count" type="button" class="record-expand has-tooltip" @click.stop="toggleRecord(record)" :data-tooltip="recordExpanded(record)?'折叠卷册':'展开卷册'" :aria-label="recordExpanded(record)?'折叠卷册':'展开卷册'">
@@ -338,7 +338,7 @@
 <span>文件路径</span>
 <span>操作</span>
 </div>
-<div v-for="volume in record.volumes" :key="volume.id" class="record-volume">
+<div v-for="volume in record.volumes" :key="volume.id" class="record-volume record-clickable" tabindex="0" role="button" @click.stop="openRecordComparison(volume)" @keydown.enter.stop="openRecordComparison(volume)">
 <span class="tooltip-cell" :data-tooltip="volume.item_title">{{volume.item_title}}</span>
 <time class="tooltip-cell" :data-tooltip="formatRecordTime(volume.recorded_at)">{{formatRecordTime(volume.recorded_at)}}</time>
 <span class="tooltip-cell" :data-tooltip="record.server_name || '默认 Komga 服务'">{{record.server_name}}</span>
@@ -593,6 +593,28 @@
       </main>
     </template>
 
+    <div v-if="recordComparison" class="modal-backdrop" @click.self="recordComparison=null">
+      <section class="modal record-comparison-modal" role="dialog" aria-modal="true" aria-label="元数据修改对比">
+        <button type="button" class="modal-close" aria-label="关闭对比" @click="recordComparison=null">×</button>
+        <h2>元数据修改对比</h2>
+        <p class="comparison-title">{{recordComparison.record.item_title}}</p>
+        <p v-if="recordComparison.loading" role="status">正在加载元数据…</p>
+        <p v-else-if="recordComparison.error" role="alert">{{recordComparison.error}}</p>
+        <p v-else-if="recordComparison.before === null || recordComparison.after === null">此记录未保存修改前后快照，无法还原当时的元数据。</p>
+        <div v-else class="metadata-comparison">
+          <section v-for="side in ['before','after']" :key="side" class="comparison-side">
+            <h3>{{side === 'before' ? '修改前' : '修改后'}}</h3>
+            <dl>
+              <div v-for="field in comparisonFields()" :key="field" class="comparison-field" :class="{changed:comparisonChanged(field)}">
+                <dt>{{metadataText({metadata_fields:[field]})}}</dt>
+                <dd>{{comparisonValue(recordComparison[side][field])}}</dd>
+              </div>
+            </dl>
+          </section>
+          <span class="comparison-arrow" aria-hidden="true">→</span>
+        </div>
+      </section>
+    </div>
     <div v-if="showCredentialModal" class="modal-backdrop" @click.self="showCredentialModal=false">
 <form class="modal" @submit.prevent="requestCredentialSave">
 <button type="button" class="modal-close" @click="showCredentialModal=false">×</button>
@@ -762,7 +784,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260912-1">
+<script src="config.js?v=20260920-1">
 </script>
 </body>
 </html>

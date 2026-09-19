@@ -1273,14 +1273,14 @@
 .login-backdrop.ready { animation: login-backdrop-emerge 2.8s cubic-bezier(.42,0,.35,1) both; }
 .login-backdrop::after { content: none; }
 .login-backdrop-grid { position: absolute; inset: -45% -10%; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 18px; transform: rotate(12deg); }
-.login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s ease-in-out infinite alternate; will-change: transform; }
+.login-cover-column { display: flex; flex-direction: column; gap: 18px; animation: login-cover-drift 100s linear infinite alternate; will-change: transform; }
 .login-column-reveal { min-width: 0; }
 .login-column-reveal:nth-child(even) .login-cover-column { margin-top: -90px; animation-direction: alternate-reverse; animation-duration: 115s; }
 .login-cover-column img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; opacity: 0; visibility: hidden; background: rgba(255,255,255,.28); transition: opacity 1.2s ease; }
 .login-cover-column img.loaded { opacity: 1; visibility: visible; transition: none; }
 @keyframes login-backdrop-emerge {
-  0% { opacity: 0; filter: saturate(.98) brightness(1.015); }
-  100% { opacity: 1; filter: saturate(1) brightness(1); }
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }
 @keyframes login-cover-drift { from { transform: translateY(-6%); } to { transform: translateY(6%); } }
 .login-screen .login-card { width: min(420px,100%); padding: 34px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(20px); }
@@ -1657,6 +1657,25 @@
   animation: nav-highlight-breathe 5s ease-in-out infinite alternate;
 }
 .sidebar .nav-item.active .nav-icon { color: #57407f; }
+.record-clickable { cursor: pointer; }
+.record-clickable:focus-visible { outline: 2px solid #8b76b4; outline-offset: -2px; }
+.record-comparison-modal { position: relative; width: min(1060px, calc(100vw - 40px)) !important; max-width: 1060px !important; max-height: 88vh; overflow-y: auto; padding: 28px; border-radius: 20px; }
+.comparison-title { color: #747084; overflow-wrap: anywhere; margin: 8px 32px 24px 0; }
+.metadata-comparison { display: grid; grid-template-columns: minmax(0,1fr) 36px minmax(0,1fr); gap: 12px; position: relative; }
+.comparison-side:first-child { grid-column: 1; }
+.comparison-side:nth-child(2) { grid-column: 3; }
+.comparison-side h3 { margin: 0 0 14px; font-size: 17px; }
+.comparison-side dl { margin: 0; }
+.comparison-field { padding: 12px; border-bottom: 1px solid #e9e5ee; border-radius: 6px; }
+.comparison-field.changed { background: #f0ebf8; }
+.comparison-field dt { font-size: 13px; color: #777183; margin-bottom: 6px; }
+.comparison-field dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+.comparison-arrow { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); color: #8a739f; font-size: 26px; }
+@media (max-width: 600px) {
+  .record-comparison-modal { padding: 20px 14px; }
+  .metadata-comparison { grid-template-columns: minmax(0,1fr) 22px minmax(0,1fr); gap: 4px; }
+  .comparison-field { padding: 8px 5px; }
+}
 .sidebar .nav-item.active:hover { background-color: rgba(145,119,200,.6); }
 .sidebar .nav-item:focus-visible { outline: 2px solid #8b76b4; outline-offset: 3px; }
 @keyframes nav-highlight-breathe { from { opacity: .25; } to { opacity: .55; } }
