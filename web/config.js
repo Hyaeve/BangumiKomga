@@ -380,6 +380,7 @@ createApp({
     async backupConfig() { try { const data = await this.api('/api/config/backup'); const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `bangumikomga-config-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); this.notify('配置备份已下载'); } catch (error) { this.notify(error.message, true); } },
     async restoreConfig(event) { const file = event.target.files && event.target.files[0]; event.target.value = ''; if (!file || !window.confirm('还原配置会覆盖当前系统设置，是否继续？')) return; try { const payload = JSON.parse(await file.text()); const restored = await this.api('/api/config/restore', { method: 'POST', body: JSON.stringify({ config: payload.config || payload }) }); this.applyConfig(restored); this.notify('配置已还原'); if (this.config.KOMGA_SERVERS.length) await this.loadLibraries(false); } catch (error) { this.notify(`还原失败：${error.message}`, true); } },
     async refresh(full, index) { const card = this.cards[index]; if (!card?.id) { this.notify('请先配置媒体卡片', true); return; } try { await this.api('/api/refresh', { method: 'POST', body: JSON.stringify({ full, target_id: this.taskLibraryKey(card) }) }); this.notify(full ? '全量刮削已开始' : '增量刮削已开始'); } catch (error) { this.notify(error.message, true); } },
+    refreshRecords() { this.expandedRecordIds = []; return this.loadRecords(true); },
     async loadRecords(showError = false) {
       const request = ++this.recordRequest;
       try {
@@ -470,13 +471,47 @@ createApp({
         if (this.recordComparison?.record === record) this.recordComparison = { record, error: error.message };
       }
     },
-    comparisonFields() { return [...new Set([...Object.keys(this.recordComparison?.before || {}), ...Object.keys(this.recordComparison?.after || {})])]; },
-    comparisonValue(value) {
+    comparisonFields() {
+      return [...new Set([...Object.keys(this.recordComparison?.before || {}), ...Object.keys(this.recordComparison?.after || {})]
+        .map(field => field.replace(/(?:Lock|Locked)$/, '')))];
+    },
+    comparisonSections() {
+      const fields = this.comparisonFields();
+      const groups = [
+        { name: '基本信息', fields: ['title', 'titleSort', 'number', 'numberSort', 'status', 'publisher', 'releaseDate', 'language', 'ageRating', 'readingDirection', 'totalBookCount', 'isbn'] },
+        { name: '内容与分类', fields: ['summary', 'genres', 'tags'] },
+        { name: '作者与链接', fields: ['authors', 'alternateTitles', 'links'] }
+      ];
+      const known = groups.flatMap(group => group.fields);
+      return [...groups, { name: '其他信息', fields: fields.filter(field => !known.includes(field)) }]
+        .map(group => ({ ...group, fields: group.fields.filter(field => fields.includes(field)) })).filter(group => group.fields.length);
+    },
+    comparisonWide(field) { return ['title', 'titleSort', 'summary', 'genres', 'tags', 'authors', 'alternateTitles', 'links'].includes(field); },
+    comparisonLock(side, field) {
+      const metadata = this.recordComparison?.[side] || {};
+      if (Object.hasOwn(metadata, `${field}Lock`)) return !!metadata[`${field}Lock`];
+      if (Object.hasOwn(metadata, `${field}Locked`)) return !!metadata[`${field}Locked`];
+      return null;
+    },
+    comparisonLockLabel(side, field) { const state = this.comparisonLock(side, field); return state === null ? '未记录锁定状态' : state ? '已锁定' : '未锁定'; },
+    comparisonValue(value, field) {
       if (value === undefined || value === null || value === '') return '—';
       if (typeof value === 'boolean') return value ? '是' : '否';
+      if (field === 'status') return ({ ENDED: '已完结', ONGOING: '连载中', ABANDONED: '已弃坑', HIATUS: '暂停' })[value] || String(value);
+      if (field === 'readingDirection') return ({ LEFT_TO_RIGHT: '从左到右', RIGHT_TO_LEFT: '从右到左', VERTICAL: '纵向', WEBTOON: '条漫' })[value] || String(value);
       return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
     },
-    comparisonChanged(field) { return JSON.stringify(this.recordComparison?.before?.[field]) !== JSON.stringify(this.recordComparison?.after?.[field]); },
+    comparisonTokens(value, field) {
+      const roles = { writer: '作者', penciller: '绘画', inker: '线稿', colorist: '上色', letterer: '嵌字', cover: '封面', editor: '编辑', translator: '翻译' };
+      return (Array.isArray(value) ? value : []).map(item => {
+        if (!item || typeof item !== 'object') return String(item ?? '');
+        if (field === 'authors') return [item.name, roles[item.role] || item.role].filter(Boolean).join(' · ');
+        if (field === 'alternateTitles') return [item.label || item.language, item.title].filter(Boolean).join('：');
+        if (field === 'links') return [item.label, item.url].filter(Boolean).join('：');
+        return JSON.stringify(item);
+      });
+    },
+    comparisonChanged(field) { return JSON.stringify(this.recordComparison?.before?.[field]) !== JSON.stringify(this.recordComparison?.after?.[field]) || this.comparisonLock('before', field) !== this.comparisonLock('after', field); },
     recordGroupKey(record) { return record.group_key || JSON.stringify([record.server_id || '', record.library_id || '', record.item_type || '', (record.source_title || record.item_title || '').trim().toLowerCase()]); },
     toggleRecord(record) { const key = this.recordGroupKey(record); const index = this.expandedRecordIds.indexOf(key); if (index >= 0) this.expandedRecordIds.splice(index, 1); else this.expandedRecordIds.push(key); },
     recordExpanded(record) { return this.expandedRecordIds.includes(this.recordGroupKey(record)); },

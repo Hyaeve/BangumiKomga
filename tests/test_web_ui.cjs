@@ -97,7 +97,11 @@ async function main() {
       }
       else if (url.pathname === '/api/refresh') { refreshRequests.push(body); result = { started: true }; }
       else if (url.pathname === '/api/scrape-records') result = { items: scrapeRecords, total: 125 };
-      else if (url.pathname === '/api/scrape-records/comparison') result = { record: { item_title: '第一卷' }, before: {title: '原始标题', summary: '原始简介', numberSort: 0}, after: {title: '匹配标题', summary: '更新简介', numberSort: 1} };
+      else if (url.pathname === '/api/scrape-records/comparison') result = {
+        record: { item_title: '第一卷' },
+        before: {title: '原始标题', titleLock: false, summary: '原始简介', summaryLock: true, numberSort: 0, publisher: '出版社', publisherLock: false, tags: ['冒险', '成长'], tagsLock: false, authors: [{name:'作者',role:'writer'}], authorsLock: true},
+        after: {title: '匹配标题', titleLock: true, summary: '更新简介', summaryLock: false, numberSort: 1, publisher: '出版社', publisherLock: true, tags: ['冒险', '成长'], tagsLock: false, authors: [{name:'作者',role:'writer'}], authorsLock: true}
+      };
       else if (url.pathname === '/api/scrape-records/stats') result = { total: 12345, today: 1, comic: 12345, novel: 0 };
       else if (url.pathname === '/api/runtime-logs') result = { items: runtimeLogs, total: 230 };
       else if (url.pathname === '/api/runtime-logs/stats') result = { total: 23456, today: 1, success: 12, failed: 3 };
@@ -367,12 +371,26 @@ async function main() {
       page.getByRole('button', {name:'刷新刮削记录',exact:true}).click()
     ]);
     await page.waitForTimeout(100);
-    assert.equal(await page.locator('.record-volumes').count(), 1, 'new primary event must not collapse the group on refresh');
+    assert.equal(await page.locator('.record-volumes').count(), 0, 'manual refresh collapses expanded records');
+    const refreshButton = page.getByRole('button', {name:'刷新刮削记录',exact:true});
+    assert.equal(await refreshButton.getAttribute('data-tooltip'), null);
+    await refreshButton.hover();
+    assert.equal(await page.locator('.floating-tooltip').isVisible(), false);
+    await page.locator('.record-expand').click();
+    await page.waitForResponse(response => response.url().includes('/api/scrape-records?'), {timeout:10000});
+    assert.equal(await page.locator('.record-volumes').count(), 1, 'background polling preserves expansion');
     await page.locator('.record-volume.record-clickable').click();
     await page.locator('.comparison-side').first().waitFor();
-    assert.match(await page.locator('.comparison-side').first().innerText(), /原始标题/);
-    assert.match(await page.locator('.comparison-side').last().innerText(), /匹配标题/);
-    assert.equal(await page.locator('.comparison-field.changed').count(), 6);
+    assert.equal(await page.getByRole('textbox', {name:'修改前 标题',exact:true}).inputValue(), '原始标题');
+    assert.equal(await page.getByRole('textbox', {name:'修改后 标题',exact:true}).inputValue(), '匹配标题');
+    assert.equal(await page.locator('.comparison-field.changed').count(), 8);
+    assert.equal(await page.locator('.comparison-field[data-field$="Lock"]').count(), 0);
+    assert.equal(await page.locator('.comparison-side').first().getByRole('img', {name:'标题：未锁定',exact:true}).count(), 1);
+    assert.equal(await page.locator('.comparison-side').last().getByRole('img', {name:'标题：已锁定',exact:true}).count(), 1);
+    assert.equal(await page.locator('.comparison-side').last().getByRole('img', {name:'简介：未锁定',exact:true}).count(), 1);
+    assert.equal(await page.locator('.comparison-field input:not([readonly]), .comparison-field textarea:not([readonly])').count(), 0);
+    assert.equal(await page.locator('.comparison-field input').first().evaluate(el=>getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+    assert.equal(await page.locator('.comparison-token').first().innerText(), '冒险');
     await page.screenshot({path:path.join(output,'record-comparison-desktop.png')});
     await page.setViewportSize({width:390,height:844});
     assert(await page.locator('.record-comparison-modal').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
