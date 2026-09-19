@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260920-5">
+<link rel="stylesheet" href="final-overrides.css?v=20260920-6">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -596,7 +596,6 @@
 
     <div v-if="recordComparison" class="modal-backdrop" @click.self="recordComparison=null">
       <section class="modal record-comparison-modal" role="dialog" aria-modal="true" aria-label="元数据修改对比">
-        <button type="button" class="modal-close" aria-label="关闭对比" @click="recordComparison=null">×</button>
         <h2>元数据修改对比</h2>
         <p class="comparison-title">{{recordComparison.record.item_title}}</p>
         <p v-if="recordComparison.loading" role="status">正在加载元数据…</p>
