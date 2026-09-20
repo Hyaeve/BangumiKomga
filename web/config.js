@@ -93,7 +93,18 @@ createApp({
       comparisonSaving: false,
       comparisonEditLoading: false,
       comparisonDiscard: false,
+      comparisonDiscardMode: 'close',
       comparisonMessage: '',
+      workCard: '', workItems: [], workTotal: 0, workLibraryTotal: 0, workPage: 0, workSearch: '',
+      workLoading: false, workError: '', workRequest: 0, workSelection: [], workAnchor: null,
+      workNamedServers: [],
+      workToolsOpen: false, workAction: null, workSubmitting: false, workJobs: [],
+      workActions: [
+        {id:'simplify',label:'繁转简',icon:'languages'},
+        {id:'extract_title',label:'标题提取',icon:'text-cursor-input'},
+        {id:'ai_completion',label:'AI补全',icon:'sparkles'},
+        {id:'summary_translation',label:'简介翻译',icon:'book-open'}
+      ],
       recordStats: { total: 0, today: 0, comic: 0, novel: 0 },
       cards: [],
       cardHues: [105, 270, 195, 35, 320, 155],
@@ -107,6 +118,7 @@ createApp({
       },
       navItems: [
         { id: 'scrape', label: '媒体卡片', title: '媒体卡片', subtitle: '为不同媒体库配置独立的匹配规则' },
+        { id: 'workbench', label: '工作平台', title: '工作平台', subtitle: '' },
         { id: 'tasks', label: '计划任务', title: '计划任务', subtitle: '按媒体库安排元数据补全任务' },
         { id: 'records', label: '刮削记录', title: '刮削记录', subtitle: '按书籍查看每一卷的元数据匹配结果' },
         { id: 'logs', label: '运行日志', title: '运行日志', subtitle: '查看后台操作与刮削执行轨迹' },
@@ -190,10 +202,10 @@ createApp({
       this.editingTask.include_volumes = true;
       this.editingTask.lock_completed = false;
     },
-    view(value) { if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => { window.scrollTo({top:0,behavior:'instant'}); this.decorateFieldLabels(); }); },
+    view(value) { if (!['scrape', 'workbench', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'workbench') this.loadWorkItems(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => { window.scrollTo({top:0,behavior:'instant'}); this.decorateFieldLabels(); }); },
     bangumiTestQuery() { this.resetBangumiSearch(); }
   },
-  async mounted() { document.addEventListener('keydown', this.closeTopModal); document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
+  async mounted() { document.addEventListener('keydown', this.closeTopModal); document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'workbench', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
   beforeUnmount() { document.removeEventListener('keydown', this.closeTopModal); document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
   methods: {
     formatStat(value) { const count = Number(value) || 0; return count > 9999 ? `${(count / 1000).toFixed(1)}k` : String(count); },
@@ -205,6 +217,7 @@ createApp({
         return;
       }
       if (this.comparisonDiscard) this.comparisonDiscard = false;
+      else if (this.workAction && !this.workSubmitting) this.workAction = null;
       else if (this.recordComparison) this.closeRecordComparison();
       else if (this.showCredentialConfirm) this.showCredentialConfirm = false;
       else if (this.deletingTask) this.deletingTask = null;
@@ -213,6 +226,7 @@ createApp({
       else if (this.editingTask) this.editingTask = null;
       else if (this.editingCard) this.closeCardSettings();
       else if (this.showCredentialModal) this.showCredentialModal = false;
+      else if (this.view === 'workbench' && this.workSelection.length) this.clearWorkSelection();
       else this.closeContextMenu();
     },
     decorateFieldLabels() {
@@ -287,6 +301,7 @@ createApp({
       if (this.config.KOMGA_BASE_URL && (this.komgaAuthMode === 'key' ? this.config.KOMGA_API_KEY : (this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD))) await this.loadLibraries(false);
       await Promise.all(this.cards.filter(card => card.serverId && card.id).map(card => this.loadCardPreview(card)));
       if (this.view === 'records') await this.loadRecords(true);
+      else if (this.view === 'workbench') await this.loadWorkItems();
       else if (this.view === 'logs') await this.loadLogs(true);
       else if (this.view === 'tasks') await this.loadTasks();
       this.pollStatus();
@@ -479,6 +494,90 @@ createApp({
     taskLibraryKey(card) { return `${card.serverId || ''}::${card.id || ''}`; },
     normalizeTaskLibraryKey(value) { if (String(value).includes('::')) return String(value); const card = this.cards.find(item => item.id === String(value)); return card ? this.taskLibraryKey(card) : String(value); },
     uniqueTaskName(base, currentId = '') { const names = new Set(this.tasks.filter(task => task.id !== currentId).map(task => task.name)); if (!names.has(base)) return base; if (!names.has(`${base} 副本`)) return `${base} 副本`; let index = 2; while (names.has(`${base} 副本 ${index}`)) index += 1; return `${base} 副本 ${index}`; },
+    async loadWorkItems() {
+      this.loadWorkCardNames();
+      if (!this.workCard || !this.cards.some(c=>this.taskLibraryKey(c)===this.workCard))
+        this.workCard = this.cards[0] ? this.taskLibraryKey(this.cards[0]) : '';
+      const request = ++this.workRequest;
+      this.workError = '';
+      if (!this.workCard) { this.workItems=[]; this.workTotal=0; this.workLibraryTotal=0; this.workLoading=false; return; }
+      this.workLoading = true;
+      try {
+        const data = await this.api('/api/workbench/items?' + new URLSearchParams({card:this.workCard,page:this.workPage,q:this.workSearch}));
+        if (request !== this.workRequest) return;
+        this.workItems=data.items; this.workTotal=data.total; this.workLibraryTotal=data.library_total;
+      } catch(error) { if (request===this.workRequest) {this.workError=error.message; this.workItems=[];} }
+      finally { if (request===this.workRequest) this.workLoading=false; }
+    },
+    async loadWorkCardNames() {
+      for (const serverId of [...new Set(this.cards.map(card=>card.serverId).filter(Boolean))]) {
+        if (this.workNamedServers.includes(serverId)) continue;
+        this.workNamedServers.push(serverId);
+        try {
+          const result=await this.api('/api/komga/libraries?'+new URLSearchParams({server_id:serverId}));
+          this.cards.filter(card=>card.serverId===serverId).forEach(card=>{
+            const library=(result.items || []).find(item=>item.id===card.id);
+            if(library) card.name=library.name;
+          });
+        } catch (_) { this.workNamedServers=this.workNamedServers.filter(id=>id!==serverId); }
+      }
+    },
+    switchWorkCard(card) { this.workCard=this.taskLibraryKey(card); this.workPage=0; this.workSearch=''; this.clearWorkSelection(); this.loadWorkItems(); },
+    searchWorkItems() { this.workPage=0; this.clearWorkSelection(); this.loadWorkItems(); },
+    changeWorkPage(delta) { this.workPage+=delta; this.workAnchor=null; this.loadWorkItems(); window.scrollTo({top:0,behavior:'smooth'}); },
+    clearWorkSelection() { this.workSelection=[]; this.workAnchor=null; },
+    selectWorkItem(item,event,force=false) {
+      const index=this.workItems.findIndex(value=>value.id===item.id);
+      if (event.shiftKey && this.workAnchor!==null) {
+        const ids=this.workItems.slice(Math.min(index,this.workAnchor),Math.max(index,this.workAnchor)+1).map(value=>value.id);
+        this.workSelection=[...new Set([...this.workSelection,...ids])];
+      } else if (force || !this.workSelection.includes(item.id)) this.workSelection=[...new Set([...this.workSelection,item.id])];
+      else this.workSelection=this.workSelection.filter(id=>id!==item.id);
+      this.workAnchor=index;
+    },
+    clickWorkItem(item,event) { if (this.workSelection.length || event.shiftKey) this.selectWorkItem(item,event); else this.openWorkItem(item); },
+    async openWorkItem(item) {
+      this.recordEditor=null; this.comparisonMessage='';
+      const placeholder={loading:true,workbench:true,card_key:this.workCard,record:{id:item.id,item_title:item.title,source_path:item.path}};
+      this.recordComparison=placeholder;
+      const current=this.recordComparison;
+      try {
+        const result=await this.api('/api/workbench/item?'+new URLSearchParams({card:placeholder.card_key,id:item.id}));
+        if (this.recordComparison===current) this.recordComparison=result;
+      } catch(error) { if (this.recordComparison===current) this.recordComparison={...placeholder,loading:false,error:error.message}; }
+    },
+    async refreshWorkComparison() {
+      const current=this.recordComparison;
+      if (!current?.workbench || this.recordEditor || this.comparisonEditLoading) return;
+      try {
+        const fresh=await this.api('/api/workbench/item?'+new URLSearchParams({card:current.card_key,id:current.record.id}));
+        if (this.recordComparison===current && !this.recordEditor && !this.comparisonEditLoading)
+          this.recordComparison={...fresh,before:current.before};
+      } catch (error) { this.notify(`任务已结束，元数据刷新失败：${error.message}`,true); }
+    },
+    prepareWorkAction(action) {
+      const current=this.recordComparison?.workbench ? this.recordComparison : null;
+      const ids=current ? [current.record.id] : [...this.workSelection];
+      if (!ids.length) { this.notify('请先选择作品',true); return; }
+      if (ids.length>200) { this.notify('每次最多处理 200 本作品',true); return; }
+      if (Object.keys(this.comparisonPatch()).length) { this.notify('请先保存或取消元数据编辑',true); return; }
+      this.workAction={...action,card:current?.card_key || this.workCard,ids,
+        fields:action.id==='extract_title'?['title']:action.id==='summary_translation'?['summary']:['title','summary','publisher']};
+    },
+    workFieldOptions() {
+      const fields=this.workAction?.id==='simplify'?['title','summary','publisher']:['title','summary','publisher','tags','genres','language','ageRating','totalBookCount','links'];
+      return fields.map(value=>({value,label:this.metadataText({metadata_fields:[value]})}));
+    },
+    async runWorkAction() {
+      if (!this.workAction || this.workSubmitting) return;
+      this.workSubmitting=true;
+      try {
+        const action=this.workAction;
+        const result=await this.api('/api/workbench/run',{method:'POST',body:JSON.stringify({card:action.card,ids:action.ids,action:action.id,fields:action.fields})});
+        this.workJobs.push(result.id); this.workAction=null; this.notify('任务已提交，执行情况将记录到运行日志');
+      } catch(error) {this.notify(error.message,true);}
+      finally {this.workSubmitting=false;}
+    },
     async openRecordComparison(record) {
       this.recordEditor = null;
       this.comparisonMessage = '';
@@ -495,7 +594,7 @@ createApp({
       this.comparisonEditLoading = true;
       this.comparisonMessage = '';
       try {
-        const data = await this.api(`/api/scrape-records/edit?id=${encodeURIComponent(comparison.record.id)}`);
+        const data = await this.api(comparison.workbench ? '/api/workbench/item?'+new URLSearchParams({card:comparison.card_key,id:comparison.record.id}) : `/api/scrape-records/edit?id=${encodeURIComponent(comparison.record.id)}`);
         if (this.recordComparison !== comparison) return;
         this.recordComparison = data;
         this.recordEditor = { baseline: JSON.parse(JSON.stringify(data.current)), draft: JSON.parse(JSON.stringify(data.current)), fields: data.editable_fields || [], revision: data.revision };
@@ -535,9 +634,15 @@ createApp({
     },
     closeRecordComparison(discard = false) {
       if (this.comparisonSaving) return;
-      if (!discard && Object.keys(this.comparisonPatch()).length) { this.comparisonDiscard = true; return; }
+      if (!discard && Object.keys(this.comparisonPatch()).length) { this.comparisonDiscardMode='close'; this.comparisonDiscard = true; return; }
       this.comparisonDiscard = false; this.recordEditor = null; this.recordComparison = null; this.comparisonMessage = '';
     },
+    cancelRecordEdit(discard=false) {
+      if (this.comparisonSaving) return;
+      if (!discard && Object.keys(this.comparisonPatch()).length) { this.comparisonDiscardMode='edit'; this.comparisonDiscard=true; return; }
+      this.comparisonDiscard=false; this.recordEditor=null; this.comparisonMessage='';
+    },
+    discardComparisonChanges() { if(this.comparisonDiscardMode==='edit') this.cancelRecordEdit(true); else this.closeRecordComparison(true); },
     async saveRecordComparison() {
       if (this.comparisonSaving || !this.recordEditor) return;
       if ([...document.querySelectorAll('.comparison-editor input')].some(input=>!input.checkValidity())) {
@@ -549,17 +654,18 @@ createApp({
       try {
         const expected = {...this.recordEditor.baseline};
         Object.keys(changes).forEach(field=>{ if (!Object.hasOwn(expected,field)) expected[field]=null; });
-        const result = await this.api('/api/scrape-records/edit', {method:'POST', body:JSON.stringify({
-          id:this.recordComparison.record.id, revision:this.recordEditor.revision, expected, changes
+        const workbench=!!this.recordComparison.workbench;
+        const result = await this.api(workbench?'/api/workbench/item':'/api/scrape-records/edit', {method:'POST', body:JSON.stringify({
+          id:this.recordComparison.record.id, card:this.recordComparison.card_key, revision:this.recordEditor.revision, expected, changes
         })});
         this.recordComparison = result; this.recordEditor = null;
         this.notify('已保存到 Komga，并更新刮削记录');
-        await this.loadRecords();
+        if(workbench) await this.loadWorkItems(); else await this.loadRecords();
       } catch (error) { this.comparisonMessage = error.message; }
       finally { this.comparisonSaving = false; }
     },
     comparisonFields() {
-      return [...new Set([...Object.keys(this.comparisonData('before')), ...Object.keys(this.comparisonData('after'))]
+      return [...new Set([...Object.keys(this.comparisonData('before')), ...Object.keys(this.comparisonData('after')), ...(this.recordEditor?.fields || [])]
         .map(field => field.replace(/(?:Lock|Locked)$/, '')))];
     },
     comparisonSections() {
@@ -607,7 +713,16 @@ createApp({
     cardServerName(card) { return this.config.KOMGA_SERVERS.find(server => server.id === card.serverId)?.name || 'Komga 服务'; },
     metadataText(record) { const labels = { status: '状态', summary: '简介', publisher: '出版商', genres: '流派', tags: '标签', title: '标题', alternateTitles: '别名', ageRating: '年龄分级', links: 'Bangumi 链接', totalBookCount: '册数', language: '语言', titleSort: '标题排序', authors: '作者', isbn: 'ISBN', number: '卷号', releaseDate: '发行日期', numberSort: '卷号排序', thumbnail: '封面' }; return (record.metadata_fields || []).map(field => field.endsWith('Lock') ? `${labels[field.slice(0,-4)] || field.slice(0,-4)}锁定` : labels[field] || field).join('、'); },
     recordTooltip(record) { const source = record.source_title || record.item_title || ''; const matched = record.matched_title && record.matched_title !== source ? ` → ${record.matched_title}` : ''; return `${source}${matched}`; },
-    async pollStatus() { if (!this.authenticated) return; try { this.status = await this.api('/api/status'); } catch (_) {} setTimeout(() => this.pollStatus(), 3000); },
+    async pollStatus() { if (!this.authenticated) return; try {
+      this.status = await this.api('/api/status');
+      const running=this.workJobs.filter(id=>this.status.tasks?.[id]);
+      if(running.length<this.workJobs.length) {
+        this.workJobs=running;
+        this.notify('工作平台任务已结束，详情请查看运行日志');
+        if(this.view==='workbench') await this.loadWorkItems();
+        await this.refreshWorkComparison();
+      }
+    } catch (_) {} setTimeout(() => this.pollStatus(), 3000); },
     openCredentialModal() { this.credentialForm = { username: '', password: '' }; this.showCredentialModal = true; },
     requestCredentialSave() { if (!this.credentialForm.username || !this.credentialForm.password) { this.notify('账号和密码不能为空', true); return; } this.showCredentialConfirm = true; },
     async confirmCredentialSave() { try { await this.api('/api/auth/credentials', { method: 'POST', body: JSON.stringify(this.credentialForm) }); this.showCredentialConfirm = false; this.showCredentialModal = false; this.loginForm.username = this.credentialForm.username; this.notify('后台账号密码已更新，请牢记新密码'); } catch (error) { this.notify(error.message, true); } }

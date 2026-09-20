@@ -69,6 +69,19 @@ class KomgaApi:
     def iter_library_series(self, library_id):
         return self._iter_list("series", {"libraryId": {"operator": "is", "value": str(library_id)}})
 
+    def list_library_page(self, library_id, page=0, size=48, search=""):
+        response = self.r.post(
+            f"{self.base_url}/series/list",
+            params={"page": page, "size": size, "sort": "metadata.titleSort,asc"},
+            json={"condition": {"allOf": [
+                {"libraryId": {"operator": "is", "value": str(library_id)}},
+                {"deleted": {"operator": "isFalse"}},
+            ]}, "fullTextSearch": search or None},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def iter_series_books(self, series_id):
         return self._iter_list("books", {"seriesId": {"operator": "is", "value": str(series_id)}})
 

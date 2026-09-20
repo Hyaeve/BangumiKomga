@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260920-8">
+<link rel="stylesheet" href="final-overrides.css?v=20260920-10">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -74,6 +74,9 @@
 <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>
 <path d="m9 9 2 2 4-4"/>
 </svg>
+<svg v-else-if="item.id==='workbench'" viewBox="0 0 24 24" data-icon="panels-top-left">
+<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/>
+</svg>
 <svg v-else-if="item.id==='tasks'" viewBox="0 0 24 24" data-icon="calendar-clock">
 <path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h2.5M16 2v4M8 2v4M3 10h5"/>
 <circle cx="16" cy="16" r="6"/>
@@ -99,7 +102,7 @@
       </aside>
 
       <main class="main" :class="{expanded:sidebarCollapsed}" @click="closeContextMenu">
-        <header class="page-head hero-head">
+        <header class="page-head hero-head" :class="{'work-head':view==='workbench'}">
 <div>
 <p class="kicker">BANGUMI KOMGA</p>
 <h1>{{currentNav.title}}</h1>
@@ -109,6 +112,10 @@
 <div class="hero-actions">
 <button class="primary hero-action" @click="addCard">＋ 添加媒体库</button>
 </div>
+</div>
+<div v-else-if="view==='workbench'" class="work-head-controls">
+  <div class="work-count"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg><strong>{{formatStat(workLibraryTotal)}}</strong><span>本</span></div>
+  <form class="work-search" @submit.prevent="searchWorkItems"><input v-model="workSearch" placeholder="搜索漫画或小说" aria-label="搜索漫画或小说"><button type="submit" aria-label="搜索"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button></form>
 </div>
 <div v-else-if="view==='tasks'" class="hero-controls"><div class="hero-actions">
 <button class="primary hero-action" @click="newTask">＋ 新建任务</button>
@@ -244,7 +251,32 @@
 <input type="file" accept="application/json,.json" @change="restoreConfig">
 </label>
 </div></div>
+<div v-if="view==='workbench'" class="work-header-bottom">
+  <div class="work-tabs" role="tablist" aria-label="媒体卡片"><button v-for="card in cards" :key="card.uid" role="tab" :aria-selected="workCard===taskLibraryKey(card)" :class="{active:workCard===taskLibraryKey(card)}" @click="switchWorkCard(card)"><span>{{card.name || '未命名媒体库'}}</span><small>{{cardServerName(card)}}</small></button></div>
+  <div v-if="workSelection.length" class="work-selection-banner"><strong>已选择 {{workSelection.length}} 本</strong><button @click="clearWorkSelection" aria-label="退出多选"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+</div>
 </header>
+
+        <section v-if="view==='workbench'" class="work-surface" :aria-busy="workLoading">
+          <p v-if="!cards.length" class="empty-state">暂无媒体卡片</p>
+          <p v-else-if="workLoading" class="empty-state" role="status">正在读取作品…</p>
+          <div v-else-if="workError" class="empty-state" role="alert">{{workError}} <button class="secondary" @click="loadWorkItems">重试</button></div>
+          <p v-else-if="!workItems.length" class="empty-state">没有找到作品</p>
+          <div v-else class="work-grid">
+            <button v-for="item in workItems" :key="item.id" type="button" class="work-book" :class="{selected:workSelection.includes(item.id)}" :aria-pressed="workSelection.includes(item.id)" @contextmenu.prevent="selectWorkItem(item,$event,true)" @click="clickWorkItem(item,$event)">
+              <span class="work-cover"><img v-if="!item.coverFailed" :src="item.cover" :alt="item.title" loading="lazy" @error="item.coverFailed=true"><span v-else class="work-cover-empty">暂无封面</span><span class="work-book-hover">{{workSelection.length?'选择作品':'编辑元数据'}}</span><span v-if="workSelection.includes(item.id)" class="work-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></span>
+              <strong>{{item.title}}</strong>
+            </button>
+          </div>
+          <div class="work-pagination" v-if="workTotal>48"><button class="secondary" :disabled="workLoading || workPage===0" @click="changeWorkPage(-1)">上一页</button><span>{{workPage+1}} / {{Math.ceil(workTotal/48)}}</span><button class="secondary" :disabled="workLoading || (workPage+1)*48>=workTotal" @click="changeWorkPage(1)">下一页</button></div>
+          <div class="work-tool-dock">
+            <div v-if="workToolsOpen" class="work-tool-list">
+              <button v-for="action in workActions" :key="action.id" :disabled="!workSelection.length" @click="prepareWorkAction(action)"><svg viewBox="0 0 24 24" aria-hidden="true"><use :href="'#work-icon-'+action.icon"/></svg><span>{{action.label}}</span></button>
+            </div>
+            <button class="work-tool-toggle" @click="workToolsOpen=!workToolsOpen" :aria-expanded="workToolsOpen" aria-label="工作台工具"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a5.5 5.5 0 0 0-7 7L2 19l3 3 5.7-5.7a5.5 5.5 0 0 0 7-7l-4 4-3-3Z"/></svg></button>
+            <span v-if="workJobs.length" class="work-job-state" role="status">{{workJobs.length}} 个任务处理中</span>
+          </div>
+        </section>
 
         <section v-if="view==='scrape'" class="view-stack">
           <div class="library-grid" @click="closeContextMenu">
@@ -598,16 +630,17 @@
     <div v-if="recordComparison" class="modal-backdrop" @click.self="closeRecordComparison()">
       <section class="modal record-comparison-modal" role="dialog" aria-modal="true" aria-label="元数据修改对比">
         <header class="comparison-heading">
-          <h2>元数据修改对比</h2>
+          <div class="comparison-heading-copy"><h2>{{recordComparison.workbench?'编辑元数据':'元数据修改对比'}}</h2><p class="comparison-path">{{recordComparison.record.source_path || '文件路径不可用'}}</p></div>
           <div v-if="!recordComparison.loading && !recordComparison.error && recordComparison.before && recordComparison.after" class="comparison-actions">
             <button v-if="!recordEditor" class="secondary" type="button" :disabled="comparisonEditLoading" @click="editRecordComparison"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5L8 21H3v-5ZM14 5l5 5"/></svg>{{comparisonEditLoading?'读取中…':'编辑'}}</button>
             <template v-else>
-              <button class="secondary" type="button" :disabled="comparisonSaving" @click="closeRecordComparison()">取消</button>
+              <button class="secondary" type="button" :disabled="comparisonSaving" @click="cancelRecordEdit()">取消</button>
               <button class="primary" type="button" :disabled="comparisonSaving || !Object.keys(comparisonPatch()).length" @click="saveRecordComparison"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/></svg>{{comparisonSaving?'保存中…':'保存到 Komga'}}</button>
             </template>
           </div>
         </header>
         <p class="comparison-title">{{recordComparison.record.item_title}}</p>
+        <div v-if="recordComparison.workbench && !recordComparison.loading && !recordComparison.error" class="work-editor-tools"><button v-for="action in workActions" :key="action.id" class="secondary" :disabled="comparisonSaving" @click="prepareWorkAction(action)"><svg viewBox="0 0 24 24" aria-hidden="true"><use :href="'#work-icon-'+action.icon"/></svg>{{action.label}}</button></div>
         <p v-if="comparisonMessage" class="comparison-save-error" role="alert">{{comparisonMessage}}</p>
         <p v-if="recordComparison.loading" role="status">正在加载元数据…</p>
         <p v-else-if="recordComparison.error" role="alert">{{recordComparison.error}}</p>
@@ -659,9 +692,22 @@
     <div v-if="comparisonDiscard" class="modal-backdrop" @click.self="comparisonDiscard=false">
       <section class="modal" role="dialog" aria-modal="true" aria-label="舍弃未保存的修改">
         <h2>舍弃未保存的修改？</h2>
-        <div class="modal-actions"><button type="button" class="secondary" @click="comparisonDiscard=false">继续编辑</button><button type="button" class="primary" @click="closeRecordComparison(true)">舍弃修改</button></div>
+        <div class="modal-actions"><button type="button" class="secondary" @click="comparisonDiscard=false">继续编辑</button><button type="button" class="primary" @click="discardComparisonChanges">舍弃修改</button></div>
       </section>
     </div>
+    <div v-if="workAction" class="modal-backdrop work-action-backdrop" @click.self="!workSubmitting && (workAction=null)">
+      <form class="modal work-action-modal" @submit.prevent="runWorkAction" role="dialog" aria-modal="true" aria-label="工作平台操作">
+        <h2>{{workAction.label}}</h2><p>已选择 {{workAction.ids.length}} 本作品</p>
+        <tag-picker v-if="['simplify','ai_completion'].includes(workAction.id)" id="work-fields" label="元数据" v-model="workAction.fields" :options="workFieldOptions()" placeholder="选择元数据"></tag-picker>
+        <div class="modal-actions"><button type="button" class="secondary" :disabled="workSubmitting" @click="workAction=null">取消</button><button type="submit" class="primary" :disabled="workSubmitting || !workAction.fields.length">{{workSubmitting?'提交中…':'确认执行'}}</button></div>
+      </form>
+    </div>
+    <svg class="work-icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+      <symbol id="work-icon-languages" viewBox="0 0 24 24"><path d="m5 8 6 6m-7 0 6-6 2-5M2 5h12M7 2h1m6 20 4-10 4 10m-6.5-4h5"/></symbol>
+      <symbol id="work-icon-text-cursor-input" viewBox="0 0 24 24"><path d="M5 4h4m-2 0v16m-2 0h4M3 8H2v8h1m8-8h11v8H11"/></symbol>
+      <symbol id="work-icon-sparkles" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM5 3v4M3 5h4m12 12v4m-2-2h4"/></symbol>
+      <symbol id="work-icon-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 3h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6v16h-6a3 3 0 0 0-3 2 3 3 0 0 0-3-2H3Z"/></symbol>
+    </defs></svg>
     <div v-if="showCredentialModal" class="modal-backdrop" @click.self="showCredentialModal=false">
 <form class="modal" @submit.prevent="requestCredentialSave">
 <button type="button" class="modal-close" @click="showCredentialModal=false">×</button>
@@ -831,7 +877,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260920-9">
+<script src="config.js?v=20260920-10">
 </script>
 </body>
 </html>

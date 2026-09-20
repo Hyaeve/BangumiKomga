@@ -524,10 +524,11 @@ def _complete_task_libraries(target_ids, task):
         _run_managed("services.metadata_task", request)
 
 
-def _translate_task_libraries(target_ids, fields=None, correction=None, include_locked=False, lock_completed=None, include_volumes=True, filter_terms=None, filter_regex=False):
+def _translate_task_libraries(target_ids, fields=None, correction=None, include_locked=False, lock_completed=None, include_volumes=True, filter_terms=None, filter_regex=False, series_ids=None):
     from tools.translation_task import translate_library
     from tools.db import init_sqlite3, record_scrape_event
     action = "元数据修正" if correction is not None else "AI翻译"
+    source_label = "工作平台" if series_ids is not None else "计划任务"
 
     state = _read_state()
     context = _configured_library_context()
@@ -546,7 +547,7 @@ def _translate_task_libraries(target_ids, fields=None, correction=None, include_
             library_id, server_id = target["library_id"], target["server_id"]
             if os.environ.get("BANGUMI_EXECUTION_ID"):
                 os.environ["BANGUMI_EXECUTION_SERVER"] = server_id
-            komga = _load_komga(server_id)
+            komga = _load_komga(server_id, require_server=True) if series_ids is not None else _load_komga(server_id)
             libraries = komga.list_libraries()
             library_name = next((item.get("name") for item in libraries if str(item.get("id")) == library_id), library_id)
             card = next((item for item in state.get("KOMGA_LIBRARY_LIST", []) if str(item.get("LIBRARY")) == library_id and str(item.get("SERVER_ID") or "") == server_id), {})
@@ -555,29 +556,33 @@ def _translate_task_libraries(target_ids, fields=None, correction=None, include_
                 record_scrape_event(
                     conn, "小说" if card.get("IS_NOVEL_ONLY") else "漫画",
                     item.get("name") or "", library_id, library_name, fields,
-                    source_title=source_title, match_source=f"计划任务：{action}",
+                    source_title=source_title, match_source=f"{source_label}：{action}",
                     event_kind=kind, source_path=str(item.get("url") or ""),
                     komga_id=item["id"], server_id=server_id,
                     metadata_before=item.get("metadata_before"), metadata_after=item.get("metadata_after"),
                 )
 
-            log = lambda detail, level: _write_activity(f"计划任务：{action}", detail, level=level)
+            log = lambda detail, level: _write_activity(f"{source_label}：{action}", detail, level=level)
             try:
+                selected = {}
+                if series_ids is not None:
+                    from tools.workbench import checked_item
+                    selected["series_items"] = [checked_item(komga, library_id, item_id) for item_id in series_ids]
                 if correction is not None:
                     from tools.correction_task import correct_library
                     counts = correct_library(komga, library_id, state, record, log, fields, correction,
                                              only_novel=media_type(card), include_locked=include_locked,
                                              lock_completed=bool(lock_completed), include_volumes=include_volumes,
-                                             filter_terms=filter_terms, filter_regex=filter_regex)
+                                             filter_terms=filter_terms, filter_regex=filter_regex, **selected)
                 else:
                     counts = translate_library(komga, library_id, state, record, log, fields=fields,
                                                include_locked=include_locked,
                                                lock_completed=True if lock_completed is None else lock_completed,
-                                               include_volumes=include_volumes)
+                                               include_volumes=include_volumes, **selected)
             finally:
                 komga.r.close()
             failures += counts["failed"]
-            _write_activity(f"计划任务：{action}", f"{target['server_name']} / {library_name}：更新 {counts['updated']} 项目，跳过 {counts['skipped']} 项目，失败 {counts['failed']} 字段")
+            _write_activity(f"{source_label}：{action}", f"{target['server_name']} / {library_name}：更新 {counts['updated']} 项目，跳过 {counts['skipped']} 项目，失败 {counts['failed']} 字段")
     finally:
         conn.close()
     if failures:
@@ -1354,6 +1359,27 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"config": _read_state(), "format": "bangumikomga-config-v1"})
         elif path == "/api/status":
             self._json(200, TASK_EXECUTOR.snapshot())
+        elif path.startswith("/api/workbench/"):
+            from tools import workbench
+            import sys
+            query = {key: values[0] for key, values in parse_qs(urlparse(self.path).query).items()}
+            try:
+                if path == "/api/workbench/items":
+                    self._json(200, workbench.read_page(sys.modules[__name__], query))
+                elif path == "/api/workbench/item":
+                    self._json(200, workbench.read_item(sys.modules[__name__], query.get("card", ""), query.get("id", "")))
+                elif path == "/api/workbench/cover":
+                    content, mime, _ = workbench.read_cover(sys.modules[__name__], query.get("card", ""), query.get("id", ""))
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime)
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "private, max-age=300")
+                    self.end_headers()
+                    self.wfile.write(content)
+                else:
+                    self._json(404, {"error": "接口不存在"})
+            except Exception as exc:
+                self._json(400, {"error": str(exc)})
         elif path == "/api/scrape-records":
             query = parse_qs(urlparse(self.path).query)
             try:
@@ -1498,6 +1524,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         try:
+            if path.startswith("/api/workbench/"):
+                if not self._require_auth():
+                    return
+                from tools import workbench
+                import sys
+                body = self._body()
+                if path == "/api/workbench/item":
+                    self._json(200, workbench.save_item(sys.modules[__name__], body))
+                elif path == "/api/workbench/run":
+                    self._json(200, workbench.start_action(sys.modules[__name__], body))
+                else:
+                    self._json(404, {"error": "接口不存在"})
+                return
             if path == "/api/auth/login":
                 body = self._body()
                 auth = _read_auth()

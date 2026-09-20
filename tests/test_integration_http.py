@@ -126,6 +126,28 @@ class IntegrationHTTPTests(unittest.TestCase):
             self.assertEqual(self.calls[-1][0], "/api/v1/series/s1/metadata")
             self.assertFalse(self.metadata["summaryLock"])
 
+    def test_workbench_page_and_edit_use_real_http_client(self):
+        from tools import workbench
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            context = {"server::lib": {"server_id": "server", "library_id": "lib", "server_name": "服务"}}
+            with patch.object(web_backend, "ROOT", root), \
+                 patch.object(web_backend, "_configured_library_context", return_value=context), \
+                 patch.object(web_backend, "_load_komga", return_value=self.komga), \
+                 patch.object(web_backend, "_read_state", return_value={
+                     "KOMGA_LIBRARY_LIST": [{"SERVER_ID": "server", "LIBRARY": "lib"}]}), \
+                 patch.object(web_backend, "_write_activity"):
+                page = workbench.read_page(web_backend, {"card": "server::lib", "q": "书"})
+                self.assertEqual(page["items"][0]["id"], "s1")
+                self.assertEqual(self.calls[0][1]["fullTextSearch"], "书")
+                detail = workbench.read_item(web_backend, "server::lib", "s1")
+                result = workbench.save_item(web_backend, {"card": "server::lib", "id": "s1",
+                    "expected": detail["current"], "changes": {"summary": "工作平台 HTTP 修改"}})
+                self.assertEqual(result["after"]["summary"], "工作平台 HTTP 修改")
+                self.assertEqual(self.metadata["summary"], "工作平台 HTTP 修改")
+                self.assertEqual(result["record"]["source_path"], "/data/漫画/原书名")
+                self.assertFalse(result["after"]["summaryLock"])
+
     def test_ai_test_endpoint_calls_translation_and_audits_both_results(self):
         import requests
         server = ThreadingHTTPServer(("127.0.0.1", 0), web_backend.Handler)

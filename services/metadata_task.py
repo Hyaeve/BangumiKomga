@@ -47,7 +47,12 @@ def main():
             log(f"{item.get('name', item['id'])}：完成状态检查失败：{exc}", "error")
     series = []
     for card in config.KOMGA_LIBRARY_LIST:
-        for item in scraper.komga.iter_library_series(card["LIBRARY"]):
+        if "series_ids" in request:
+            from tools.workbench import checked_item
+            items = [checked_item(scraper.komga, card["LIBRARY"], item_id) for item_id in request["series_ids"]]
+        else:
+            items = scraper.komga.iter_library_series(card["LIBRARY"])
+        for item in items:
             item["is_novel"] = media_type(card) == "book"
             lock_existing(item, card, "series", item.get("name", ""))
             if scraper.TASK_LOCK_COMPLETED and scraper.TASK_INCLUDE_VOLUMES:

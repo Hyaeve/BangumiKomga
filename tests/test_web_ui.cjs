@@ -30,12 +30,17 @@ const scrapeRecords = [{
 }];
 const runtimeLogs = [{ id: 1, level: 'info', action: '计划任务：自动执行', detail: '触发方式：Cron 定时触发\n任务：每日元数据补全\n应用媒体库：家庭书库 / 国漫\n元数据：标题、简介\n包含锁定：关闭；完成锁定：开启\n' + '用于测试很长操作详情的自动换行，不应省略或撑出页面。'.repeat(8), source: 'web', recorded_at: '2026-09-10T06:00:00' }];
 const comparisonFixture = {
-  record: { id: 2, item_title: '第一卷', event_kind: 'volume', metadata_fields: ['title','summary','tags'] },
+  record: { id: 2, item_title: '第一卷', event_kind: 'volume', source_path:'/data/comics/万古之王/第一卷.cbz', metadata_fields: ['title','summary','tags'] },
   before: {title:'原始标题',titleLock:false,summary:'原始简介',summaryLock:true,numberSort:0,publisher:'出版社',publisherLock:false,tags:['冒险','成长'],tagsLock:false,authors:[{name:'作者',role:'writer'}],authorsLock:true},
   after: {title:'匹配标题',titleLock:true,summary:'更新简介',summaryLock:false,numberSort:1,publisher:'出版社',publisherLock:true,tags:['冒险','成长'],tagsLock:false,authors:[{name:'作者',role:'writer'}],authorsLock:true},
   revision: 'fixture-revision'
 };
 const recordEditRequests = [];
+const workRequests = [];
+const workMetadata = {title:'工作平台作品',summary:'原始简介',titleLock:false,summaryLock:false,tags:[]};
+const workFixture = () => ({workbench:true,card_key:'fixture::lib-0',
+  record:{id:'work-0',item_title:workMetadata.title,source_path:'/data/comics/工作平台作品'},
+  before:{...workMetadata},after:{...workMetadata},current:{...workMetadata},editable_fields:['title','summary','tags'],revision:'work'});
 let failRecordEdit = false;
 const libraries = state.KOMGA_LIBRARY_LIST.map((item, index) => ({
   id: item.LIBRARY, name: ['国漫', '轻小说', '日漫', '无封面书库'][index] || `媒体库 ${index + 1}`
@@ -74,6 +79,19 @@ async function main() {
       else if (url.pathname === '/api/auth/logout') { sessionAuthenticated = false; result = {ok:true}; }
       else if (url.pathname === '/api/login-background') result = {items:state.KOMGA_LIBRARY_LIST.some(card=>card.LOGIN_BACKGROUND) ? Array.from({length:12}, (_,i)=>({url:`/test-cover/${i}`})) : []};
       else if (url.pathname === '/api/status') result = executionStatus;
+      else if (url.pathname === '/api/workbench/items') {
+        const pageIndex=Number(url.searchParams.get('page') || 0);
+        result={items:Array.from({length:pageIndex?2:48},(_,i)=>({id:`work-${pageIndex*48+i}`,title:`工作平台作品 ${pageIndex*48+i+1}`,cover:`/test-cover/${i%2}`,path:'/data/comics/工作平台作品'})),total:50,library_total:50};
+        if(url.searchParams.get('q')==='空') result.items=[];
+      }
+      else if (url.pathname === '/api/workbench/item') {
+        if(req.method==='POST') Object.assign(workMetadata,body.changes);
+        result=workFixture();
+      }
+      else if (url.pathname === '/api/workbench/run') {
+        workRequests.push(body); result={started:true,id:'workbench-fixture'};
+        executionStatus.tasks['workbench-fixture']={state:'running'};
+      }
       else if (url.pathname === '/api/proxy/test') result = {ok:true,message:'代理连接成功'};
       else if (url.pathname === '/api/ai/test') result = {message:'接口与中文翻译测试通过',translation:'年轻读者发现秘密图书馆。'};
       else if (url.pathname === '/api/ai') { Object.assign(state,body); result = {saved:true}; }
@@ -150,6 +168,59 @@ async function main() {
     const logoutIcon = await page.locator('.sidebar-logout svg').boundingBox();
     assert(Math.abs(navIcon.x-logoutIcon.x) < 1, 'logout icon aligns with navigation icons');
     const mediaAddRect = await page.locator('.hero-actions button').boundingBox();
+    await page.locator('.nav-item').filter({hasText:'工作平台'}).click();
+    await page.locator('.work-book').first().waitFor();
+    assert.equal(await page.locator('.nav-item').nth(1).innerText(),'工作平台');
+    assert.equal(await page.locator('.work-book').count(),48);
+    await page.waitForFunction(()=>[...document.querySelectorAll('.work-cover img')].slice(0,6).every(img=>img.complete && img.naturalWidth));
+    await page.screenshot({path:path.join(output,'workbench-desktop.png')});
+    await page.locator('.work-book').first().click({button:'right'});
+    await page.locator('.work-book').nth(3).click({modifiers:['Shift']});
+    assert.equal(await page.locator('.work-book.selected').count(),4);
+    await page.locator('.work-book').nth(5).click();
+    assert.equal(await page.locator('.work-book.selected').count(),5);
+    await page.getByRole('button',{name:'工作台工具',exact:true}).click();
+    await page.locator('.work-tool-list').getByRole('button',{name:'繁转简',exact:true}).click();
+    await page.getByRole('dialog',{name:'工作平台操作'}).getByRole('button',{name:'确认执行'}).click();
+    await page.waitForFunction(()=>!document.querySelector('.work-action-modal'));
+    assert.deepEqual(workRequests[0].ids,['work-0','work-1','work-2','work-3','work-5']);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.work-selection-banner').count(),0);
+    await page.locator('.work-book').first().click();
+    await page.locator('.record-comparison-modal .comparison-path').waitFor();
+    assert.equal(await page.locator('.comparison-path').innerText(),'/data/comics/工作平台作品');
+    await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).click();
+    await page.locator('.record-comparison-modal').getByRole('button',{name:'取消',exact:true}).click();
+    assert.equal(await page.locator('.record-comparison-modal').count(),1);
+    assert.equal(await page.locator('.comparison-editor').count(),0);
+    await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).click();
+    await page.getByLabel('修改后 标题',{exact:true}).fill('未保存修改');
+    await page.locator('.record-comparison-modal').getByRole('button',{name:'取消',exact:true}).click();
+    await page.getByRole('button',{name:'舍弃修改',exact:true}).click();
+    assert.equal(await page.locator('.record-comparison-modal').count(),1);
+    assert.equal(await page.getByLabel('修改后 标题',{exact:true}).inputValue(),'工作平台作品');
+    await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).click();
+    await page.getByLabel('修改后 简介',{exact:true}).fill('工作平台手动简介');
+    await page.getByRole('button',{name:'保存到 Komga',exact:true}).click();
+    await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).waitFor();
+    assert.equal(workMetadata.summary,'工作平台手动简介');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button',{name:'下一页',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.work-book').length===2);
+    await page.getByRole('button',{name:'上一页',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.work-book').length===48);
+    await page.getByLabel('搜索漫画或小说',{exact:true}).fill('空');
+    await page.locator('.work-search').getByRole('button',{name:'搜索',exact:true}).click();
+    await page.getByText('没有找到作品',{exact:true}).waitFor();
+    await page.getByLabel('搜索漫画或小说',{exact:true}).fill('');
+    await page.locator('.work-search').getByRole('button',{name:'搜索',exact:true}).click();
+    await page.locator('.work-book').first().waitFor();
+    await page.setViewportSize({width:390,height:844});
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    await page.screenshot({path:path.join(output,'workbench-mobile.png')});
+    await page.setViewportSize({width:1440,height:1000});
+    await page.locator('.nav-item').filter({hasText:'媒体卡片'}).click();
+    await page.locator('.library-card').first().waitFor();
     await page.waitForFunction(() => [...document.querySelectorAll('.library-card:first-child img')].every(img => img.complete && img.naturalWidth));
     await page.screenshot({ path: path.join(output, 'cards-desktop.png') });
     const cardLayout = await page.locator('.library-card').first().evaluate(card => {
@@ -474,7 +545,7 @@ async function main() {
     await page.locator('.modal-backdrop:has(.record-comparison-modal)').click({position:{x:5,y:5}});
     assert.equal(await page.locator('.record-comparison-modal').count(), 0);
     scrapeRecords[0].volume_count = 1;
-    await page.locator('.nav-item').nth(3).click();
+    await page.locator('.nav-item').filter({hasText:'运行日志'}).click();
     await page.locator('.runtime-log-row').first().waitFor();
     assert.equal(await page.locator('.runtime-log-row > small').count(), 0);
     assert.equal(await page.locator('.runtime-log-row').getByText('web', {exact:true}).count(), 0);
@@ -526,7 +597,7 @@ async function main() {
     await page.screenshot({ path: path.join(output, 'card-picker-mobile.png') });
     await page.getByRole('dialog', { name: '元数据覆盖候选项' }).getByLabel('封面', { exact: true }).press('Escape');
     await page.locator('.card-settings-modal').getByRole('button', { name: '取消', exact: true }).click();
-    await page.locator('.nav-item').nth(4).click();
+    await page.locator('.nav-item').filter({hasText:'系统设置'}).click();
     await page.setViewportSize({ width: 1440, height: 1000 });
     assert.equal(await page.locator('.bangumi-card-head a').innerText(), '创建令牌 ↗');
     const backupRect = await page.locator('.settings-hero-actions').boundingBox();
