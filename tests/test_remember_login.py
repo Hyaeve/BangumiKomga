@@ -43,6 +43,7 @@ class RememberLoginTests(unittest.TestCase):
                               data=json.dumps(data).encode() if data is not None else None,
                               headers={"Content-Type": "application/json", "Cookie": cookie})
                 with urlopen(req) as response:
+                    self.assertEqual(response.headers.get("Cache-Control"), "no-store")
                     return response.headers.get("Set-Cookie", ""), json.load(response)
             try:
                 ordinary, _ = request("/api/auth/login", {"username": "user", "password": "pass"})
@@ -50,7 +51,13 @@ class RememberLoginTests(unittest.TestCase):
                 remembered, _ = request("/api/auth/login", {"username": "user", "password": "pass", "remember": True})
                 self.assertIn(f"Max-Age={backend.REMEMBER_SECONDS}", remembered)
                 self.assertIn("HttpOnly", remembered)
+                server.shutdown()
+                server.server_close()
+                thread.join()
                 backend.SESSIONS.clear()
+                server = ThreadingHTTPServer(("127.0.0.1", 0), backend.Handler)
+                thread = threading.Thread(target=server.serve_forever)
+                thread.start()
                 self.assertTrue(request("/api/auth/session", cookie=remembered.split(";")[0])[1]["authenticated"])
                 self.assertFalse(request("/api/auth/session", cookie=ordinary.split(";")[0])[1]["authenticated"])
                 cleared, _ = request("/api/auth/logout", {}, remembered.split(";")[0])

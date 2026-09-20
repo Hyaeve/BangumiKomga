@@ -235,7 +235,18 @@ createApp({
     },
     notify(text, error = false) { this.message = text; this.messageError = error; if (text) setTimeout(() => { this.message = ''; }, 3500); },
     async checkSession() {
-      try { const session = await this.api('/api/auth/session'); this.authenticated = session.authenticated; this.credentialForm.username = session.authenticated ? session.username || '' : ''; if (this.authenticated) await this.loadApp(); else await this.loadLoginBackground(); } catch (_) { this.authenticated = false; await this.loadLoginBackground(); }
+      let session;
+      try { session = await this.api('/api/auth/session', { cache: 'no-store' }); }
+      catch (error) {
+        this.notify(`登录状态检查失败，请刷新重试：${error.message}`, true);
+        await this.loadLoginBackground();
+        return;
+      }
+      this.authenticated = session.authenticated;
+      this.credentialForm.username = session.authenticated ? session.username || '' : '';
+      if (!this.authenticated) { await this.loadLoginBackground(); return; }
+      try { await this.loadApp(); }
+      catch (error) { this.notify(`登录已恢复，后台数据加载失败，请刷新重试：${error.message}`, true); }
     },
     async loadLoginBackground() {
       if (this.authenticated) return;

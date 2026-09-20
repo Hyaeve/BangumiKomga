@@ -1297,6 +1297,7 @@ class Handler(BaseHTTPRequestHandler):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -1515,6 +1516,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Set-Cookie", f"bk_session={token}; Path=/; HttpOnly; SameSite=Strict" +
                                  (f"; Max-Age={REMEMBER_SECONDS}" if remember else ""))
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
@@ -1528,6 +1530,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Set-Cookie", "bk_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
