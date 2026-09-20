@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260920-6">
+<link rel="stylesheet" href="final-overrides.css?v=20260920-8">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -69,14 +69,15 @@
 <path d="m4 12 8 4 8-4"/>
 <path d="m4 16 8 4 8-4"/>
 </svg>
-<svg v-else-if="item.id==='records'" viewBox="0 0 24 24">
-<rect x="5" y="4" width="14" height="17" rx="2"/>
-<path d="M8 9h8M8 13h8M8 17h5"/>
+<svg v-else-if="item.id==='records'" viewBox="0 0 24 24" data-icon="book-check">
+<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>
+<path d="m9 9 2 2 4-4"/>
 </svg>
-<svg v-else-if="item.id==='tasks'" viewBox="0 0 24 24">
-<rect x="4" y="5" width="16" height="4" rx="1"/>
-<rect x="4" y="10" width="16" height="4" rx="1"/>
-<rect x="4" y="15" width="16" height="4" rx="1"/>
+<svg v-else-if="item.id==='tasks'" viewBox="0 0 24 24" data-icon="calendar-clock">
+<path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h2.5M16 2v4M8 2v4M3 10h5"/>
+<circle cx="16" cy="16" r="6"/>
+<path d="M16 13v3l2 1"/>
 </svg>
 <svg v-else-if="item.id==='logs'" viewBox="0 0 24 24">
 <path d="M5 5h14v14H5z"/>
@@ -594,10 +595,20 @@
       </main>
     </template>
 
-    <div v-if="recordComparison" class="modal-backdrop" @click.self="recordComparison=null">
+    <div v-if="recordComparison" class="modal-backdrop" @click.self="closeRecordComparison()">
       <section class="modal record-comparison-modal" role="dialog" aria-modal="true" aria-label="元数据修改对比">
-        <h2>元数据修改对比</h2>
+        <header class="comparison-heading">
+          <h2>元数据修改对比</h2>
+          <div v-if="!recordComparison.loading && !recordComparison.error && recordComparison.before && recordComparison.after" class="comparison-actions">
+            <button v-if="!recordEditor" class="secondary" type="button" :disabled="comparisonEditLoading" @click="editRecordComparison"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5L8 21H3v-5ZM14 5l5 5"/></svg>{{comparisonEditLoading?'读取中…':'编辑'}}</button>
+            <template v-else>
+              <button class="secondary" type="button" :disabled="comparisonSaving" @click="closeRecordComparison()">取消</button>
+              <button class="primary" type="button" :disabled="comparisonSaving || !Object.keys(comparisonPatch()).length" @click="saveRecordComparison"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/></svg>{{comparisonSaving?'保存中…':'保存到 Komga'}}</button>
+            </template>
+          </div>
+        </header>
         <p class="comparison-title">{{recordComparison.record.item_title}}</p>
+        <p v-if="comparisonMessage" class="comparison-save-error" role="alert">{{comparisonMessage}}</p>
         <p v-if="recordComparison.loading" role="status">正在加载元数据…</p>
         <p v-else-if="recordComparison.error" role="alert">{{recordComparison.error}}</p>
         <p v-else-if="recordComparison.before === null || recordComparison.after === null">此记录未保存修改前后快照，无法还原当时的元数据。</p>
@@ -607,15 +618,31 @@
             <section v-for="group in comparisonSections()" :key="group.name" class="comparison-group">
               <h4>{{group.name}}</h4>
               <div class="comparison-form-grid">
-                <fieldset v-for="field in group.fields" :key="field" class="comparison-field" :data-field="field" :class="{changed:comparisonChanged(field), wide:comparisonWide(field)}">
+                <fieldset v-for="field in group.fields" :key="field" class="comparison-field" :data-field="field" :disabled="side==='after' && comparisonSaving" :class="{changed:comparisonChanged(field), wide:comparisonWide(field)}">
                   <legend>{{metadataText({metadata_fields:[field]})}}</legend>
                   <div class="comparison-field-body">
-                    <div v-if="Array.isArray(recordComparison[side][field])" class="comparison-tokens" :aria-label="(side==='before'?'修改前 ':'修改后 ')+metadataText({metadata_fields:[field]})">
-                      <span v-for="(token,index) in comparisonTokens(recordComparison[side][field],field)" :key="index" class="comparison-token">{{token}}</span>
-                      <span v-if="!recordComparison[side][field].length" class="comparison-empty">—</span>
+                    <div v-if="comparisonEditable(side,field)" class="comparison-editor">
+                      <div v-if="comparisonObjectKeys(field).length" class="comparison-object-list">
+                        <div v-for="(entry,index) in comparisonData(side)[field] || []" :key="index" class="comparison-object-row">
+                          <template v-for="key in comparisonObjectKeys(field)" :key="key">
+                            <select v-if="key==='role'" v-model="entry[key]" :aria-label="metadataText({metadata_fields:[field]})+' '+(index+1)+' '+comparisonObjectLabel(key)"><option v-for="role in comparisonAuthorRoles()" :key="role.value" :value="role.value">{{role.label}}</option></select>
+                            <input v-else v-model="entry[key]" :placeholder="comparisonObjectLabel(key)" :aria-label="metadataText({metadata_fields:[field]})+' '+(index+1)+' '+comparisonObjectLabel(key)">
+                          </template>
+                          <button type="button" class="comparison-entry-button" :aria-label="'删除'+metadataText({metadata_fields:[field]})+' '+(index+1)" @click="recordEditor.draft[field].splice(index,1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+                        </div>
+                        <button type="button" class="comparison-entry-button" :aria-label="'添加'+metadataText({metadata_fields:[field]})" @click="addComparisonEntry(field)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+                      </div>
+                      <textarea v-else-if="['tags','genres'].includes(field)" rows="3" :value="(comparisonData(side)[field] || []).join('\n')" @input="setComparisonValue(field,$event.target.value)" :aria-label="'修改后 '+metadataText({metadata_fields:[field]})"></textarea>
+                      <select v-else-if="comparisonOptions(field).length" :value="comparisonData(side)[field] ?? ''" @change="setComparisonValue(field,$event.target.value)" :aria-label="'修改后 '+metadataText({metadata_fields:[field]})"><option v-for="option in comparisonOptions(field)" :key="option.value" :value="option.value">{{option.label}}</option></select>
+                      <textarea v-else-if="['title','summary'].includes(field)" :rows="field==='summary'?6:2" :value="comparisonData(side)[field] ?? ''" @input="setComparisonValue(field,$event.target.value)" :aria-label="'修改后 '+metadataText({metadata_fields:[field]})"></textarea>
+                      <input v-else :type="comparisonNumeric(field)?'number':field==='releaseDate'?'date':'text'" :step="field==='numberSort'?'any':1" :value="comparisonData(side)[field] ?? ''" @input="setComparisonValue(field,$event.target.value)" :aria-label="'修改后 '+metadataText({metadata_fields:[field]})">
                     </div>
-                    <textarea v-else-if="field==='summary' || field==='title' || typeof recordComparison[side][field]==='object'" readonly :rows="field==='summary'?6:2" :value="comparisonValue(recordComparison[side][field],field)" :aria-label="(side==='before'?'修改前 ':'修改后 ')+metadataText({metadata_fields:[field]})"></textarea>
-                    <input v-else readonly :value="comparisonValue(recordComparison[side][field],field)" :aria-label="(side==='before'?'修改前 ':'修改后 ')+metadataText({metadata_fields:[field]})">
+                    <div v-else-if="Array.isArray(comparisonData(side)[field])" class="comparison-tokens" :aria-label="(side==='before'?'修改前 ':'修改后 ')+metadataText({metadata_fields:[field]})">
+                      <span v-for="(token,index) in comparisonTokens(comparisonData(side)[field],field)" :key="index" class="comparison-token">{{token}}</span>
+                      <span v-if="!comparisonData(side)[field].length" class="comparison-empty">—</span>
+                    </div>
+                    <textarea v-else-if="field==='summary' || field==='title' || typeof comparisonData(side)[field]==='object'" readonly :rows="field==='summary'?6:2" :value="comparisonValue(comparisonData(side)[field],field)" :aria-label="(side==='before'?'修改前 ':'修改后 ')+metadataText({metadata_fields:[field]})"></textarea>
+                    <input v-else readonly :value="comparisonValue(comparisonData(side)[field],field)" :aria-label="(side==='before'?'修改前 ':'修改后 ')+metadataText({metadata_fields:[field]})">
                     <span class="comparison-lock" :class="{locked:comparisonLock(side,field)===true, unknown:comparisonLock(side,field)===null}" role="img" :aria-label="metadataText({metadata_fields:[field]})+'：'+comparisonLockLabel(side,field)" :data-tooltip="comparisonLockLabel(side,field)" tabindex="0">
                       <svg v-if="comparisonLock(side,field)!==null" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path v-if="comparisonLock(side,field)" d="M7 11V7a5 5 0 0 1 10 0v4"/><path v-else d="M7 11V7a5 5 0 0 1 9.9-1"/><path d="M12 15v3"/></svg>
                       <span v-else aria-hidden="true">—</span>
@@ -627,6 +654,12 @@
           </section>
           <span class="comparison-arrow" aria-hidden="true">→</span>
         </div>
+      </section>
+    </div>
+    <div v-if="comparisonDiscard" class="modal-backdrop" @click.self="comparisonDiscard=false">
+      <section class="modal" role="dialog" aria-modal="true" aria-label="舍弃未保存的修改">
+        <h2>舍弃未保存的修改？</h2>
+        <div class="modal-actions"><button type="button" class="secondary" @click="comparisonDiscard=false">继续编辑</button><button type="button" class="primary" @click="closeRecordComparison(true)">舍弃修改</button></div>
       </section>
     </div>
     <div v-if="showCredentialModal" class="modal-backdrop" @click.self="showCredentialModal=false">
@@ -798,7 +831,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260920-5">
+<script src="config.js?v=20260920-8">
 </script>
 </body>
 </html>

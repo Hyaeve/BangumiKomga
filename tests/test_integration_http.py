@@ -103,6 +103,29 @@ class IntegrationHTTPTests(unittest.TestCase):
         settings = {**self.settings, "OPENAI_BASE_URL": self.url + "/v1/chat/completions"}
         self.assertIn("图书馆", translate_summary_to_zh("A library.", True, settings))
 
+    def test_manual_record_edit_patches_actual_komga_client_and_reads_back(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            original = dict(self.metadata)
+            _, conn = init_sqlite3(root / "recordsRefreshed.db")
+            with closing(conn):
+                record_scrape_event(conn, "漫画", "原书名", "lib", "库", ["summary"],
+                                    event_kind="series", komga_id="s1", server_id="server",
+                                    metadata_before=original, metadata_after=original)
+            with patch.object(web_backend, "ROOT", root), \
+                 patch.object(web_backend, "_configured_library_context", return_value={
+                     "server::lib": {"server_id": "server", "library_id": "lib", "server_name": "服务"}}), \
+                 patch.object(web_backend, "_load_komga", return_value=self.komga), \
+                 patch.object(web_backend, "_cleanup_expired_records"):
+                edit = web_backend._read_record_edit(1)
+                result = web_backend._save_record_edit({"id": 1, "revision": edit["revision"],
+                    "expected": edit["current"], "changes": {"summary": "手动修订真实 HTTP 写入"}})
+            self.assertEqual(self.metadata["summary"], "手动修订真实 HTTP 写入")
+            self.assertEqual(result["before"], original)
+            self.assertEqual(result["after"], self.metadata)
+            self.assertEqual(self.calls[-1][0], "/api/v1/series/s1/metadata")
+            self.assertFalse(self.metadata["summaryLock"])
+
     def test_ai_test_endpoint_calls_translation_and_audits_both_results(self):
         import requests
         server = ThreadingHTTPServer(("127.0.0.1", 0), web_backend.Handler)

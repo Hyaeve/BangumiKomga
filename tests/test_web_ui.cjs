@@ -29,6 +29,14 @@ const scrapeRecords = [{
   volumes: [{ id: 2, item_title: '第一卷：用于验证省略显示与完整信息悬浮文本框的长标题', source_path: '/data/comics/万古之王/第一卷.cbz', metadata_fields: ['numberSort'], match_source: '卷号排序', recorded_at: '2026-09-10T13:14:13' }]
 }];
 const runtimeLogs = [{ id: 1, level: 'info', action: '计划任务：自动执行', detail: '触发方式：Cron 定时触发\n任务：每日元数据补全\n应用媒体库：家庭书库 / 国漫\n元数据：标题、简介\n包含锁定：关闭；完成锁定：开启\n' + '用于测试很长操作详情的自动换行，不应省略或撑出页面。'.repeat(8), source: 'web', recorded_at: '2026-09-10T06:00:00' }];
+const comparisonFixture = {
+  record: { id: 2, item_title: '第一卷', event_kind: 'volume', metadata_fields: ['title','summary','tags'] },
+  before: {title:'原始标题',titleLock:false,summary:'原始简介',summaryLock:true,numberSort:0,publisher:'出版社',publisherLock:false,tags:['冒险','成长'],tagsLock:false,authors:[{name:'作者',role:'writer'}],authorsLock:true},
+  after: {title:'匹配标题',titleLock:true,summary:'更新简介',summaryLock:false,numberSort:1,publisher:'出版社',publisherLock:true,tags:['冒险','成长'],tagsLock:false,authors:[{name:'作者',role:'writer'}],authorsLock:true},
+  revision: 'fixture-revision'
+};
+const recordEditRequests = [];
+let failRecordEdit = false;
 const libraries = state.KOMGA_LIBRARY_LIST.map((item, index) => ({
   id: item.LIBRARY, name: ['国漫', '轻小说', '日漫', '无封面书库'][index] || `媒体库 ${index + 1}`
 }));
@@ -97,11 +105,13 @@ async function main() {
       }
       else if (url.pathname === '/api/refresh') { refreshRequests.push(body); result = { started: true }; }
       else if (url.pathname === '/api/scrape-records') result = { items: scrapeRecords, total: 125 };
-      else if (url.pathname === '/api/scrape-records/comparison') result = {
-        record: { item_title: '第一卷' },
-        before: {title: '原始标题', titleLock: false, summary: '原始简介', summaryLock: true, numberSort: 0, publisher: '出版社', publisherLock: false, tags: ['冒险', '成长'], tagsLock: false, authors: [{name:'作者',role:'writer'}], authorsLock: true},
-        after: {title: '匹配标题', titleLock: true, summary: '更新简介', summaryLock: false, numberSort: 1, publisher: '出版社', publisherLock: true, tags: ['冒险', '成长'], tagsLock: false, authors: [{name:'作者',role:'writer'}], authorsLock: true}
-      };
+      else if (url.pathname === '/api/scrape-records/edit' && req.method === 'GET') result = {...comparisonFixture,current:comparisonFixture.after,editable_fields:['title','summary','tags','authors','numberSort']};
+      else if (url.pathname === '/api/scrape-records/edit' && req.method === 'POST') {
+        recordEditRequests.push(body);
+        if (failRecordEdit) { res.statusCode=400; result={error:'Komga 写入失败，刮削记录未更新，请重试'}; }
+        else { comparisonFixture.after={...comparisonFixture.after,...body.changes}; result=comparisonFixture; }
+      }
+      else if (url.pathname === '/api/scrape-records/comparison') result = comparisonFixture;
       else if (url.pathname === '/api/scrape-records/stats') result = { total: 12345, today: 1, comic: 12345, novel: 0 };
       else if (url.pathname === '/api/runtime-logs') result = { items: runtimeLogs, total: 230 };
       else if (url.pathname === '/api/runtime-logs/stats') result = { total: 23456, today: 1, success: 12, failed: 3 };
@@ -393,6 +403,44 @@ async function main() {
     assert.equal(await page.locator('.comparison-field input:not([readonly]), .comparison-field textarea:not([readonly])').count(), 0);
     assert.equal(await page.locator('.comparison-field input').first().evaluate(el=>getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
     assert.equal(await page.locator('.comparison-token').first().innerText(), '冒险');
+    await page.getByRole('button', {name:'编辑',exact:true}).click();
+    await page.getByRole('textbox', {name:'修改后 标题',exact:true}).fill('手动标题');
+    await page.getByRole('textbox', {name:'修改后 简介',exact:true}).fill('手动简介');
+    await page.getByRole('textbox', {name:'修改后 标签',exact:true}).fill('冒险\n手动标签');
+    assert.equal(await page.getByRole('textbox', {name:'修改前 标题',exact:true}).getAttribute('readonly'), '');
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog', {name:'舍弃未保存的修改',exact:true}).waitFor();
+    await page.getByRole('button', {name:'继续编辑',exact:true}).click();
+    await page.getByRole('textbox', {name:'作者 1 姓名',exact:true}).fill('手动作者');
+    await page.screenshot({path:path.join(output,'record-comparison-editing.png')});
+    await page.setViewportSize({width:390,height:844});
+    assert(await page.locator('.record-comparison-modal').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+    await page.screenshot({path:path.join(output,'record-comparison-editing-mobile.png')});
+    await page.setViewportSize({width:1440,height:1000});
+    assert.equal(await page.getByRole('button', {name:'保存到 Komga',exact:true}).isEnabled(), true);
+    failRecordEdit = true;
+    await page.getByRole('button', {name:'保存到 Komga',exact:true}).click();
+    await page.locator('.comparison-save-error').waitFor();
+    assert.equal(await page.getByRole('textbox', {name:'修改后 标题',exact:true}).inputValue(), '手动标题');
+    assert.equal(comparisonFixture.after.title, '匹配标题');
+    failRecordEdit = false;
+    await page.getByRole('button', {name:'保存到 Komga',exact:true}).click();
+    await page.getByText('已保存到 Komga，并更新刮削记录').waitFor();
+    assert.deepEqual(recordEditRequests.at(-1).changes, {title:'手动标题',summary:'手动简介',tags:['冒险','手动标签'],authors:[{name:'手动作者',role:'writer'}]});
+    assert.equal(await page.getByRole('textbox', {name:'修改后 标题',exact:true}).inputValue(), '手动标题');
+    const titleField = page.locator('.comparison-side').first().locator('[data-field="title"]');
+    const initialFieldBorder = await titleField.evaluate(el=>getComputedStyle(el).borderColor);
+    await page.getByRole('textbox', {name:'修改前 标题',exact:true}).click();
+    const focusedField = await titleField.evaluate(el=>({border:getComputedStyle(el).borderColor,outline:getComputedStyle(el).outlineStyle,shadow:getComputedStyle(el).boxShadow}));
+    assert.notEqual(focusedField.border, initialFieldBorder);
+    assert.equal(focusedField.outline, 'none');
+    assert.equal(focusedField.shadow, 'none');
+    await titleField.locator('.comparison-lock').focus();
+    assert.equal(await titleField.locator('.comparison-lock').evaluate(el=>getComputedStyle(el).outlineStyle), 'none');
+    assert.equal(await page.locator('.icon-tasks svg').getAttribute('data-icon'), 'calendar-clock');
+    assert.equal(await page.locator('.icon-records svg').getAttribute('data-icon'), 'book-check');
+    assert.deepEqual(await page.locator('.icon-tasks svg').evaluate(el=>[getComputedStyle(el).width,getComputedStyle(el).strokeWidth]),
+      await page.locator('.icon-records svg').evaluate(el=>[getComputedStyle(el).width,getComputedStyle(el).strokeWidth]));
     await page.screenshot({path:path.join(output,'record-comparison-desktop.png')});
     await page.setViewportSize({width:390,height:844});
     assert(await page.locator('.record-comparison-modal').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
@@ -402,6 +450,7 @@ async function main() {
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.record-comparison-modal').count(), 0);
     await page.setViewportSize({width:1440,height:1000});
+    await page.screenshot({path:path.join(output,'sidebar-semantic-icons.png')});
     assert.equal(await page.locator('.record-volumes').count(), 1);
     assert.equal(await page.locator('.record-volume-head > *').count(), 6);
     assert.match(await page.locator('.record-path').innerText(), /第一卷\.cbz/);

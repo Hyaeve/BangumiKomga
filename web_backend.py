@@ -92,6 +92,7 @@ DEFAULTS = {
 STATE_LOCK = threading.RLock()
 TASK_EXECUTOR = TaskExecutor(ROOT)
 LOGIN_BACKGROUND_SECRET = secrets.token_bytes(32)
+RECORD_EDIT_LOCK = threading.RLock()
 
 
 def _run_managed(module, payload):
@@ -367,7 +368,7 @@ def save_state(data: dict) -> dict:
     return merged
 
 
-def _load_komga(server_id=None):
+def _load_komga(server_id=None, *, require_server=False):
     state = _read_state()
     if server_id:
         for server in state.get("KOMGA_SERVERS", []) or []:
@@ -376,6 +377,8 @@ def _load_komga(server_id=None):
                 if not server.get("api_key") and (not server.get("email") or not server.get("password")):
                     raise ValueError("请填写 Komga 账号密码或 API 密钥")
                 return KomgaApi(server["base_url"], server.get("email", ""), server.get("password", ""), server.get("api_key") or None)
+    if require_server:
+        raise ValueError("记录对应的 Komga 服务已删除，不能使用默认服务代替")
     if not state.get("KOMGA_BASE_URL"):
         raise ValueError("请先保存 Komga 地址")
     if not state.get("KOMGA_API_KEY") and (not state.get("KOMGA_EMAIL") or not state.get("KOMGA_EMAIL_PASSWORD")):
@@ -896,7 +899,99 @@ def _read_record_comparison(record_id):
             return {"record": visible[0], "before": None, "after": None}
         row = conn.execute("SELECT metadata_before,metadata_after FROM scrape_records WHERE id=?", (record_id,)).fetchone()
     return {"record": visible[0], "before": json.loads(row[0]) if row and row[0] else None,
-            "after": json.loads(row[1]) if row and row[1] else None}
+            "after": json.loads(row[1]) if row and row[1] else None,
+            "revision": hashlib.sha256((row[1] or "").encode()).hexdigest() if row else ""}
+
+
+def _record_edit_target(record_id):
+    comparison = _read_record_comparison(record_id)
+    if not comparison:
+        raise ValueError("记录不存在或不属于已添加的媒体卡片")
+    record = comparison["record"]
+    if not isinstance(comparison["before"], dict) or not isinstance(comparison["after"], dict):
+        raise ValueError("此记录缺少历史快照，无法安全编辑")
+    if not record["komga_id"] or not record["record_server_id"] or record["event_kind"] not in {"series", "volume"}:
+        raise ValueError("此记录缺少明确的 Komga 项目标识，无法安全编辑")
+    server_id, library_id = record["record_server_id"], str(record["library_id"])
+    if f"{server_id}::{library_id}" not in _configured_library_context():
+        raise ValueError("此记录对应的媒体卡片已移除")
+    client = _load_komga(server_id, require_server=True)
+    kind = record["event_kind"]
+    getter = client.get_specific_series if kind == "series" else client.get_specific_book
+    item = getter(record["komga_id"])
+    if not isinstance(item, dict) or str(item.get("id")) != record["komga_id"] or str(item.get("libraryId")) != library_id:
+        raise ValueError("Komga 项目已删除或不属于此媒体库，未写入任何数据")
+    if not isinstance(item.get("metadata"), dict):
+        raise ValueError("无法读取 Komga 当前元数据")
+    return comparison, client, item
+
+
+def _read_record_edit(record_id):
+    from tools.record_edit import editable_fields
+    comparison, _, item = _record_edit_target(record_id)
+    return {**comparison, "current": item["metadata"],
+            "editable_fields": sorted(editable_fields(comparison["record"]["event_kind"]))}
+
+
+def _save_record_edit(body):
+    from tools.record_edit import validate_changes, same_value
+    if not isinstance(body, dict) or not isinstance(body.get("expected"), dict):
+        raise ValueError("缺少编辑基准，请重新进入编辑")
+    with RECORD_EDIT_LOCK:
+        comparison, client, item = _record_edit_target(body.get("id", ""))
+        record = comparison["record"]
+        if body.get("revision") != comparison.get("revision"):
+            raise ValueError("此记录已被其他操作修改，请重新进入编辑")
+        current = item["metadata"]
+        changes = validate_changes(body.get("changes"), record["event_kind"])
+        expected = body["expected"]
+        # Check only edited fields, including their locks. Unrelated concurrent
+        # changes survive because the PATCH contains only explicit user edits.
+        for field in changes:
+            if field not in expected:
+                raise ValueError("编辑基准不完整，请重新进入编辑")
+            for key in (field, field + "Lock", field + "Locked"):
+                if not same_value(key, current.get(key), expected.get(key)):
+                    raise ValueError(f"Komga 的 {field} 或锁定状态已变化，请重新进入编辑，未覆盖当前数据")
+        changes = {field: value for field, value in changes.items() if not same_value(field, value, current.get(field))}
+        if not changes:
+            return comparison
+        update = client.update_series_metadata if record["event_kind"] == "series" else client.update_book_metadata
+        if not update(record["komga_id"], changes):
+            _write_activity("手动修订：失败", f"项目：{record['item_title']}\nKomga 写入失败，记录未更新", level="error")
+            raise ValueError("Komga 写入失败，刮削记录未更新，请重试")
+        getter = client.get_specific_series if record["event_kind"] == "series" else client.get_specific_book
+        try:
+            saved = getter(record["komga_id"])["metadata"]
+        except Exception:
+            raise ValueError("Komga 已接受修改，但无法回读确认；记录尚未更新，请检查 Komga 后重试") from None
+        if not isinstance(saved, dict) or any(not same_value(field, saved.get(field), value) for field, value in changes.items()):
+            raise ValueError("Komga 回读结果与提交不一致，记录尚未更新，请检查 Komga 当前值")
+        for field in changes:
+            if any(saved.get(key) != current.get(key) for key in (field + "Lock", field + "Locked")):
+                raise ValueError("Komga 锁定状态在保存期间变化，记录尚未更新，请检查当前值")
+        fields = list(dict.fromkeys([*record["metadata_fields"], *changes]))
+        match_source = record["match_source"]
+        if "手动修订" not in match_source:
+            match_source = (match_source + " · 手动修订").strip(" ·")
+        try:
+            with closing(sqlite3.connect(ROOT / "recordsRefreshed.db")) as conn:
+                result = conn.execute("""UPDATE scrape_records SET metadata_after=?,metadata_fields=?,
+                    matched_title=?,match_source=? WHERE id=?""",
+                    (json.dumps(saved, ensure_ascii=False), ",".join(fields), saved.get("title") or record["matched_title"],
+                     match_source, record["id"]))
+                if not result.rowcount:
+                    raise ValueError("记录已被删除")
+                conn.execute("INSERT INTO activity_logs(level,action,detail,source,recorded_at) VALUES (?,?,?,?,?)",
+                             ("info", "手动修订：成功", f"项目：{record['source_title']}\n服务：{record['server_name']}\n"
+                              f"媒体库：{record['library_name']}\n修改字段：{', '.join(changes)}\n"
+                              f"修改前：{json.dumps({key: current.get(key) for key in changes}, ensure_ascii=False)}\n"
+                              f"修改后：{json.dumps(changes, ensure_ascii=False)}",
+                              "manual", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                conn.commit()
+        except Exception:
+            raise ValueError("Komga 已更新，但本地记录保存失败，请检查存储空间后重新进入编辑") from None
+        return _read_record_comparison(record["id"])
 
 
 def _backfill_source_paths(records):
@@ -1269,6 +1364,12 @@ class Handler(BaseHTTPRequestHandler):
                                                query.get("sort", ["newest"])[0] != "oldest", True))
         elif path == "/api/scrape-records/stats":
             self._json(200, _read_scrape_stats())
+        elif path == "/api/scrape-records/edit":
+            try:
+                query = parse_qs(urlparse(self.path).query)
+                self._json(200, _read_record_edit(query.get("id", [""])[0]))
+            except Exception as exc:
+                self._json(400, {"error": str(exc)})
         elif path == "/api/scrape-records/comparison":
             query = parse_qs(urlparse(self.path).query)
             try:
@@ -1495,6 +1596,10 @@ class Handler(BaseHTTPRequestHandler):
                 result = save_state(payload)
                 _write_activity("配置：还原", "从备份还原配置\n" + config_changes(previous, result))
                 self._json(200, result)
+            elif path == "/api/scrape-records/edit":
+                if not self._require_auth():
+                    return
+                self._json(200, _save_record_edit(self._body()))
             elif path == "/api/refresh" and self._require_auth():
                 body = self._body()
                 if _start_refresh(bool(body.get("full", False)), target_id=body.get("target_id")):
