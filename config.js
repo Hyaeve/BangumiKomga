@@ -89,6 +89,11 @@ createApp({
       recordSortNewest: true,
       expandedRecordIds: [],
       recordComparison: null,
+      recordEditor: null,
+      comparisonSaving: false,
+      comparisonEditLoading: false,
+      comparisonDiscard: false,
+      comparisonMessage: '',
       recordStats: { total: 0, today: 0, comic: 0, novel: 0 },
       cards: [],
       cardHues: [105, 270, 195, 35, 320, 155],
@@ -199,7 +204,8 @@ createApp({
         document.dispatchEvent(new Event('close-tag-pickers'));
         return;
       }
-      if (this.recordComparison) this.recordComparison = null;
+      if (this.comparisonDiscard) this.comparisonDiscard = false;
+      else if (this.recordComparison) this.closeRecordComparison();
       else if (this.showCredentialConfirm) this.showCredentialConfirm = false;
       else if (this.deletingTask) this.deletingTask = null;
       else if (this.showBangumiPreview) this.showBangumiPreview = false;
@@ -463,6 +469,8 @@ createApp({
     normalizeTaskLibraryKey(value) { if (String(value).includes('::')) return String(value); const card = this.cards.find(item => item.id === String(value)); return card ? this.taskLibraryKey(card) : String(value); },
     uniqueTaskName(base, currentId = '') { const names = new Set(this.tasks.filter(task => task.id !== currentId).map(task => task.name)); if (!names.has(base)) return base; if (!names.has(`${base} 副本`)) return `${base} 副本`; let index = 2; while (names.has(`${base} 副本 ${index}`)) index += 1; return `${base} 副本 ${index}`; },
     async openRecordComparison(record) {
+      this.recordEditor = null;
+      this.comparisonMessage = '';
       this.recordComparison = { loading: true, record };
       try {
         const result = await this.api(`/api/scrape-records/comparison?id=${encodeURIComponent(record.id)}`);
@@ -471,8 +479,76 @@ createApp({
         if (this.recordComparison?.record === record) this.recordComparison = { record, error: error.message };
       }
     },
+    async editRecordComparison() {
+      const comparison = this.recordComparison;
+      this.comparisonEditLoading = true;
+      this.comparisonMessage = '';
+      try {
+        const data = await this.api(`/api/scrape-records/edit?id=${encodeURIComponent(comparison.record.id)}`);
+        if (this.recordComparison !== comparison) return;
+        this.recordComparison = data;
+        this.recordEditor = { baseline: JSON.parse(JSON.stringify(data.current)), draft: JSON.parse(JSON.stringify(data.current)), fields: data.editable_fields || [], revision: data.revision };
+      } catch (error) { if (this.recordComparison === comparison) this.comparisonMessage = error.message; }
+      finally { this.comparisonEditLoading = false; }
+    },
+    comparisonData(side) { return side === 'after' && this.recordEditor ? this.recordEditor.draft : this.recordComparison?.[side] || {}; },
+    comparisonEditable(side, field) { return side === 'after' && !!this.recordEditor?.fields.includes(field); },
+    comparisonNumeric(field) { return ['numberSort', 'ageRating', 'totalBookCount'].includes(field); },
+    comparisonOptions(field) {
+      if (field === 'status') return [{value:'ONGOING',label:'连载中'},{value:'ENDED',label:'已完结'},{value:'HIATUS',label:'暂停'},{value:'ABANDONED',label:'已弃坑'}];
+      if (field === 'readingDirection') return [{value:'',label:'未设置'},{value:'LEFT_TO_RIGHT',label:'从左到右'},{value:'RIGHT_TO_LEFT',label:'从右到左'},{value:'VERTICAL',label:'纵向'},{value:'WEBTOON',label:'条漫'}];
+      return [];
+    },
+    comparisonObjectKeys(field) { return ({ authors: ['name','role'], links: ['label','url'], alternateTitles: ['label','title'] })[field] || []; },
+    comparisonObjectLabel(key) { return ({name:'姓名',role:'职责',label:'标签',url:'地址',title:'名称'})[key] || key; },
+    comparisonAuthorRoles() { return [{value:'writer',label:'作者'},{value:'penciller',label:'绘画'},{value:'inker',label:'线稿'},{value:'colorist',label:'上色'},{value:'letterer',label:'嵌字'},{value:'cover',label:'封面'},{value:'editor',label:'编辑'},{value:'translator',label:'翻译'}]; },
+    setComparisonValue(field, value) {
+      this.recordEditor.draft[field] = this.comparisonNumeric(field) ? (value === '' ? null : Number(value))
+        : ['tags','genres'].includes(field) ? value.split('\n')
+        : ['releaseDate','readingDirection'].includes(field) && value === '' ? null : value;
+    },
+    addComparisonEntry(field) {
+      if (!Array.isArray(this.recordEditor.draft[field])) this.recordEditor.draft[field] = [];
+      this.recordEditor.draft[field].push(Object.fromEntries(this.comparisonObjectKeys(field).map(key=>[key,key==='role'?'writer':''])));
+    },
+    comparisonPatch() {
+      if (!this.recordEditor) return {};
+      const changes = {};
+      for (const field of this.recordEditor.fields) {
+        if (!Object.hasOwn(this.recordEditor.draft, field)) continue;
+        let value = this.recordEditor.draft[field];
+        if (['tags','genres'].includes(field)) value = (value || []).map(item=>item.trim()).filter(Boolean);
+        if (JSON.stringify(value) !== JSON.stringify(this.recordEditor.baseline[field])) changes[field] = value;
+      }
+      return changes;
+    },
+    closeRecordComparison(discard = false) {
+      if (this.comparisonSaving) return;
+      if (!discard && Object.keys(this.comparisonPatch()).length) { this.comparisonDiscard = true; return; }
+      this.comparisonDiscard = false; this.recordEditor = null; this.recordComparison = null; this.comparisonMessage = '';
+    },
+    async saveRecordComparison() {
+      if (this.comparisonSaving || !this.recordEditor) return;
+      if ([...document.querySelectorAll('.comparison-editor input')].some(input=>!input.checkValidity())) {
+        this.comparisonMessage = '请检查输入的数字或日期格式'; return;
+      }
+      const changes = this.comparisonPatch();
+      if (!Object.keys(changes).length) return;
+      this.comparisonSaving = true; this.comparisonMessage = '';
+      try {
+        const expected = {...this.recordEditor.baseline};
+        Object.keys(changes).forEach(field=>{ if (!Object.hasOwn(expected,field)) expected[field]=null; });
+        const result = await this.api('/api/scrape-records/edit', {method:'POST', body:JSON.stringify({
+          id:this.recordComparison.record.id, revision:this.recordEditor.revision, expected, changes
+        })});
+        this.recordComparison = result; this.recordEditor = null;
+        this.notify('已保存到 Komga，并更新刮削记录');
+        await this.loadRecords();
+      } catch (error) { this.comparisonMessage = error.message; }
+      finally { this.comparisonSaving = false; }
+    },
     comparisonFields() {
-      return [...new Set([...Object.keys(this.recordComparison?.before || {}), ...Object.keys(this.recordComparison?.after || {})]
+      return [...new Set([...Object.keys(this.comparisonData('before')), ...Object.keys(this.comparisonData('after'))]
         .map(field => field.replace(/(?:Lock|Locked)$/, '')))];
     },
     comparisonSections() {
@@ -488,7 +564,7 @@ createApp({
     },
     comparisonWide(field) { return ['title', 'titleSort', 'summary', 'genres', 'tags', 'authors', 'alternateTitles', 'links'].includes(field); },
     comparisonLock(side, field) {
-      const metadata = this.recordComparison?.[side] || {};
+      const metadata = this.comparisonData(side);
       if (Object.hasOwn(metadata, `${field}Lock`)) return !!metadata[`${field}Lock`];
       if (Object.hasOwn(metadata, `${field}Locked`)) return !!metadata[`${field}Locked`];
       return null;
@@ -511,7 +587,7 @@ createApp({
         return JSON.stringify(item);
       });
     },
-    comparisonChanged(field) { return JSON.stringify(this.recordComparison?.before?.[field]) !== JSON.stringify(this.recordComparison?.after?.[field]) || this.comparisonLock('before', field) !== this.comparisonLock('after', field); },
+    comparisonChanged(field) { return JSON.stringify(this.comparisonData('before')[field]) !== JSON.stringify(this.comparisonData('after')[field]) || this.comparisonLock('before', field) !== this.comparisonLock('after', field); },
     recordGroupKey(record) { return record.group_key || JSON.stringify([record.server_id || '', record.library_id || '', record.item_type || '', (record.source_title || record.item_title || '').trim().toLowerCase()]); },
     toggleRecord(record) { const key = this.recordGroupKey(record); const index = this.expandedRecordIds.indexOf(key); if (index >= 0) this.expandedRecordIds.splice(index, 1); else this.expandedRecordIds.push(key); },
     recordExpanded(record) { return this.expandedRecordIds.includes(this.recordGroupKey(record)); },
