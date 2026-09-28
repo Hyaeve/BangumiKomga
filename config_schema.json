@@ -72,7 +72,7 @@
   {
     "name": "USE_BANGUMI_ARCHIVE",
     "prompt": "是否启用本地离线元数据",
-    "default": false,
+    "default": true,
     "type": "boolean",
     "required": false,
     "validator": "",

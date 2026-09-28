@@ -280,7 +280,7 @@
   overflow-y: hidden !important;
   padding: 2px 2px 8px !important;
   scrollbar-width: none !important;
-  cursor: ew-resize !important;
+  cursor: default !important;
   overscroll-behavior-x: contain !important;
 }
 .komga-settings-card .server-card-grid::-webkit-scrollbar { display: none !important; }
@@ -1787,3 +1787,22 @@
   .work-head-controls { display: grid; grid-template-columns: minmax(0,1fr); }
   .work-search { width: 100%; }
 }
+.work-library-controls { display: grid; gap: 12px; width: min(360px,70%); min-width: 0; }
+.work-library-controls .work-search { width: 100%; }
+.work-library-controls .tag-picker { margin: 0; }
+.work-head .work-header-bottom:empty { display: none; }
+.record-comparison-modal.work-metadata-modal { width: min(820px,calc(100vw - 36px)) !important; max-width: 820px !important; }
+.work-metadata-modal .work-metadata-form { display: block; }
+.work-metadata-modal .comparison-field.work-field-modified input,
+.work-metadata-modal .comparison-field.work-field-modified textarea,
+.work-metadata-modal .comparison-field.work-field-modified select,
+.work-metadata-modal .comparison-field.work-field-modified .comparison-token { color: #80559c !important; }
+.work-metadata-modal .comparison-field:focus-within input,
+.work-metadata-modal .comparison-field:focus-within textarea,
+.work-metadata-modal .comparison-field:focus-within select { color: #317f78 !important; }
+@media(max-width:480px) { .work-library-controls { width: 100%; } }
+.archive-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.archive-toggle { display: flex !important; align-items: center; gap: 8px; margin: 0 !important; }
+.archive-toggle input { width: 18px !important; height: 18px; accent-color: #8d73a3; }
+.archive-controls button { font-size: 13px !important; }
+.archive-state { color: #787281; font-size: 12px; margin: 0; }

@@ -95,6 +95,7 @@ createApp({
       comparisonDiscard: false,
       comparisonDiscardMode: 'close',
       comparisonMessage: '',
+      archiveStatus: null, archiveUpdating: false,
       workCard: '', workItems: [], workTotal: 0, workLibraryTotal: 0, workPage: 0, workSearch: '',
       workLoading: false, workError: '', workRequest: 0, workSelection: [], workAnchor: null,
       workNamedServers: [],
@@ -140,6 +141,11 @@ createApp({
     };
   },
   computed: {
+    workCardChoice: {
+      get() { return this.workCard ? [this.workCard] : []; },
+      set(values) { const card=this.cards.find(item=>this.taskLibraryKey(item)===values[0]); if(card) this.switchWorkCard(card); }
+    },
+    workCardOptions() { return this.cards.filter(card=>card.id && card.serverId).map(card=>({value:this.taskLibraryKey(card),label:card.name || card.id,detail:this.cardServerName(card)})); },
     loginBackgroundColumns() {
       if (!this.loginBackground.length) return [];
       return Array.from({length:8}, (_, column) => Array.from({length:8}, (_, row) =>
@@ -262,6 +268,19 @@ createApp({
       try { await this.loadApp(); }
       catch (error) { this.notify(`登录已恢复，后台数据加载失败，请刷新重试：${error.message}`, true); }
     },
+    async updateBangumiArchive() {
+      if (this.archiveUpdating) return;
+      this.archiveUpdating=true;
+      try {
+        if (!await this.save()) return;
+        await this.api('/api/bangumi/archive',{method:'POST',body:'{}'});
+        this.notify('离线库更新已提交，可在运行日志查看结果');
+      } catch(error) { this.notify(error.message,true); }
+      finally { this.archiveUpdating=false; }
+    },
+    async loadArchiveStatus() {
+      try { this.archiveStatus=await this.api('/api/bangumi/archive'); } catch (_) {}
+    },
     async loadLoginBackground() {
       if (this.authenticated) return;
       let pending = false;
@@ -298,6 +317,7 @@ createApp({
     async logout() { await this.api('/api/auth/logout', { method: 'POST', body: '{}' }); this.loginForm = {username:'',password:'',remember:false}; this.showLoginPassword = false; this.authenticated = false; },
     async loadApp() {
       const config = await this.api('/api/config'); this.applyConfig(config);
+      this.loadArchiveStatus();
       if (this.config.KOMGA_BASE_URL && (this.komgaAuthMode === 'key' ? this.config.KOMGA_API_KEY : (this.config.KOMGA_EMAIL && this.config.KOMGA_EMAIL_PASSWORD))) await this.loadLibraries(false);
       await Promise.all(this.cards.filter(card => card.serverId && card.id).map(card => this.loadCardPreview(card)));
       if (this.view === 'records') await this.loadRecords(true);
@@ -596,12 +616,16 @@ createApp({
       try {
         const data = await this.api(comparison.workbench ? '/api/workbench/item?'+new URLSearchParams({card:comparison.card_key,id:comparison.record.id}) : `/api/scrape-records/edit?id=${encodeURIComponent(comparison.record.id)}`);
         if (this.recordComparison !== comparison) return;
-        this.recordComparison = data;
+        this.recordComparison = comparison.workbench ? {...data,before:comparison.before} : data;
         this.recordEditor = { baseline: JSON.parse(JSON.stringify(data.current)), draft: JSON.parse(JSON.stringify(data.current)), fields: data.editable_fields || [], revision: data.revision };
       } catch (error) { if (this.recordComparison === comparison) this.comparisonMessage = error.message; }
       finally { this.comparisonEditLoading = false; }
     },
     comparisonData(side) { return side === 'after' && this.recordEditor ? this.recordEditor.draft : this.recordComparison?.[side] || {}; },
+    workFieldModified(field) {
+      if (!this.recordComparison?.workbench) return false;
+      return JSON.stringify(this.comparisonData('after')[field]) !== JSON.stringify(this.recordComparison.before?.[field]);
+    },
     comparisonEditable(side, field) { return side === 'after' && !!this.recordEditor?.fields.includes(field); },
     comparisonNumeric(field) { return ['numberSort', 'ageRating', 'totalBookCount'].includes(field); },
     comparisonOptions(field) {
@@ -655,10 +679,11 @@ createApp({
         const expected = {...this.recordEditor.baseline};
         Object.keys(changes).forEach(field=>{ if (!Object.hasOwn(expected,field)) expected[field]=null; });
         const workbench=!!this.recordComparison.workbench;
+        const original=this.recordComparison.before;
         const result = await this.api(workbench?'/api/workbench/item':'/api/scrape-records/edit', {method:'POST', body:JSON.stringify({
           id:this.recordComparison.record.id, card:this.recordComparison.card_key, revision:this.recordEditor.revision, expected, changes
         })});
-        this.recordComparison = result; this.recordEditor = null;
+        this.recordComparison = workbench ? {...result,before:original} : result; this.recordEditor = null;
         this.notify('已保存到 Komga，并更新刮削记录');
         if(workbench) await this.loadWorkItems(); else await this.loadRecords();
       } catch (error) { this.comparisonMessage = error.message; }
@@ -715,6 +740,7 @@ createApp({
     recordTooltip(record) { const source = record.source_title || record.item_title || ''; const matched = record.matched_title && record.matched_title !== source ? ` → ${record.matched_title}` : ''; return `${source}${matched}`; },
     async pollStatus() { if (!this.authenticated) return; try {
       this.status = await this.api('/api/status');
+      if (this.view==='settings' && this.config.USE_BANGUMI_ARCHIVE) await this.loadArchiveStatus();
       const running=this.workJobs.filter(id=>this.status.tasks?.[id]);
       if(running.length<this.workJobs.length) {
         this.workJobs=running;

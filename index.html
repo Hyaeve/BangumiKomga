@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260920-10">
+<link rel="stylesheet" href="final-overrides.css?v=20260928-1">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -115,7 +115,10 @@
 </div>
 <div v-else-if="view==='workbench'" class="work-head-controls">
   <div class="work-count"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg><strong>{{formatStat(workLibraryTotal)}}</strong><span>本</span></div>
+  <div class="work-library-controls">
+  <tag-picker id="work-library" label="媒体库" v-model="workCardChoice" :options="workCardOptions" placeholder="选择媒体库" single></tag-picker>
   <form class="work-search" @submit.prevent="searchWorkItems"><input v-model="workSearch" placeholder="搜索漫画或小说" aria-label="搜索漫画或小说"><button type="submit" aria-label="搜索"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button></form>
+  </div>
 </div>
 <div v-else-if="view==='tasks'" class="hero-controls"><div class="hero-actions">
 <button class="primary hero-action" @click="newTask">＋ 新建任务</button>
@@ -252,7 +255,6 @@
 </label>
 </div></div>
 <div v-if="view==='workbench'" class="work-header-bottom">
-  <div class="work-tabs" role="tablist" aria-label="媒体卡片"><button v-for="card in cards" :key="card.uid" role="tab" :aria-selected="workCard===taskLibraryKey(card)" :class="{active:workCard===taskLibraryKey(card)}" @click="switchWorkCard(card)"><span>{{card.name || '未命名媒体库'}}</span><small>{{cardServerName(card)}}</small></button></div>
   <div v-if="workSelection.length" class="work-selection-banner"><strong>已选择 {{workSelection.length}} 本</strong><button @click="clearWorkSelection" aria-label="退出多选"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
 </div>
 </header>
@@ -494,6 +496,11 @@
 </button>
 </div>
 </label>
+<div class="archive-controls">
+<label class="archive-toggle"><input type="checkbox" v-model="config.USE_BANGUMI_ARCHIVE" @change="save"><span>离线优先</span></label>
+<button type="button" class="secondary" :disabled="archiveUpdating || !!status.tasks?.['bangumi-archive']" @click="updateBangumiArchive">{{archiveUpdating || status.tasks?.['bangumi-archive']?'更新中…':'更新离线库'}}</button>
+</div>
+<p v-if="config.USE_BANGUMI_ARCHIVE && archiveStatus" class="archive-state" role="status">{{status.tasks?.['bangumi-archive']?'正在更新离线库':archiveStatus.ready?'SQLite 离线索引已就绪':'离线索引尚未就绪'}}</p>
 <div class="bangumi-test-row">
 <div class="search-input-wrap">
 <input v-model.trim="bangumiTestQuery" placeholder="漫画&amp;小说" @keyup.enter="testBangumiSearch">
@@ -628,7 +635,7 @@
     </template>
 
     <div v-if="recordComparison" class="modal-backdrop" @click.self="closeRecordComparison()">
-      <section class="modal record-comparison-modal" role="dialog" aria-modal="true" aria-label="元数据修改对比">
+      <section class="modal record-comparison-modal" :class="{'work-metadata-modal':recordComparison.workbench}" role="dialog" aria-modal="true" :aria-label="recordComparison.workbench?'编辑元数据':'元数据修改对比'">
         <header class="comparison-heading">
           <div class="comparison-heading-copy"><h2>{{recordComparison.workbench?'编辑元数据':'元数据修改对比'}}</h2><p class="comparison-path">{{recordComparison.record.source_path || '文件路径不可用'}}</p></div>
           <div v-if="!recordComparison.loading && !recordComparison.error && recordComparison.before && recordComparison.after" class="comparison-actions">
@@ -645,13 +652,13 @@
         <p v-if="recordComparison.loading" role="status">正在加载元数据…</p>
         <p v-else-if="recordComparison.error" role="alert">{{recordComparison.error}}</p>
         <p v-else-if="recordComparison.before === null || recordComparison.after === null">此记录未保存修改前后快照，无法还原当时的元数据。</p>
-        <div v-else class="metadata-comparison">
-          <section v-for="side in ['before','after']" :key="side" class="comparison-side">
-            <h3>{{side === 'before' ? '修改前' : '修改后'}}</h3>
+        <div v-else class="metadata-comparison" :class="{'work-metadata-form':recordComparison.workbench}">
+          <section v-for="side in (recordComparison.workbench ? ['after'] : ['before','after'])" :key="side" class="comparison-side">
+            <h3 v-if="!recordComparison.workbench">{{side === 'before' ? '修改前' : '修改后'}}</h3>
             <section v-for="group in comparisonSections()" :key="group.name" class="comparison-group">
               <h4>{{group.name}}</h4>
               <div class="comparison-form-grid">
-                <fieldset v-for="field in group.fields" :key="field" class="comparison-field" :data-field="field" :disabled="side==='after' && comparisonSaving" :class="{changed:comparisonChanged(field), wide:comparisonWide(field)}">
+                <fieldset v-for="field in group.fields" :key="field" class="comparison-field" :data-field="field" :disabled="side==='after' && comparisonSaving" :class="{changed:comparisonChanged(field), wide:comparisonWide(field), 'work-field-modified':workFieldModified(field)}">
                   <legend>{{metadataText({metadata_fields:[field]})}}</legend>
                   <div class="comparison-field-body">
                     <div v-if="comparisonEditable(side,field)" class="comparison-editor">
@@ -685,7 +692,7 @@
               </div>
             </section>
           </section>
-          <span class="comparison-arrow" aria-hidden="true">→</span>
+          <span v-if="!recordComparison.workbench" class="comparison-arrow" aria-hidden="true">→</span>
         </div>
       </section>
     </div>
@@ -877,7 +884,7 @@
 </script>
 <script src="floating-tooltip.js?v=20260910-10">
 </script>
-<script src="config.js?v=20260920-10">
+<script src="config.js?v=20260928-1">
 </script>
 </body>
 </html>
