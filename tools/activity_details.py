@@ -67,6 +67,7 @@ def config_changes(before, after):
         if before.get(key) != after.get(key):
             rows.append(f"{label}：已修改")
     for setting, label, identify in (
+        ("METADATA_PROVIDERS", "元数据提供商", lambda item: str(item.get("name"))),
         ("KOMGA_SERVERS", "Komga 服务", lambda item: str(item.get("id"))),
         ("KOMGA_LIBRARY_LIST", "媒体卡片", lambda item: f"{item.get('SERVER_ID','')}::{item.get('LIBRARY','')}"),
         ("METADATA_TASKS", "计划任务", lambda item: str(item.get("id"))),

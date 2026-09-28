@@ -107,6 +107,7 @@ async function main() {
         result = { stopping: true };
       }
       else if (url.pathname === '/api/bangumi/search') result = { items: [{ id: 123, name_cn: '测试漫画' }] };
+      else if (url.pathname === '/api/bangumi/archive') result = {enabled:false,ready:false,updating:false};
       else if (url.pathname === '/api/bangumi/subject') result = { item: { id: 123, name_cn: '测试漫画', summary: '预览测试简介' } };
       else if (url.pathname === '/api/config') {
         if (req.method === 'POST') state = body;
@@ -172,6 +173,14 @@ async function main() {
     await page.locator('.work-book').first().waitFor();
     assert.equal(await page.locator('.nav-item').nth(1).innerText(),'工作平台');
     assert.equal(await page.locator('.work-book').count(),48);
+    assert.equal(await page.locator('.work-tabs').count(),0);
+    await page.getByRole('button',{name:'媒体库',exact:true}).click();
+    await page.getByRole('dialog',{name:'媒体库候选项'}).getByRole('radio').nth(1).click();
+    assert.equal(await page.getByRole('dialog',{name:'媒体库候选项'}).count(),0);
+    await page.locator('.work-book').first().waitFor();
+    await page.getByRole('button',{name:'媒体库',exact:true}).click();
+    await page.getByRole('dialog',{name:'媒体库候选项'}).getByRole('radio').first().click();
+    await page.locator('.work-book').first().waitFor();
     await page.waitForFunction(()=>[...document.querySelectorAll('.work-cover img')].slice(0,6).every(img=>img.complete && img.naturalWidth));
     await page.screenshot({path:path.join(output,'workbench-desktop.png')});
     await page.locator('.work-book').first().click({button:'right'});
@@ -189,12 +198,17 @@ async function main() {
     await page.locator('.work-book').first().click();
     await page.locator('.record-comparison-modal .comparison-path').waitFor();
     assert.equal(await page.locator('.comparison-path').innerText(),'/data/comics/工作平台作品');
+    await page.locator('.work-metadata-modal .comparison-side').waitFor();
+    assert.equal(await page.locator('.work-metadata-modal .comparison-side').count(),1);
+    assert.equal(await page.locator('.work-metadata-modal .comparison-arrow').count(),0);
+    assert.equal(await page.locator('.work-metadata-modal').getByText('修改前',{exact:true}).count(),0);
     await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).click();
     await page.locator('.record-comparison-modal').getByRole('button',{name:'取消',exact:true}).click();
     assert.equal(await page.locator('.record-comparison-modal').count(),1);
     assert.equal(await page.locator('.comparison-editor').count(),0);
     await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).click();
     await page.getByLabel('修改后 标题',{exact:true}).fill('未保存修改');
+    assert.equal(await page.locator('.work-field-modified[data-field=title]').count(),1);
     await page.locator('.record-comparison-modal').getByRole('button',{name:'取消',exact:true}).click();
     await page.getByRole('button',{name:'舍弃修改',exact:true}).click();
     assert.equal(await page.locator('.record-comparison-modal').count(),1);
@@ -204,6 +218,8 @@ async function main() {
     await page.getByRole('button',{name:'保存到 Komga',exact:true}).click();
     await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).waitFor();
     assert.equal(workMetadata.summary,'工作平台手动简介');
+    assert.equal(await page.locator('.work-field-modified[data-field=summary]').count(),1);
+    await page.screenshot({path:path.join(output,'workbench-editor-single.png')});
     await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'下一页',exact:true}).click();
     await page.waitForFunction(()=>document.querySelectorAll('.work-book').length===2);
@@ -598,6 +614,7 @@ async function main() {
     await page.getByRole('dialog', { name: '元数据覆盖候选项' }).getByLabel('封面', { exact: true }).press('Escape');
     await page.locator('.card-settings-modal').getByRole('button', { name: '取消', exact: true }).click();
     await page.locator('.nav-item').filter({hasText:'系统设置'}).click();
+    assert.notEqual(await page.locator('.server-card-grid').evaluate(el=>getComputedStyle(el).cursor),'ew-resize');
     await page.setViewportSize({ width: 1440, height: 1000 });
     assert.equal(await page.locator('.bangumi-card-head a').innerText(), '创建令牌 ↗');
     const backupRect = await page.locator('.settings-hero-actions').boundingBox();

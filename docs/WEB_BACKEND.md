@@ -280,3 +280,38 @@ Web 层只通过保存动作生成原版可导入的 `config/config.py`，刮削
 - 手动编辑允许用户主动修改字段值，不改锁状态。保存前检查编辑基准，PATCH 后回读确认，并新增带原始/修改后快照的刮削记录。远端写入后本地保存或回读失败会明确报告，不能视为全部成功。
 - 模块边界：`tools/workbench.py` 提供卡片范围校验、列表、编辑、封面及任务提交；`services/workbench_task.py` 复用修正/翻译任务；`services/metadata_task.py` 可接收明确的系列 ID 列表，不扫描未选中的作品。移除工作平台路由和前端入口即可解耦，原任务不传系列限制时保持原行为。
 - 接口：`GET /api/workbench/items`、`GET/POST /api/workbench/item`、`GET /api/workbench/cover`、`POST /api/workbench/run`。卡片键使用 `服务ID::媒体库ID`；不接受只有媒体库 ID 的别名，避免不同服务同名 ID 或队列隔离问题。
+
+## 2026-09-28：单栏编辑、离线查询与实时事件
+
+### 工作平台
+
+工作平台顶栏右侧改为媒体库单选下拉框，其下是仅针对当前媒体库的搜索栏。元数据窗口只展示当前数据，不显示历史对比列；复用字段校验和安全保存，不复用左右对比布局。当前聚焦字段文字为青绿色，本次窗口打开后已改字段文字为紫色，保存后仍保留变更标记；关闭重新进入则以实时数据作为新基准。刮削记录的历史对比保持双栏。Komga 服务卡片区域保留鼠标滚轮横向滚动，但取消双向箭头光标。
+
+### Bangumi SQLite 离线策略
+
+- 本次参照本地 `komf-rs` 的离线索引与事件合并思路独立实现 Python 模块，没有引入 Rust 运行时或复制其完整提供商实现。
+- `bangumi_archive/sqlite_store.py` 从官方 Archive 的 `subject.jsonlines`、`subject-relations.jsonlines` 构建 `archivedata/bangumi.sqlite3`。仅保存书籍条目，名称、中文名、别名经过繁简归一化；精确索引和 FTS5 trigram 用于搜索，1-2 字查询使用有界 LIKE；ID 与关联查询直接查表，不加载全量 Python 索引或逐次扫描 JSONLines。
+- `USE_BANGUMI_ARCHIVE=True` 时，仅搜索未找到符合媒体类型及相似度要求的本地结果才调用在线搜索。在线搜索提供候选 ID，再从 SQLite 取其详情并校验；本地没有的 ID 跳过，等待官方归档更新，**不会调用在线详情/关联接口补齐**。本地索引未就绪时，也不把在线搜索载荷作为详情保存。
+- 离线文字元数据查询无需 Bangumi 令牌。令牌仍可用于在线搜索回退的权限需求；这不保证所有受限条目能匿名搜索。关闭离线开关保留原在线模式。
+- Archive 不包含封面，因此严格离线模式保留 Komga 原封面，不额外请求在线封面/条目详情。工作平台和登录拼贴仍直接读取 Komga 封面，不受影响。
+- 新配置默认启用离线，既有明确设置不会被强制覆盖。系统设置 Bangumi 区域增加离线开关、索引就绪状态和“更新离线库”。保存开关后后台服务按配置重载；已有 JSONLines 无 SQLite 时可后台建库。
+- 更新入口 `POST /api/bangumi/archive` 需要认证，独立进程下载并记录活动日志；`GET /api/bangumi/archive` 返回状态。下载使用现有代理设置；更新进程互斥，临时目录仅解压两个允许的文件，完整校验/建库成功后替换数据库。失败保留旧索引。已有周期更新仍按 `ARCHIVE_UPDATE_INTERVAL` 执行。
+- 官方完整归档下载及磁盘开销较大；本轮只使用小型测试归档，没有下载完整官方归档，也没有对真实 Komga 执行写入。
+
+### SSE 增量事件
+
+`services/event_batcher.py` 按媒体库/系列合并事件；Komga `TaskQueueStatus(count=0)` 触发批量分发，无空闲消息时使用 3 秒静默窗口及 30 秒最长合并时间。新增作品事件优先于同系列的元数据变动。取消原来 20 秒内直接丢弃事件的行为，执行期间到来的新增分卷会进入下一次合并。单线程回调避免共享刮削数据库游标并发。
+
+兼容 `SeriesAdded` 的 `id` 与 `BookAdded` 的 `seriesId`，继续限制已配置且启用刮削的媒体库。连接断开退避重连，不再重连数次后永久停止；避免错误回调尝试等待自己的线程。旧 SSE 路径返回 404 时尝试 `/api/v1/events`。现有通知机制保留，没有新增 Discord/Apprise 集成。
+
+### 原生提供商接入范围
+
+参考仓库的 MangaUpdates、MyAnimeList、AniList、MangaDex、BookWalker、ComicVine、YenPress、Viz、Webtoons、MangaBaka、eHentai 已有原生 Go 系列级搜索、详情和基础过滤接入。Bangumi 保持最高优先级，全部标题候选失败后才按来源优先级回退。配置通过 `METADATA_PROVIDERS` 持久化，当前没有专门的 Web 提供商编辑面板。完整卷册映射、部分专用过滤和数据库下载器尚未迁移；详见 `METADATA_PROVIDERS.md` 的范围和限制，不应视为 komf-rs 的完整等价实现。
+
+### Go 迁移第一阶段
+
+现有离线数据源已接入 `cmd/bangumikomga-core`，存在本地二进制时，
+SQLite 搜索、详情和关联读取通过 Go 执行，不增加监听端口或独立服务。
+源码环境未构建时保留 Python 读取器；Go 已存在但执行失败则明确报错。
+Docker 增加 Go 编译阶段，仍是单容器、15600 端口、`linux/amd64`。
+当前 Web、调度和建库仍使用 Python，不是全 Go 后端；详见 `GO_MIGRATION.md`。

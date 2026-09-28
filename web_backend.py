@@ -28,6 +28,7 @@ from tools.task_lock_policy import task_lock_options
 from tools.title_rules import normalize_filter_terms, compile_title_filters
 from tools.activity_details import config_changes, task_details, target_names
 from tools.komga_cover import read_series_cover
+from tools.provider_settings import DEFAULT_PROVIDERS, validate_providers
 
 
 ROOT = Path(__file__).resolve().parent
@@ -45,6 +46,7 @@ DEFAULTS = {
     "WEB_ADMIN_USERNAME": "admin",
     "WEB_ADMIN_PASSWORD_HASH": "",
     "BANGUMI_ACCESS_TOKEN": "",
+    "METADATA_PROVIDERS": DEFAULT_PROVIDERS,
     "OPENAI_BASE_URL": "",
     "OPENAI_API_KEY": "",
     "OPENAI_MODEL": "",
@@ -59,7 +61,7 @@ DEFAULTS = {
     "AI_RECOGNITION": False,
     "SORT_VOLUMES": False,
     "KOMGA_COLLECTION_LIST": [],
-    "USE_BANGUMI_ARCHIVE": False,
+    "USE_BANGUMI_ARCHIVE": True,
     "ARCHIVE_FILES_DIR": "./archivedata/",
     "ARCHIVE_UPDATE_INTERVAL": 168,
     "BANGUMI_KOMGA_SERVICE_TYPE": "sse",
@@ -278,6 +280,7 @@ def _write_config(data: dict):
 
 def save_state(data: dict) -> dict:
     merged = {**DEFAULTS, **data}
+    merged["METADATA_PROVIDERS"] = validate_providers(merged["METADATA_PROVIDERS"])
     from tools.proxy_settings import validate_proxy
     merged["OUTBOUND_PROXY_URL"] = validate_proxy(merged.get("OUTBOUND_PROXY_URL"))
     try:
@@ -1354,6 +1357,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(401, {"error": "请先登录"})
         elif path == "/api/config":
             self._json(200, _read_state())
+        elif path == "/api/providers":
+            self._json(200, {"catalog": DEFAULT_PROVIDERS,
+                             "configured": _read_state()["METADATA_PROVIDERS"],
+                             "primary": "BANGUMI"})
         elif path == "/api/config/backup":
             _write_activity("配置：备份", "下载当前配置备份\n包含系统设置、媒体卡片、计划任务与认证配置")
             self._json(200, {"config": _read_state(), "format": "bangumikomga-config-v1"})
@@ -1422,6 +1429,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, _runtime_log_stats())
         elif path == "/api/tasks":
             self._json(200, {"items": _read_state().get("METADATA_TASKS", []) or []})
+        elif path == "/api/bangumi/archive":
+            from bangumi_archive.sqlite_store import ArchiveStore
+            state = _read_state()
+            store = ArchiveStore(state.get("ARCHIVE_FILES_DIR", "./archivedata/"))
+            self._json(200, {"enabled": bool(state.get("USE_BANGUMI_ARCHIVE")), "ready": store.ready(),
+                             "updating": "bangumi-archive" in TASK_EXECUTOR.snapshot()["tasks"]})
         elif path == "/api/bangumi/search":
             query = parse_qs(urlparse(self.path).query).get("q", [""])[0].strip()
             if not query:
@@ -1524,6 +1537,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         try:
+            if path == "/api/bangumi/archive":
+                if not self._require_auth():
+                    return
+                def update_archive_job():
+                    _write_activity("Bangumi 离线库：开始更新", "下载官方归档并构建 SQLite 索引")
+                    try:
+                        _run_managed("services.archive_task", {})
+                        _write_activity("Bangumi 离线库：更新完成", "SQLite 索引已构建")
+                    except Exception as exc:
+                        _write_activity("Bangumi 离线库：更新失败", str(exc), level="error")
+                        raise
+                started = TASK_EXECUTOR.submit("bangumi-archive", ["bangumi-archive"], update_archive_job)
+                self._json(200, {"started": started})
+                return
             if path.startswith("/api/workbench/"):
                 if not self._require_auth():
                     return

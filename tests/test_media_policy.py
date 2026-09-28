@@ -37,10 +37,10 @@ class MediaPolicyTests(unittest.TestCase):
 
     def test_media_modes_restrict_search_candidates(self):
         results = [{"id": index, "type": 1, "series": True, "name": "同名作品", "name_cn": "",
-                    "infobox": [], "platform": platform} for index, platform in enumerate([1001, 1002, 1003, "其他", 1])]
-        self.assertEqual([r["id"] for r in resort_search_list("同名作品", results, 80, "comic")], [0])
-        self.assertEqual([r["id"] for r in resort_search_list("同名作品", results, 80, "book")], [1, 2, 3])
-        self.assertEqual([r["id"] for r in resort_search_list("同名作品", results, 80, "mixed")], [0, 1, 2, 3])
+                    "infobox": [], "platform": platform} for index, platform in enumerate([1001, 1002, 1003, "其他", 1], 1)]
+        self.assertEqual([r["id"] for r in resort_search_list("同名作品", results, 80, "comic")], [1])
+        self.assertEqual([r["id"] for r in resort_search_list("同名作品", results, 80, "book")], [2])
+        self.assertEqual([r["id"] for r in resort_search_list("同名作品", results, 80, "mixed")], [1])
 
     def test_manual_refresh_scopes_card_and_does_not_require_auto_enabled(self):
         context = {"a::lib": {"server_id": "a", "library_id": "lib"},

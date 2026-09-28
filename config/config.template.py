@@ -90,7 +90,7 @@ KOMGA_COLLECTION_LIST = []
 # @@validator:
 # @@info: 指定是否启用本地 bangumi/Archive 离线元数据。数据源：https://github.com/bangumi/Archive/releases/tag/archive
 # @@version: 0.13.0
-USE_BANGUMI_ARCHIVE = False
+USE_BANGUMI_ARCHIVE = True
 
 # @@name: ARCHIVE_FILES_DIR
 # @@prompt: 本地离线元数据存储目录
@@ -109,6 +109,22 @@ ARCHIVE_FILES_DIR = "./archivedata/"
 # @@info: 单位为小时的整数值, 置为 0 表示不检查离线元数据更新
 # @@version: 0.13.0
 ARCHIVE_UPDATE_INTERVAL = 168
+
+# Native Go metadata providers. Bangumi always runs before this list.
+# Credentials and field filters: docs/METADATA_PROVIDERS.md
+METADATA_PROVIDERS = [
+    {"name": "MANGA_UPDATES", "enabled": True, "priority": 10},
+    {"name": "MAL", "enabled": False, "priority": 20},
+    {"name": "ANILIST", "enabled": False, "priority": 40},
+    {"name": "MANGADEX", "enabled": False, "priority": 10},
+    {"name": "COMIC_VINE", "enabled": False, "priority": 110},
+    {"name": "MANGA_BAKA", "enabled": False, "priority": 10},
+    {"name": "BOOK_WALKER", "enabled": False, "priority": 10},
+    {"name": "YEN_PRESS", "enabled": False, "priority": 50},
+    {"name": "VIZ", "enabled": False, "priority": 70},
+    {"name": "WEBTOONS", "enabled": False, "priority": 130},
+    {"name": "EHENTAI", "enabled": False, "priority": 10},
+]
 
 # @@name: BANGUMI_KOMGA_SERVICE_TYPE
 # @@prompt: BangumiKomga 服务运行方式

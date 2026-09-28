@@ -30,12 +30,8 @@ def _set_tags(komga_metadata, bangumi_metadata):
     """
     漫画标签
     """
-    taglist = []
-    for info in bangumi_metadata["tags"]:
-        if info["count"] >= 3:
-            taglist.append(info["name"])
-
-    komga_metadata.tags = taglist
+    from tools.provider_filters import bangumi_tags
+    komga_metadata.tags = bangumi_tags(bangumi_metadata.get("tags", []))
 
 
 def _set_genres(komga_metadata, bangumi_metadata):
@@ -277,6 +273,14 @@ def set_komga_series_metadata(bangumi_metadata, manga_filename, bgm):
     """
     # init
     komga_series_metadata = SeriesMetadata()
+    if "_provider_fields" in bangumi_metadata:
+        for field, value in bangumi_metadata["_provider_fields"].items():
+            if hasattr(komga_series_metadata, field):
+                setattr(komga_series_metadata, field, value)
+        # Display title remains available even when its write filter is disabled.
+        komga_series_metadata.title = bangumi_metadata["_provider_fields"].get("title") or bangumi_metadata["name"]
+        komga_series_metadata.isvalid = bool(bangumi_metadata["name"])
+        return komga_series_metadata
 
     subject_relations = bgm.get_related_subjects(bangumi_metadata["id"])
 
@@ -338,6 +342,13 @@ def set_komga_book_metadata(subject_id, number, name, bgm):
 
     bangumi_metadata = bgm.get_subject_metadata(subject_id)
     if not bangumi_metadata:
+        return komga_book_metadata
+    if "_komf_book_fields" in bangumi_metadata:
+        komga_book_metadata.matched_fields = dict(bangumi_metadata["_komf_book_fields"])
+        for field, value in komga_book_metadata.matched_fields.items():
+            if hasattr(komga_book_metadata, field):
+                setattr(komga_book_metadata, field, value)
+        komga_book_metadata.isvalid = True
         return komga_book_metadata
 
     subject_relations = bgm.get_related_subjects(subject_id)

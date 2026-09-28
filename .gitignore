@@ -5,7 +5,10 @@ refreshMetadata.log
 __pycache__/
 .vscode
 *.json*
+!corpus/bangumi_tag_whitelist.json
 *.jsonlines*
 .coverage
 test_results/
+archivedata/
+bin/
 *.generated.py

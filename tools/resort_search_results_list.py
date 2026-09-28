@@ -21,41 +21,7 @@ def compute_name_score_by_fuzzy(name: str, name_cn: str, infobox, target: str) -
 
 
 def resort_search_list(query, results, threshold, is_novel=False):
-    if len(results) < 1:
-        return []
-    # 构建具有完整元数据的排序条目
-    sort_results = []
-    for result in results:
-        # bangumi书籍系列包括：系列、单行本
-        # 此处需去除漫画系列的单行本，避免干扰，官方 API 已添加 series 字段（是否系列，仅对书籍类型的条目有效）
-        # bangumi数据中存在单行本与系列未建立联系的情况
-        # FIXME: 单本漫画可能被归类为`漫画`而不是`漫画系列`，导致 series 字段为 False，匹配不到，比如：40152
-        if not result["series"]:
-            continue
-        # bangumi书籍类型包括：漫画、小说、画集、其他
-        platform = SubjectPlatform.parse(result["platform"])
-        # 根据 IS_NOVEL_ONLY 配置判断是否只应用于 Komga 的小说库
-        mode = is_novel if isinstance(is_novel, str) else ("book" if is_novel else "comic")
-        is_book = platform in (SubjectPlatform.Novel, SubjectPlatform.Illustration) or (
-            platform.name == "BGM38" and result.get("type", 1) == 1)
-        is_target_platform = (
-            (mode in ("comic", "mixed") and platform == SubjectPlatform.Comic)
-            or (mode in ("book", "mixed") and is_book)
-        )
-        if is_target_platform:
-            # 计算得分
-            score = compute_name_score_by_fuzzy(
-                result["name"],
-                result.get("name_cn", ""),
-                result["infobox"],
-                query,
-            )
-            # 仅添加得分超过阈值的条目
-            if score >= threshold:
-                result["fuzzScore"] = score
-                sort_results.append(result)
-
-    # 按得分降序排序
-    sort_results.sort(key=lambda x: x["fuzzScore"], reverse=True)
-
-    return sort_results
+    # Keep the old call signature for workers; percentage thresholds no longer
+    # replace komf's length-dependent edit-distance matcher.
+    from tools.komf_matching import match_bangumi
+    return match_bangumi(query, results, is_novel)

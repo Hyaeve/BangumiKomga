@@ -240,7 +240,8 @@ def _log_match_result(series, action, reason, matched_title="", subject_id=None)
     if matched_title:
         details.append(f"匹配标题：{matched_title}")
     if subject_id is not None:
-        details.append(f"Bangumi ID：{subject_id}")
+        label = "提供商条目" if str(subject_id).startswith("provider:") else "Bangumi ID"
+        details.append(f"{label}：{subject_id}")
     record_activity_log(conn, action, "\n".join(details),
                         level="error" if action == "匹配失败" else "info", source="scraper")
 
@@ -382,7 +383,30 @@ def refresh_metadata(series_list=None):
                         logger.debug("原始名称匹配成功: %s", series_name)
 
             if subject_id is None:
-                _log_match_result(series, "匹配失败", "所有标题搜索步骤均未找到 Bangumi 匹配结果")
+                from api.provider_source import ProviderDataSource
+                if isinstance(bgm, ProviderDataSource):
+                    from tools.komga_path import item_path
+                    books = komga.get_series_books(series_id)
+                    entries = books.get("content", []) if isinstance(books, dict) else []
+                    first_book = entries[0] if entries else {}
+                    folder = item_path(series).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+                    bgm.match_context = {
+                        "folder": folder, "oneshot": len(entries) == 1,
+                        "book_name": first_book.get("name", ""),
+                        "book_file": item_path(first_book).replace("\\", "/").rsplit("/", 1)[-1],
+                    }
+                    bgm.cover_loader = None
+                    if first_book.get("id"):
+                        from tools.provider_context import read_qualifier_cover
+                        bgm.cover_loader = lambda: read_qualifier_cover(komga, first_book["id"])
+                    other = bgm.search_other_providers(title_candidates + [series_name.strip()], search_mode)
+                    if other:
+                        subject_id, metadata = other["id"], other
+                        matched_search_title = other.get("_match_query", series_name)
+                        match_source = "提供商：" + other["provider"]
+
+            if subject_id is None:
+                _log_match_result(series, "匹配失败", "所有标题候选及已启用提供商均未匹配到结果")
                 if TASK_AI_COMPLETION and TASK_COMPLETION_FIELDS:
                     _complete_unmatched_with_ai(series, search_mode)
                 failed_count, failed_comic = record_series_status(
@@ -425,7 +449,7 @@ def refresh_metadata(series_list=None):
             )
             continue
 
-        matched_series_data = {
+        matched_series_data = metadata["_provider_fields"].copy() if "_provider_fields" in metadata else {
             "status": komga_metadata.status,
             "summary": komga_metadata.summary,
             "publisher": komga_metadata.publisher,
@@ -481,6 +505,8 @@ def refresh_metadata(series_list=None):
                     # 获取当前尺寸的封面
                     thumbnail = bgm.get_subject_thumbnail(
                         metadata, image_size=thumbnail_size)
+                    if not thumbnail:
+                        continue
 
                     # 尝试更新封面
                     replace_thumbnail_result = komga.update_series_thumbnail(
@@ -721,21 +747,25 @@ def refresh_partial_metadata(library_ids=None):
     return
 
 
-def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None, source_title="", match_source="", source_path=""):
+def update_book_metadata(book_id, related_subject, book_name, number, library_id=None, is_novel=False, current_metadata=None, source_title="", match_source="", source_path="", provider_book=None):
     # Get the metadata for the book from bangumi
     # Translation policy below decides whether the unlocked summary should be
     # translated and locked; the metadata builder must return the source text.
     process_metadata.set_translation_override(False)
-    book_metadata = process_metadata.set_komga_book_metadata(
-        related_subject["id"], number, book_name, bgm
-    )
+    if provider_book is not None:
+        from types import SimpleNamespace
+        book_metadata = SimpleNamespace(isvalid=True, title=provider_book.get("fields", {}).get("title") or book_name)
+    else:
+        book_metadata = process_metadata.set_komga_book_metadata(
+            related_subject["id"], number, book_name, bgm
+        )
     if book_metadata.isvalid == False:
         record_book_status(
             conn, book_id, related_subject["id"], 0, book_name, "metadata invalid"
         )
         return
 
-    matched_book_data = {
+    matched_book_data = dict(provider_book.get("fields") or {}) if provider_book is not None else {
         "authors": book_metadata.authors,
         "summary": book_metadata.summary,
         "tags": book_metadata.tags,
@@ -746,6 +776,8 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         "releaseDate": book_metadata.releaseDate,
         "numberSort": book_metadata.numberSort,
     }
+    if hasattr(book_metadata, "matched_fields"):
+        matched_book_data = book_metadata.matched_fields.copy()
     overwrite_fields = _overwrite_fields_for_library(library_id)
     if not _volume_sort_enabled_for_library(library_id):
         matched_book_data.pop("number", None)
@@ -779,6 +811,8 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 # 获取当前尺寸的封面
                 thumbnail = bgm.get_subject_thumbnail(
                     related_subject, image_size=thumbnail_size)
+                if not thumbnail:
+                    continue
 
                 # 尝试更新封面
                 replace_thumbnail_result = komga.update_book_thumbnail(
@@ -846,6 +880,39 @@ def refresh_book_metadata(subject_id, series_id, force_refresh_flag, required_fi
         ),
         book_ids,
     ).fetchall()
+
+    from api.provider_source import ProviderDataSource, decode_id, encode_id
+    if isinstance(bgm, ProviderDataSource) and decode_id(subject_id):
+        identity = decode_id(subject_id)
+        mode = "webtoon" if identity[0] == "WEBTOONS" else _media_type_for_library(library_id)
+        if mode == "mixed":
+            mode = "book" if is_novel else "comic"
+        try:
+            associations = bgm.associate_books(subject_id, books["content"], mode)
+        except Exception:
+            logger.exception("提供商卷册关联失败，保留当前卷册元数据")
+            return
+        shared_fields = bgm.shared_book_fields(subject_id)
+        for book in books["content"]:
+            provider_id = associations.get(str(book["id"]))
+            if not provider_id and not shared_fields:
+                continue
+            existing = next((record for record in book_records if record[0] == book["id"]), None)
+            if existing and not force_refresh_flag and existing[2] == 1 and not _book_needs_refresh(book, required_fields or []):
+                continue
+            try:
+                detail = bgm.get_book_metadata(subject_id, provider_id) if provider_id else {"fields": {}}
+                detail["fields"] = {**shared_fields, **(detail.get("fields") or {})}
+                related = {"id": encode_id(identity[0], provider_id) if provider_id else subject_id, "provider": identity[0],
+                           "name": detail.get("name") or book["name"], "_provider_cover": detail.get("cover", "")}
+                update_book_metadata(
+                    book["id"], related, book["name"], None, library_id, is_novel,
+                    book.get("metadata"), source_title, match_source, _record_path(book, "volume"),
+                    provider_book=detail,
+                )
+            except Exception:
+                logger.exception("提供商卷册获取或写入失败：%s；保留原元数据并继续其他卷册", book["name"])
+        return
 
     # Loop through each book in the series on komga
     for book in books["content"]:

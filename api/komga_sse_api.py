@@ -18,7 +18,12 @@ from threading import Thread, Lock
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from tools.log import logger
-from config.config import KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD, KOMGA_LIBRARY_LIST
+try:
+    from config.config import KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD, KOMGA_LIBRARY_LIST
+except ModuleNotFoundError as exc:
+    if exc.name != "config.config":
+        raise
+    KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD, KOMGA_LIBRARY_LIST = "", "", "", []
 try:
     from config.config import KOMGA_API_KEY
 except ImportError:
@@ -26,6 +31,7 @@ except ImportError:
 
 # 可配置的订阅事件类型
 RefreshEventType = ["SeriesAdded",
+                    "TaskQueueStatus",
                     # 扫描库文件(深度)会触发全库系列的 `SeriesChanged` 事件, 需要结合CBL判断是否实际需要刷新
                     # 在系列添加时只需关注 `SeriesAdded` 事件即可
                     "SeriesChanged",
@@ -48,6 +54,7 @@ class KomgaSseClient:
         # 基本设置
         self.base_url = base_url
         self.url = f"{base_url}/sse/v1/events"
+        self._alternate_endpoint_tried = False
         self.auth = (username, password)
         self.thread = None
         self.api_key = api_key
@@ -129,8 +136,7 @@ class KomgaSseClient:
                 )
             # 防止取不到response.status_code
             except requests.exceptions.ConnectionError as e:
-                logger.error(
-                    f"Komga SSE 连接错误, HTTP {response.status_code}: {response.reason}")
+                logger.error("Komga SSE 连接错误: %s", e)
                 return
             except Exception as e:
                 logger.error(f"Komga SSE 连接错误: {e}")
@@ -138,7 +144,9 @@ class KomgaSseClient:
                 return
             if response.status_code != 200:
                 logger.error("Komga 账户凭据验证失败!")
+                response.close()
                 return
+            response.close()
         else:
             return
 
@@ -155,7 +163,7 @@ class KomgaSseClient:
     def stop(self):
         """停止 SSE 监听"""
         self.running = False
-        if self.thread:
+        if self.thread and self.thread is not threading.current_thread():
             self.thread.join()
         # 释放 Session
         self.session.close()
@@ -169,26 +177,27 @@ class KomgaSseClient:
                 with self.session.get(self.url,
                                       stream=True,
                                       timeout=self.timeout) as response:
+                    if response.status_code == 404 and not self._alternate_endpoint_tried:
+                        self._alternate_endpoint_tried = True
+                        self.url = f"{self.base_url}/api/v1/events"
+                        continue
                     if response.status_code != 200:
-                        self.on_error(
+                        raise requests.RequestException(
                             f"Komga SSE 连接失败, HTTP {response.status_code}: {response.reason}")
-                        return
 
                     self.on_open()
                     self._process_stream(response)
                     retry_count = 0  # 成功后重置重试计数
+                    if self.running:
+                        time.sleep(1)
 
             except Exception as e:
                 logger.error(f"Komga SSE 连接出错: {e}")
                 self.on_error(e)
                 retry_count += 1
                 # 应用层自动重连, 重试self.max_retries次
-                if retry_count > self.max_retries:
-                    logger.error("超过最大重试次数，停止连接")
-                    self.stop()
-                    return
                 # 指数退避
-                delay = min(self.delay * (2 ** retry_count), 30)
+                delay = min(self.delay * (2 ** min(retry_count, 5)), 30)
                 logger.info(f"将在 {delay} 秒后尝试重连...")
                 time.sleep(delay)
                 self.on_retry()
@@ -248,9 +257,9 @@ class KomgaSseClient:
                 except Exception as e:
                     self.on_error(f"SSE 数据行 {line} 处理异常, {e}")
                     continue
-        except requests.exceptions.RequestException as re:
+        except requests.exceptions.RequestException as exc:
             # 处理网络层异常（连接超时、断开等）
-            self.on_error(f"读取 SSE 流数据时网络连接中断, {e}")
+            self.on_error(f"读取 SSE 流数据时网络连接中断, {exc}")
 
         except Exception as e:
             # 处理其他未知异常
@@ -304,11 +313,13 @@ class KomgaSseApi:
         self.series_modified_callbacks = []
         # 使用守护线程启动SSE客户端，确保线程唯一性
         self.sse_thread = None
-        self._start_sse_thread()
         # 使用线程池管理回调线程
-        self.executor = ThreadPoolExecutor(max_workers=5)
+        self.executor = ThreadPoolExecutor(max_workers=1)
+        from services.event_batcher import EventBatcher
+        self.batcher = EventBatcher(self._notify_callbacks)
         # 记录每个 series ID 的锁
         self.series_locks = {}
+        self._start_sse_thread()
         # 程序退出时自动调用
         atexit.register(self._stop_client)
 
@@ -336,6 +347,7 @@ class KomgaSseApi:
             self.sse_client.stop()
 
     def _stop_client(self):
+        self.batcher.close()
         # 停止 SSE 客户端
         self.sse_client.running = False
 
@@ -363,22 +375,13 @@ class KomgaSseApi:
 
     def _notify_callbacks(self, series_info):
         """通告所有已注册的回调函数"""
-        series_id = series_info['event_data'].get('seriesId')
+        series_id = series_info['event_data'].get('seriesId') or series_info['event_data'].get('id')
         if not series_id:
             return
 
-        now = datetime.datetime.now()
         with self._get_series_lock(series_id):
-            # 检查刷新间隔
             for callback in list(self.series_modified_callbacks):
-                if series_id in self.series_refresh_history:
-                    last_time = self.series_refresh_history[series_id]
-                    if now - last_time < self.refresh_interval:
-                        logger.debug(f"{series_id} 已在 {last_time} 刷新，跳过重复请求")
-                        return
                 try:
-                    # 更新时间戳并执行刷新
-                    self.series_refresh_history[series_id] = now
                     # 提交任务到线程池
                     self.executor.submit(callback, series_info)
                 except Exception as e:
@@ -406,12 +409,14 @@ class KomgaSseApi:
         """错误事件回调函数"""
         # 错误处理行为
         logger.error(f"遇到 SSE 错误: {e} ", exc_info=True)
-        # 错误自动重连
-        if "connection" in str(e).lower():
-            self._restart_sse_client()
+        # Reconnection belongs to the stream loop, never join its own thread.
 
     def on_event(self, event_type, event_data):
         """订阅事件回调函数"""
+        if event_type == "TaskQueueStatus":
+            if event_data.get("count") == 0:
+                self.batcher.flush(force=True)
+            return
         # 仅通知在 RefreshEventType 类型的事件
         if event_type in RefreshEventType:
             logger.debug(f"捕获订阅事件 [{event_type}]:{event_data}")
@@ -426,6 +431,6 @@ class KomgaSseApi:
                 return
             # 要不要在这里用多线程来执行 _notify_callbacks 呢?
             arg = {"event_type": event_type, "event_data": event_data}
-            self._notify_callbacks(arg)
+            self.batcher.add(arg)
         else:
             logger.debug(f"捕获无关事件 [{event_type}]:{event_data}")

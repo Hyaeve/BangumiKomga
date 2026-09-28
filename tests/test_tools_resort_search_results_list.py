@@ -73,17 +73,10 @@ class TestSearchResort(unittest.TestCase):
         sorted_results = resort_search_list("中文匹配", results, 30, False)
 
         # 验证基础条件
-        self.assertEqual(len(sorted_results), 3, "应保留所有符合平台和系列条件的条目")
-
-        # 验证得分计算合理性
-        # 完全匹配中文名 → 应该是 100
-        self.assertGreater(sorted_results[0]["fuzzScore"], 80)
-        # 别名匹配 “中文件名” vs “中文匹配” → 应该 ~50-65
-        self.assertLess(sorted_results[2]["fuzzScore"], 70)
-
-        # 验证排序稳定性
-        scores = [item["fuzzScore"] for item in sorted_results]
-        self.assertEqual(scores, sorted(scores, reverse=True), "得分应按降序排列")
+        self.assertEqual([item["id"] for item in sorted_results], [1])
+        self.assertNotIn("fuzzScore", sorted_results[0])
+        # Reference selects the first eligible match, without percentage ranking.
+        self.assertEqual([item["id"] for item in resort_search_list("中文匹配", results[1::-1], 99)], [2])
 
 
 class TestFuzzyNameScoring(unittest.TestCase):

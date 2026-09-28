@@ -20,6 +20,9 @@ class InitEnv:
         }
         # 初始化 bangumi API
         self.bgm = BangumiDataSourceFactory.create(BANGUMI_DATA_SOURCE_CONFIG)
+        from api.provider_source import ProviderDataSource
+        self.bgm = ProviderDataSource(self.bgm, globals().get("METADATA_PROVIDERS"),
+                                      globals().get("OUTBOUND_PROXY_URL", ""))
         # 初始化 komga API
         self.komga = komga_api.KomgaApi(
             KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD,

@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 class MatchActivityTests(unittest.TestCase):
     def run_match(self, cached=False, needs_refresh=False, found=True, valid=True, write=True, available=True,
-                  ai=False, ai_titles=None, searches=None, path_context=""):
+                  ai=False, ai_titles=None, searches=None, path_context="", provider=None):
         tree = ast.parse((Path(__file__).parents[1] / "core/refresh_metadata.py").read_text(encoding="utf-8"))
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
                      and node.name in {"refresh_metadata", "_log_match_result"}]
@@ -23,6 +23,11 @@ class MatchActivityTests(unittest.TestCase):
         bgm.search_subjects.return_value = [{"id": 42, "platform": "漫画"}] if found else []
         bgm.search_subjects.side_effect = searches
         bgm.get_subject_metadata.return_value = {"platform": "漫画"} if available else None
+        if provider is not None:
+            from api.provider_source import ProviderDataSource
+            primary = bgm
+            bgm = ProviderDataSource(primary, [{"name": "ANILIST", "enabled": True, "priority": 40}])
+            bgm.search_other_providers = Mock(return_value=provider)
         komga = Mock()
         komga.update_series_metadata.return_value = write
         scope = dict(cursor=cursor, conn=Mock(), logger=Mock(), bgm=bgm, komga=komga,
@@ -49,6 +54,18 @@ class MatchActivityTests(unittest.TestCase):
         scope["refresh_metadata"]([{"id": "s", "name": "原书名", "libraryId": "lib",
                                     "is_novel": False, "metadata": {"links": []}}])
         return scope
+
+    def test_provider_fallback_after_all_bangumi_titles(self):
+        provider = {"id": "provider:ANILIST:42", "provider": "ANILIST",
+                    "platform": "漫画", "_provider_fields": {"summary": "From AniList"}}
+        scope = self.run_match(found=False, provider=provider)
+        source = scope["bgm"]
+        self.assertEqual([call.args[0] for call in source.bangumi.search_subjects.call_args_list], ["书名", "原书名"])
+        source.search_other_providers.assert_called_once_with(["书名", "原书名"], "comic")
+        self.assertEqual(scope["record_scrape_event"].call_args.kwargs["match_source"], "提供商：ANILIST")
+        self.assertEqual(scope["record_series_status"].call_args.args[2], "provider:ANILIST:42")
+        scope = self.run_match(found=True, provider=provider)
+        scope["bgm"].search_other_providers.assert_not_called()
 
     def test_cached_match_logs_skip_without_search(self):
         for needs_refresh in (False, True):

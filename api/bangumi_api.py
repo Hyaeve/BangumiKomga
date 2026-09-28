@@ -11,9 +11,6 @@ from api.bangumi_model import BangumiBaseType
 from tools.log import logger
 from bangumi_archive.local_archive_searcher import (
     parse_infobox,
-    search_line,
-    search_list,
-    search_all_data,
 )
 from tools.resort_search_results_list import resort_search_list
 from tools.slide_window_rate_limiter import slide_window_rate_limiter
@@ -85,8 +82,7 @@ class BangumiApiDataSource(DataSource):
         """
         # 正面例子：魔女與使魔 -> 魔女与使魔，325236
         # 反面例子：君は淫らな僕の女王 -> 君は淫らな仆の女王，47331
-        query = convert(query, "zh-cn")
-        url = f"{self.BASE_URL}/v0/search/subjects?limit=10"
+        url = f"{self.BASE_URL}/v0/search/subjects?limit=20"
         payload = {"keyword": query, "filter": {"type": [BangumiBaseType.BOOK.value]}}
 
         try:
@@ -106,9 +102,9 @@ class BangumiApiDataSource(DataSource):
         else:
             results = response_json["data"]
 
-        return resort_search_list(
-            query=query, results=results, threshold=threshold, is_novel=is_novel
-        )
+        from tools.komf_matching import match_bangumi
+        return match_bangumi(query, results, is_novel, offline=False,
+                             detail_loader=getattr(self, "matching_detail_source", self.get_subject_metadata))
 
     @slide_window_rate_limiter()
     def get_subject_metadata(self, subject_id):
@@ -184,43 +180,30 @@ class BangumiArchiveDataSource(DataSource):
     """
 
     def __init__(self, local_archive_folder):
-        self.subject_relation_file = (
-            local_archive_folder + "subject-relations.jsonlines"
-        )
-        self.subject_metadata_file = local_archive_folder + "subject.jsonlines"
+        from bangumi_archive.sqlite_store import ArchiveStore
+        self.store = ArchiveStore(local_archive_folder or "./archivedata/")
 
     def _get_metadata_from_archive(self, subject_id):
-        return search_line(
-            file_path=self.subject_metadata_file,
-            subject_id=subject_id,
-            target_field="id",
-        )
-
-    def _get_relations_from_archive(self, subject_id):
-        return search_list(
-            file_path=self.subject_relation_file,
-            subject_id=subject_id,
-            target_field="subject_id",
-        )
+        from tools.native_core import archive_request
+        result = archive_request("get", self.store.folder, id=int(subject_id))
+        if result is not None:
+            return result
+        return self.store.get(subject_id)
 
     # 将10s+的全文件扫描性能提升到1s左右
     def _get_search_results_from_archive(self, query):
-        return search_all_data(file_path=self.subject_metadata_file, query=query)
+        from tools.native_core import archive_request
+        from bangumi_archive.sqlite_store import normalize
+        result = archive_request("search", self.store.folder, query=normalize(query))
+        if result is not None:
+            return result
+        return self.store.search(query)
 
     def search_subjects(self, query, threshold=80, is_novel=False):
         """
         离线数据源搜索条目
         """
         results = self._get_search_results_from_archive(query)
-        for item in results:
-            item["images"] = ""  # 忽略 images 字段
-            item["infobox"] = parse_infobox(item["infobox"])
-            item["rating"] = {
-                "rank": item.get("rank", 0),
-                "total": item.get("total", 0),
-                "count": item.get("score_details", {}),
-                "score": item.get("score", 0.0),
-            }
         return resort_search_list(
             query=query, results=results, threshold=threshold, is_novel=is_novel
         )
@@ -229,67 +212,17 @@ class BangumiArchiveDataSource(DataSource):
         """
         离线数据源获取条目元数据
         """
-        data = self._get_metadata_from_archive(subject_id)
-        if not data:
-            return {}
-        try:
-            data["images"] = ""
-            data["tags"] = [
-                {"name": t["name"], "count": t["count"], "total_cont": 0}
-                for t in data.get("tags", [])
-            ]
-            data["infobox"] = parse_infobox(data["infobox"])
-            data["rating"] = {
-                "rank": data.get("rank", 0),
-                "total": data.get("total", 0),
-                "count": data.get("score_details", {}),
-                "score": data.get("score", 0.0),
-            }
-            data["total_episodes"] = data.get("eps", 0)
-            data["collection"] = {
-                "on_hold": data["favorite"].get("on_hold", 0),
-                "dropped": data["favorite"].get("dropped", 0),
-                "wish": data["favorite"].get("wish", 0),
-                # 假设done对应collect
-                "collect": data["favorite"].get("done", 0),
-                "doing": data["favorite"].get("doing", 0),
-            }
-            data["meta_tags"] = [tag["name"] for tag in data.get("tags", [])]
-
-            return data
-        except Exception as e:
-            logger.error(f"构建Archive元数据出错: {e}")
-            return {}
+        return self._get_metadata_from_archive(subject_id)
 
     def get_related_subjects(self, subject_id):
         """
         离线数据源获取关联条目列表
         """
-        relation_list = self._get_relations_from_archive(subject_id)
-        if not relation_list:
-            return []
-        result_list = []
-        for item in relation_list:
-            # 过滤ID
-            if subject_id == item.get("subject_id", 0):
-                try:
-                    metadata = self._get_metadata_from_archive(
-                        item.get("related_subject_id", 0)
-                    )
-                    result = {
-                        "name": metadata.get("name"),
-                        "name_cn": metadata.get("name_cn"),
-                        "relation": item.get("relation_type"),
-                        "type": metadata.get("type"),
-                        "id": metadata.get("id"),
-                        # 忽略 images 字段
-                        "images": "",
-                    }
-                    result_list.append(result)
-                except Exception as e:
-                    logger.error(f"构建Archive关联条目 {subject_id} 出错: {e}")
-                    continue
-        return result_list
+        from tools.native_core import archive_request
+        result = archive_request("relations", self.store.folder, id=int(subject_id))
+        if result is not None:
+            return result
+        return self.store.relations(subject_id)
 
     def update_reading_progress(self, subject_id, progress):
         """
@@ -316,10 +249,50 @@ class BangumiDataSourceFactory:
         online = BangumiApiDataSource(config.get("access_token"), config.get("proxy_url", ""))
 
         if config.get("use_local_archive", False):
+            from bangumi_archive.sqlite_store import ensure_index_background
+            ensure_index_background(config.get("local_archive_folder") or "./archivedata/")
             offline = BangumiArchiveDataSource(config.get("local_archive_folder"))
-            return FallbackDataSource(offline, online)
+            return OfflineFirstDataSource(offline, online)
 
         return online
+
+
+class OfflineFirstDataSource(DataSource):
+    """Only search may use the online API; metadata/relations stay offline."""
+    def __init__(self, offline, online):
+        self.primary, self.secondary = offline, online
+        if isinstance(online, BangumiApiDataSource):
+            # Preserve the user's strict offline-detail policy even when
+            # candidate discovery falls back to an online search.
+            online.matching_detail_source = offline.get_subject_metadata
+
+    def search_subjects(self, query, threshold=80, is_novel=False):
+        local = self.primary.search_subjects(query, threshold, is_novel)
+        if local:
+            return local
+        logger.info("离线搜索未命中，尝试 Bangumi 在线搜索：%s", query)
+        hits = self.secondary.search_subjects(query, threshold, is_novel)
+        results = []
+        for hit in hits:
+            detail = self.primary.get_subject_metadata(hit["id"])
+            if detail:
+                results.append(detail)
+            else:
+                logger.warning("在线搜索条目 %s 尚未进入离线库，跳过详情并等待归档更新", hit["id"])
+        return resort_search_list(query, results, threshold, is_novel)
+
+    def get_subject_metadata(self, subject_id):
+        return self.primary.get_subject_metadata(subject_id)
+
+    def get_related_subjects(self, subject_id):
+        return self.primary.get_related_subjects(subject_id)
+
+    def update_reading_progress(self, subject_id, progress):
+        return False
+
+    def get_subject_thumbnail(self, subject_metadata, image_size):
+        # Official archives contain no images. Preserve existing Komga covers.
+        return {}
 
 
 class FallbackDataSource(DataSource):

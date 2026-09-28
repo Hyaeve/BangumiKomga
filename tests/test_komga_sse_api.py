@@ -103,7 +103,10 @@ class TestKomgaSseClient(unittest.TestCase):
             Exception("Connection failed")] * 3
 
         # 模拟连接循环
-        with patch('time.sleep') as sleep_mock:
+        def stop_after_retries(_delay):
+            if self.session_mock.get.call_count >= 5:
+                client.running = False
+        with patch('time.sleep', side_effect=stop_after_retries) as sleep_mock:
             with patch.object(client, 'start') as connect_mock:
                 client.running = True
                 client._connect()
@@ -113,10 +116,32 @@ class TestKomgaSseClient(unittest.TestCase):
                 # 验证延迟调用
                 self.assertTrue(sleep_mock.called)
 
+    def test_missing_endpoint_uses_alternate_route(self):
+        missing = MagicMock(status_code=404)
+        missing.__enter__.return_value = missing
+        connected = MagicMock(status_code=200)
+        connected.__enter__.return_value = connected
+        self.session_mock.get.reset_mock()
+        self.session_mock.get.side_effect = [missing, connected]
+        self.client.running = True
+
+        def finish(_response):
+            self.client.running = False
+
+        with patch.object(self.client, "_process_stream", side_effect=finish):
+            self.client._connect()
+
+        self.assertEqual(
+            [call.args[0] for call in self.session_mock.get.call_args_list],
+            [f"{self.base_url}/sse/v1/events", f"{self.base_url}/api/v1/events"],
+        )
+
 
 # @unittest.skip("临时跳过测试")
 class TestKomgaSseApi(unittest.TestCase):
     def setUp(self):
+        patch('api.komga_sse_api.KomgaSseApi._start_sse_thread').start()
+        self.addCleanup(patch.stopall)
         # 模拟配置
         self.base_url = "http://mocked-komga-url"
         self.username = "test_user"
@@ -165,6 +190,7 @@ class TestKomgaSseApi(unittest.TestCase):
         # 创建不会发起真实请求的API实例
         self.api = KomgaSseApi(
             self.base_url, self.username, self.password)
+        self.addCleanup(self.api._stop_client)
 
     # 应特别注意以:
     # from config.config import KOMGA_BASE_URL, KOMGA_EMAIL, KOMGA_EMAIL_PASSWORD, KOMGA_LIBRARY_LIST
@@ -197,6 +223,7 @@ class TestKomgaSseApi(unittest.TestCase):
             api.register_series_update_callback(test_callback)
             api.on_event("SeriesAdded", {
                          "libraryId": "lib1", "seriesId": "series1"})
+            api.batcher.flush(force=True)
             self.assertEqual(len(callback_data), 1)
 
     def test_library_filtering_with_matching_id(self):
@@ -221,11 +248,12 @@ class TestKomgaSseApi(unittest.TestCase):
             api.register_series_update_callback(test_callback)
             api.on_event("SeriesAdded", {
                          "libraryId": "lib1", "seriesId": "series1"})
+            api.batcher.flush(force=True)
             self.assertEqual(len(callback_data), 1)
 
     def test_library_filtering_with_non_matching_id(self):
         """测试SSE API - 不匹配KOMGA_LIBRARY_LIST时的事件分发逻辑"""
-        with patch('config.config.KOMGA_LIBRARY_LIST', new=['lib2']):
+        with patch('api.komga_sse_api.KOMGA_LIBRARY_LIST', new=[{"LIBRARY":"lib2"}]):
             api = self.api
 
             # 替换executor为同步执行器

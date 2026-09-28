@@ -11,3 +11,6 @@ config/config.py
 config/web_config.json
 config/web_auth.json
 *.log
+bin
+AGENTS.md
+agents.md

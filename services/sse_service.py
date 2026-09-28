@@ -18,7 +18,7 @@ def _is_surveilled_library(library_id):
 def series_update_sse_handler(data):
     # TODO: 处理 series_id, library_id 或者 series_detail 的场景
     series_id = data["event_data"].get("seriesId") or data["event_data"].get("id")
-    library_id = data["event_data"]["libraryId"]
+    library_id = data["event_data"].get("libraryId")
     if not _is_surveilled_library(library_id):
         logger.info("libraryId: %s 未启用刮削匹配，跳过实时事件", library_id)
         return
@@ -27,13 +27,16 @@ def series_update_sse_handler(data):
         return
     # 获取指定系列的详细信息
     series_detail = get_series_metadata([series_id])
+    if not series_detail or not isinstance(series_detail[0], dict):
+        logger.warning("系列 %s 尚不可读，跳过本次事件", series_id)
+        return
     # 筛选有效的 SeriesChanged 事件
     if data["event_type"] == "SeriesChanged":
         # 判断 SeriesChanged 是否为CBL更改
         # 或者该系列并未匹配元数据
         if any(
-            link["label"].lower() == "cbl"
-            for link in series_detail[0]["metadata"]["links"]
+            str(link.get("label", "")).lower() == "cbl"
+            for link in (series_detail[0].get("metadata") or {}).get("links", [])
         ):
             pass
         else:
@@ -44,6 +47,7 @@ def series_update_sse_handler(data):
         pass
     # 设置了 KOMGA_LIBRARY_LIST 且 library_id 不在 KOMGA_LIBRARY_LIST 中
     if _is_surveilled_library(library_id):
+        logger.info("实时监听：%s / 媒体库 %s / 系列 %s，开始增量更新", data["event_type"], library_id, series_id)
         refresh_metadata(series_detail)
     else:
         logger.info("libraryId: %s 未配置刮削卡片，跳过实时刮削", library_id)

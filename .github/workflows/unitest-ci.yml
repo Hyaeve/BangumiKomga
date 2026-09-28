@@ -15,6 +15,17 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v7
 
+      - name: Set Up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test And Build Native Core
+        run: |
+          go test ./...
+          CGO_ENABLED=0 go build -trimpath -o bin/bangumikomga-core ./cmd/bangumikomga-core
+
       - name: Set Python Version ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -46,6 +57,9 @@ jobs:
 
       - name: Web And Integration Regression
         run: python -m unittest tests.test_web_backend tests.test_runtime_service tests.test_translation_task tests.test_integration_http tests.test_correction_task tests.test_ai_completion tests.test_media_policy tests.test_task_controls tests.test_login_background tests.test_task_lock_policy tests.test_activity_details tests.test_proxy_settings tests.test_login_cover_http tests.test_match_activity
+
+      - name: Native Core And Archive Compatibility
+        run: python -m unittest tests.test_native_core tests.test_archive_sqlite tests.test_komga_sse_api tests.test_provider_source tests.test_komf_matching tests.test_komf_bangumi_metadata tests.test_provider_books tests.test_tools_resort_search_results_list
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v7
