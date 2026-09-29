@@ -14,7 +14,11 @@ const server=http.createServer((req,res)=>{
       setTimeout(()=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({authenticated:true,username:'admin'}));},400);
       return;
     }
-    if(url.pathname==='/api/config') result={KOMGA_SERVERS:[],KOMGA_LIBRARY_LIST:[],METADATA_TASKS:[]};
+    if(url.pathname==='/api/config') result={KOMGA_SERVERS:[{id:'test',name:'测试',base_url:'http://fixture.invalid'}],KOMGA_LIBRARY_LIST:[{SERVER_ID:'test',LIBRARY:'books'}],METADATA_TASKS:[]};
+    if(url.pathname==='/api/workbench/items') {
+      const offset=Number(url.searchParams.get('page')||0)*48;
+      result={total:10000,library_total:10000,items:Array.from({length:48},(_,i)=>({id:String(offset+i),title:'作品 '+(offset+i),cover:'/logo-icon.png'}))};
+    }
     if(url.pathname==='/api/status') result={tasks:{}};
     if(url.pathname.endsWith('/stats')) result={total:10000,today:4,comic:5000,novel:5000,success:9000,failed:1000};
     if(url.pathname==='/api/runtime-logs') {
@@ -42,19 +46,37 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.locator('.login-card').count(),0);
     await page.locator('.record-item').first().waitFor();
     assert.ok(await page.locator('.record-item').count()<40);
-    await page.locator('.record-list').evaluate(el=>{el.scrollTop=8400;});
+    await page.evaluate(()=>window.scrollTo(0,8400));
     await page.waitForTimeout(600);
     assert.ok(requests.some(url=>url.includes('scrape-records?') && /offset=[1-9]/.test(url)));
     assert.ok(await page.locator('.record-item').count()<40);
+    await page.getByRole('button',{name:'回到顶部',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).scrollbarWidth),'none');
+    await page.getByRole('button',{name:'回到顶部',exact:true}).click();
+    await page.waitForFunction(()=>window.scrollY<2);
     assert.equal(await page.locator('[aria-label="刮削记录分页"]').count(),0);
     await page.locator('.nav-item').filter({hasText:'运行日志'}).click();
     await page.locator('.runtime-log-row').first().waitFor();
-    await page.locator('.runtime-log-board').evaluate(el=>{el.scrollTop=12000;});
+    await page.evaluate(()=>window.scrollTo(0,12000));
     await page.waitForTimeout(600);
     assert.ok(requests.some(url=>url.includes('runtime-logs?') && /offset=[1-9]/.test(url)));
     assert.ok(await page.locator('.runtime-log-row').count()<40);
     fs.mkdirSync(path.join(root,'test_results/web-ui'),{recursive:true});
-    await page.screenshot({path:path.join(root,'test_results/web-ui/virtual-logs.png'),fullPage:true});
+    await page.screenshot({path:path.join(root,'test_results/web-ui/virtual-logs.png')});
+    await page.locator('.nav-item').filter({hasText:'工作平台'}).click();
+    await page.locator('.work-book').first().waitFor();
+    await page.evaluate(()=>window.scrollTo(0,12000));
+    await page.waitForTimeout(800);
+    assert.ok(requests.some(url=>url.includes('/api/workbench/items?') && /page=[1-9]/.test(url)));
+    assert.ok(await page.locator('.work-book').count()<120);
+    await page.getByRole('button',{name:'回到顶部',exact:true}).waitFor();
+    await page.screenshot({path:path.join(root,'test_results/web-ui/virtual-workbench.png')});
+    await page.setViewportSize({width:390,height:844});
+    await page.waitForTimeout(400);
+    assert.ok(await page.locator('.work-book').count()<40);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    await page.screenshot({path:path.join(root,'test_results/web-ui/virtual-workbench-mobile.png')});
+    await page.setViewportSize({width:1440,height:1000});
     await page.locator('.nav-item').filter({hasText:'系统设置'}).click();
     await page.locator('.bangumi-card').waitFor();
     const actions=await page.locator('.bangumi-test-row > button').evaluateAll(items=>items.map(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,right:r.right};}));

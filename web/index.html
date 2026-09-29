@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="overrides.css?v=20260910-5">
-<link rel="stylesheet" href="final-overrides.css?v=20260929-3">
+<link rel="stylesheet" href="final-overrides.css?v=20260929-4">
 <link rel="stylesheet" href="tag-picker.css?v=20260910">
 </head>
 <body>
@@ -103,6 +103,7 @@
       </aside>
 
       <main class="main" :class="{expanded:sidebarCollapsed}" @click="closeContextMenu(); if(!$event.target.closest('.work-tool-dock')) workToolsOpen=false; if(!$event.target.closest('.work-library-menu')) workLibraryOpen=false">
+        <button v-if="showBackTop && ['workbench','records','logs'].includes(view)" class="page-back-top" :class="{'with-work-tools':view==='workbench'}" @click="backToTop" aria-label="回到顶部"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6M12 8v12M5 4h14"/></svg></button>
         <header class="page-head hero-head" :class="{'work-head':view==='workbench'}">
 <div>
 <p class="kicker">BANGUMI KOMGA</p>
@@ -115,7 +116,6 @@
 </div>
 </div>
 <div v-else-if="view==='workbench'" class="work-head-controls">
-  <div class="work-count" aria-label="媒体库作品数"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg><strong :data-tooltip="statTooltip(workLibraryTotal)">{{formatStat(workLibraryTotal)}}</strong></div>
   <div class="work-library-controls">
   <div class="work-library-menu">
     <button class="work-library-button" @click.stop="workLibraryOpen=!workLibraryOpen" :aria-expanded="workLibraryOpen" aria-label="切换媒体库">{{workCardOptions.find(item=>item.value===workCard)?.label || '选择媒体库'}}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
@@ -270,13 +270,14 @@
           <p v-else-if="workLoading" class="empty-state" role="status">正在读取作品…</p>
           <div v-else-if="workError" class="empty-state" role="alert">{{workError}} <button class="secondary" @click="loadWorkItems">重试</button></div>
           <p v-else-if="!workItems.length" class="empty-state">没有找到作品</p>
-          <div v-else class="work-grid">
-            <button v-for="item in workItems" :key="item.id" type="button" class="work-book" :class="{selected:workSelection.includes(item.id)}" :aria-pressed="workSelection.includes(item.id)" @contextmenu.prevent="selectWorkItem(item,$event,true)" @click="clickWorkItem(item,$event)">
+          <virtual-list v-else class="work-virtual" window-scroll grid :items="workItems" :total="workTotal" :load="fetchWorkPage" :page-size="48" :estimate="290" :version="workCard+workSearch" label="媒体库作品">
+            <template #default="{item,index}">
+            <button type="button" class="work-book" :class="{selected:workSelection.includes(item.id)}" :aria-pressed="workSelection.includes(item.id)" @contextmenu.prevent="selectWorkItem({...item,virtualIndex:index},$event,true)" @click="clickWorkItem({...item,virtualIndex:index},$event)">
               <span class="work-cover"><img v-if="!item.coverFailed" :src="item.cover" :alt="item.title" loading="lazy" @error="item.coverFailed=true"><span v-else class="work-cover-empty">暂无封面</span><span class="work-book-hover">{{workSelection.length?'选择作品':'编辑元数据'}}</span><span v-if="workSelection.includes(item.id)" class="work-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span></span>
               <strong>{{item.title}}</strong>
             </button>
-          </div>
-          <div class="work-pagination" v-if="workTotal>48"><button class="secondary" :disabled="workLoading || workPage===0" @click="changeWorkPage(-1)">上一页</button><span>{{workPage+1}} / {{Math.ceil(workTotal/48)}}</span><button class="secondary" :disabled="workLoading || (workPage+1)*48>=workTotal" @click="changeWorkPage(1)">下一页</button></div>
+            </template>
+          </virtual-list>
           <div class="work-tool-dock">
             <div v-if="workToolsOpen" class="work-tool-list">
               <button v-for="action in workActions" :key="action.id" :disabled="!workSelection.length" @click="prepareWorkAction(action)"><svg viewBox="0 0 24 24" aria-hidden="true"><use :href="'#work-icon-'+action.icon"/></svg><span>{{action.label}}</span></button>
@@ -343,7 +344,7 @@
 <span>文件路径</span>
 <span>操作</span>
 </div>
-<virtual-list class="record-list" :items="records" :total="recordTotal" :load="fetchRecordPage" :refresh="recordRequest" :version="recordSearch+recordSortNewest" :estimate="84" label="刮削记录">
+<virtual-list class="record-list" window-scroll :items="records" :total="recordTotal" :load="fetchRecordPage" :refresh="recordRequest" :version="recordSearch+recordSortNewest" :estimate="84" label="刮削记录">
 <template #default="{item:record}">
 <article class="record-item grouped-record" :class="{expanded:recordExpanded(record), 'record-clickable': !record.volume_count}" :tabindex="record.volume_count ? null : 0" @click="!record.volume_count && openRecordComparison(record)" @keydown.enter.self="!record.volume_count && openRecordComparison(record)">
 <div class="record-main">
@@ -455,7 +456,7 @@
 </div>
         </section>
         <section v-else-if="view==='logs'" class="view-stack">
-          <virtual-list class="runtime-log-board" :items="logs" :total="logTotal" :load="fetchLogPage" :refresh="logRequest" :version="logSearch" :page-size="100" :estimate="100" label="运行日志">
+          <virtual-list class="runtime-log-board" window-scroll :items="logs" :total="logTotal" :load="fetchLogPage" :refresh="logRequest" :version="logSearch" :page-size="100" :estimate="100" label="运行日志">
 <template #default="{item:log}">
 <article class="runtime-log-row" :class="log.level">
 <time>{{formatRecordTime(log.recorded_at)}}</time>
@@ -720,6 +721,7 @@
         <template v-if="workMatch.preview">
           <h3>{{workMatch.preview.title}}</h3>
           <p class="work-match-notice">{{workMatch.preview.notice}}</p>
+          <div class="work-match-options"><label><input type="checkbox" v-model="workMatch.include_volumes" :disabled="workMatchBusy">包含分卷</label><label><input type="checkbox" v-model="workMatch.include_cover" :disabled="workMatchBusy">封面</label></div>
           <div class="work-match-fields">
             <img v-if="workMatch.preview.poster" :src="'/api/posters/'+workMatch.preview.poster.id" alt="匹配封面">
             <fieldset v-for="(value,key) in workMatch.preview.fields" :key="key"><legend>{{metadataText({metadata_fields:[key]})}}</legend><div>{{comparisonValue(value,key)}}</div></fieldset>
@@ -915,8 +917,8 @@
 </script>
 <script src="floating-tooltip.js?v=20260929-2">
 </script>
-<script src="virtual-list.js?v=20260929-1"></script>
-<script src="config.js?v=20260929-3">
+<script src="virtual-list.js?v=20260929-4"></script>
+<script src="config.js?v=20260929-4">
 </script>
 </body>
 </html>

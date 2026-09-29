@@ -176,7 +176,9 @@ async function main() {
     await page.locator('.nav-item').filter({hasText:'工作平台'}).click();
     await page.locator('.work-book').first().waitFor();
     assert.equal(await page.locator('.nav-item').nth(1).innerText(),'工作平台');
-    assert.equal(await page.locator('.work-book').count(),48);
+    assert((await page.locator('.work-book').count())>=6);
+    assert((await page.locator('.work-book').count())<60);
+    assert.equal(await page.locator('.work-count,.work-pagination').count(),0);
     assert.equal(await page.locator('.work-tabs').count(),0);
     await page.getByRole('button',{name:'切换媒体库',exact:true}).click();
     await page.getByRole('listbox').getByRole('option').nth(1).click();
@@ -213,6 +215,9 @@ async function main() {
     await matchDialog.getByRole('button',{name:'搜索',exact:true}).click();
     await matchDialog.getByRole('button',{name:/候选漫画/}).click();
     await matchDialog.getByRole('button',{name:'确认匹配并写入',exact:true}).waitFor();
+    assert.equal(await matchDialog.getByLabel('包含分卷',{exact:true}).isChecked(),true);
+    assert.equal(await matchDialog.getByLabel('封面',{exact:true}).isChecked(),true);
+    assert((await matchDialog.locator('.work-match-options label').first().boundingBox()).height<30);
     await page.screenshot({path:path.join(output,'workbench-match-preview.png')});
     await matchDialog.getByRole('button',{name:'确认匹配并写入',exact:true}).click();
     await matchDialog.waitFor({state:'detached'});
@@ -235,10 +240,11 @@ async function main() {
     assert.equal(await page.locator('.work-field-modified[data-field=summary]').count(),1);
     await page.screenshot({path:path.join(output,'workbench-editor-single.png')});
     await page.keyboard.press('Escape');
-    await page.getByRole('button',{name:'下一页',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelectorAll('.work-book').length===2);
-    await page.getByRole('button',{name:'上一页',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelectorAll('.work-book').length===48);
+    await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
+    await page.waitForFunction(()=>[...document.querySelectorAll('.work-book strong')].some(el=>el.textContent.includes('49')));
+    await page.getByRole('button',{name:'回到顶部',exact:true}).click();
+    await page.waitForFunction(()=>window.scrollY<2);
+    await page.waitForFunction(()=>document.querySelectorAll('.work-book').length>=6);
     await page.getByLabel('搜索当前媒体库',{exact:true}).fill('空');
     await page.locator('.work-search').getByRole('button',{name:'搜索',exact:true}).click();
     await page.getByText('没有找到作品',{exact:true}).waitFor();
@@ -449,7 +455,7 @@ async function main() {
     await page.locator('.nav-item').filter({hasText:'刮削记录'}).click();
     await page.locator('.record-item').first().waitFor();
     assert.equal(await page.getByRole('navigation', { name: '刮削记录分页' }).count(),0);
-    assert.equal(await page.locator('.record-list').evaluate(el=>getComputedStyle(el).overflowY),'auto');
+    assert.equal(await page.locator('.record-list').evaluate(el=>getComputedStyle(el).overflowY),'visible');
     assert.equal(await page.locator('.records-head > *').count(), 7);
     assert.equal(await page.locator('.time-sort .sort-arrows i').count(), 2);
     const sortDecoration = await page.locator('.sort-arrows').evaluate(element => ({
@@ -591,9 +597,8 @@ async function main() {
       height:el.getBoundingClientRect().height,viewport:innerHeight,
       overflow:getComputedStyle(el).overflowY,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight
     }));
-    assert(fullLogLayout.height<fullLogLayout.viewport);
-    assert.equal(fullLogLayout.overflow,'auto');
-    assert(fullLogLayout.scrollHeight>fullLogLayout.clientHeight);
+    assert(fullLogLayout.height>fullLogLayout.viewport);
+    assert.equal(fullLogLayout.overflow,'visible');
     assert(await page.locator('.runtime-log-row').count()<40);
     await page.screenshot({path:path.join(output,'logs-natural-height.png')});
     runtimeLogs.splice(1);

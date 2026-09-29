@@ -22,6 +22,12 @@ LABELS = {
 PREVIEWS = {}
 PREVIEW_LOCK = threading.RLock()
 
+def boolean_option(body, name, default=True):
+    value = body.get(name, default)
+    if not isinstance(value, bool):
+        raise ValueError("匹配选项必须为布尔值")
+    return value
+
 
 def context(backend, body):
     scope = workbench.target(backend, body.get("card", ""))
@@ -108,9 +114,11 @@ def preview(backend, body):
         except ValueError:
             continue
         fields[field] = value
+    include_cover = boolean_option(body, "include_cover")
+    include_volumes = boolean_option(body, "include_volumes")
     poster = None
     cover_warning = ""
-    if name != "BANGUMI_OFFLINE" and "thumbnail" in overwrite:
+    if name != "BANGUMI_OFFLINE" and metadata.get("_provider_cover"):
         from tools import posters
         client = backend._load_komga(scope["server_id"], require_server=True)
         try:
@@ -133,10 +141,12 @@ def preview(backend, body):
             del PREVIEWS[next(iter(PREVIEWS))]
         PREVIEWS[token] = {"expires": now + 600, "card": body["card"], "id": item["id"],
                            "provider": name, "subject_id": metadata["id"], "before": item["metadata"],
-                           "fields": fields, "poster": poster, "title": metadata.get("name_cn") or metadata["name"]}
+                           "fields": fields, "poster": poster, "title": metadata.get("name_cn") or metadata["name"],
+                           "include_volumes": include_volumes, "include_cover": include_cover,
+                           "media_type": "book" if metadata.get("platform") == "小说" else "comic"}
     return {"token": token, "title": metadata.get("name_cn") or metadata["name"], "fields": fields,
             "provider": name, "poster": poster["after"] if poster else None,
-            "notice": "按媒体卡片覆盖选项写入，已锁定字段跳过；Bangumi 离线库不提供封面。" + cover_warning}
+            "notice": "文本按媒体卡片覆盖选项写入，已锁定字段跳过；封面选项仅替换未保护的海报。Bangumi 离线库不提供封面。" + cover_warning}
 
 
 def apply(backend, body):
@@ -144,18 +154,26 @@ def apply(backend, body):
         entry = PREVIEWS.get(body.get("token"))
         if not entry or entry["expires"] < time.monotonic():
             raise ValueError("匹配预览已过期，请重新搜索")
-        _, _, _, current = context(backend, entry)
+        _, scope, _, current = context(backend, entry)
         if current["metadata"] != entry["before"]:
             raise ValueError("元数据或锁定状态已变化，请重新预览")
+        include_volumes = boolean_option(body, "include_volumes", entry.get("include_volumes", True))
+        include_cover = boolean_option(body, "include_cover", entry.get("include_cover", True))
         result = workbench.save_item(backend, {
             "card": entry["card"], "id": entry["id"],
             "expected": {**{field: None for field in entry["fields"]}, **entry["before"]}, "changes": entry["fields"],
         }, provider=entry["provider"], source="工作平台：手动刮削匹配", subject_id=str(entry["subject_id"]))
         del PREVIEWS[body["token"]]
-        if entry["poster"]:
+        if include_cover and entry["poster"]:
             from tools import posters
             import base64
             try:
+                client = backend._load_komga(scope["server_id"], require_server=True)
+                try:
+                    if posters.protected(client, current, "series"):
+                        raise ValueError("当前海报已保护，跳过替换")
+                finally:
+                    client.r.close()
                 data, _ = posters.read(entry["poster"]["after"]["id"])
                 workbench.save_poster(backend, {
                     "card": entry["card"], "id": entry["id"],
@@ -165,4 +183,13 @@ def apply(backend, body):
             except Exception as exc:
                 result["warning"] = f"文本元数据已保存，海报未更新：{exc}"
                 backend._write_activity("工作平台：匹配海报失败", result["warning"], level="error")
+        if include_volumes:
+            from tools.workbench_match_books import apply_books
+            try:
+                result["volumes_updated"], warnings = apply_books(backend, entry, include_cover)
+                if warnings:
+                    result["warning"] = (result.get("warning", "") + "\n部分分卷未完成：" + "；".join(warnings)).strip()
+            except Exception as exc:
+                result["warning"] = (result.get("warning", "") + f"\n系列已匹配，分卷未完成：{exc}").strip()
+                backend._write_activity("工作平台：分卷匹配失败", str(exc), level="error")
         return result
