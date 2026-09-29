@@ -9,7 +9,7 @@ createApp({
       workLibraryOpen: false,
       bangumiSavedToken: null,
       posterUploading: false,
-      workMatch: null, workMatchBusy: false, workMatchRequest: 0,
+      workMatch: null, workMatchBusy: false, workMatchRequest: 0, showBackTop:false,
       providerLabels: {BANGUMI_OFFLINE:'Bangumi 离线库',BANGUMI:'Bangumi',MANGA_UPDATES:'MangaUpdates',MAL:'MyAnimeList',ANILIST:'AniList',MANGADEX:'MangaDex',COMIC_VINE:'ComicVine',MANGA_BAKA:'MangaBaka',BOOK_WALKER:'BookWalker',YEN_PRESS:'Yen Press',VIZ:'VIZ',WEBTOONS:'Webtoons',EHENTAI:'eHentai'},
       loginForm: { username: '', password: '', remember: false },
       showLoginPassword: false,
@@ -127,7 +127,7 @@ createApp({
       },
       navItems: [
         { id: 'scrape', label: '媒体卡片', title: '媒体卡片', subtitle: '为不同媒体库配置独立的匹配规则' },
-        { id: 'workbench', label: '工作平台', title: '工作平台', subtitle: '' },
+        { id: 'workbench', label: '工作平台', title: '工作平台', subtitle: '浏览媒体库作品，搜索匹配与编辑元数据' },
         { id: 'tasks', label: '计划任务', title: '计划任务', subtitle: '按媒体库安排元数据补全任务' },
         { id: 'records', label: '刮削记录', title: '刮削记录', subtitle: '按书籍查看每一卷的元数据匹配结果' },
         { id: 'logs', label: '运行日志', title: '运行日志', subtitle: '查看后台操作与刮削执行轨迹' },
@@ -219,8 +219,9 @@ createApp({
     view(value) { if (!['scrape', 'workbench', 'records', 'tasks', 'logs', 'settings'].includes(value)) { this.view = 'scrape'; return; } history.replaceState(null, '', `#${value}`); document.title = `${this.currentNav.title} · BangumiKomga`; this.closeContextMenu(); if (value === 'workbench') this.loadWorkItems(); if (value === 'records') this.loadRecords(true); if (value === 'logs') this.loadLogs(true); if (value === 'tasks') this.loadTasks(); this.startLiveRefresh(); this.$nextTick(() => { window.scrollTo({top:0,behavior:'instant'}); this.decorateFieldLabels(); }); },
     bangumiTestQuery() { this.resetBangumiSearch(); }
   },
-  async mounted() { document.addEventListener('keydown', this.closeTopModal); document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'workbench', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => this.decorateFieldLabels()); },
-  beforeUnmount() { document.removeEventListener('keydown', this.closeTopModal); document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
+  updated() { this.updateBackTop(); },
+  async mounted() { window.addEventListener('scroll',this.updateBackTop,{passive:true}); document.addEventListener('keydown', this.closeTopModal); document.addEventListener('wheel', this.handleServerWheel, { passive: false }); document.addEventListener('visibilitychange', this.startLiveRefresh); if (!['scrape', 'workbench', 'records', 'tasks', 'logs', 'settings'].includes(this.view)) this.view = 'scrape'; document.title = `${this.currentNav.title} · BangumiKomga`; await this.checkSession(); this.startLiveRefresh(); this.$nextTick(() => {this.decorateFieldLabels();this.updateBackTop();}); },
+  beforeUnmount() { window.removeEventListener('scroll',this.updateBackTop); document.documentElement.classList.remove('page-virtual-scroll'); document.removeEventListener('keydown', this.closeTopModal); document.removeEventListener('wheel', this.handleServerWheel); document.removeEventListener('visibilitychange', this.startLiveRefresh); clearInterval(this.liveRefreshTimer); },
   methods: {
     formatStat(value) { const count = Number(value) || 0; return count > 9999 ? `${(count / 1000).toFixed(1)}k` : String(count); },
     statTooltip(value) { return Number(value) > 9999 ? String(value) : null; },
@@ -567,9 +568,19 @@ createApp({
       try {
         const data = await this.api('/api/workbench/items?' + new URLSearchParams({card:this.workCard,page:this.workPage,q:this.workSearch}));
         if (request !== this.workRequest) return;
-        this.workItems=data.items; this.workTotal=data.total; this.workLibraryTotal=data.library_total;
+        this.workItems=data.items.map((item,index)=>({...item,virtualIndex:index})); this.workTotal=data.total; this.workLibraryTotal=data.library_total;
       } catch(error) { if (request===this.workRequest) {this.workError=error.message; this.workItems=[];} }
       finally { if (request===this.workRequest) this.workLoading=false; }
+    },
+    updateBackTop() {
+      const enabled=['workbench','records','logs'].includes(this.view);
+      document.documentElement.classList.toggle('page-virtual-scroll',enabled && this.authenticated);
+      this.showBackTop=enabled && (document.querySelector('.page-head')?.getBoundingClientRect().bottom ?? 1)<0;
+    },
+    backToTop() { window.scrollTo({top:0,behavior:'smooth'}); },
+    async fetchWorkPage(offset) {
+      const data=await this.api('/api/workbench/items?'+new URLSearchParams({card:this.workCard,page:Math.floor(offset/48),q:this.workSearch}));
+      return {...data,items:data.items.map((item,index)=>({...item,virtualIndex:offset+index}))};
     },
     async loadWorkCardNames() {
       for (const serverId of [...new Set(this.cards.map(card=>card.serverId).filter(Boolean))]) {
@@ -588,11 +599,25 @@ createApp({
     searchWorkItems() { this.workPage=0; this.clearWorkSelection(); this.loadWorkItems(); },
     changeWorkPage(delta) { this.workPage+=delta; this.workAnchor=null; this.loadWorkItems(); window.scrollTo({top:0,behavior:'smooth'}); },
     clearWorkSelection() { this.workSelection=[]; this.workAnchor=null; },
-    selectWorkItem(item,event,force=false) {
-      const index=this.workItems.findIndex(value=>value.id===item.id);
+    async selectWorkItem(item,event,force=false) {
+      const index=item.virtualIndex ?? this.workItems.findIndex(value=>value.id===item.id);
       if (event.shiftKey && this.workAnchor!==null) {
-        const ids=this.workItems.slice(Math.min(index,this.workAnchor),Math.max(index,this.workAnchor)+1).map(value=>value.id);
-        this.workSelection=[...new Set([...this.workSelection,...ids])];
+        const card=this.workCard, query=this.workSearch, low=Math.min(index,this.workAnchor), high=Math.max(index,this.workAnchor);
+        const local=this.workItems.filter(value => Number.isInteger(value.virtualIndex) && value.virtualIndex>=low && value.virtualIndex<=high);
+        if(local.length === high-low+1) {
+          this.workSelection=[...new Set([...this.workSelection,...local.map(value=>value.id)])];
+          this.workAnchor=index;
+          return;
+        }
+        const ids=[];
+        try {
+          for(let offset=Math.floor(low/48)*48;offset<=high;offset+=48) {
+            const data=await this.fetchWorkPage(offset);
+            if(card!==this.workCard || query!==this.workSearch) return;
+            ids.push(...data.items.filter(value=>value.virtualIndex>=low && value.virtualIndex<=high).map(value=>value.id));
+          }
+          this.workSelection=[...new Set([...this.workSelection,...ids])];
+        } catch(error) {this.notify(error.message,true);}
       } else if (force || !this.workSelection.includes(item.id)) this.workSelection=[...new Set([...this.workSelection,item.id])];
       else this.workSelection=this.workSelection.filter(id=>id!==item.id);
       this.workAnchor=index;
@@ -769,7 +794,7 @@ createApp({
       if(this.recordEditor) { this.notify('请先保存或取消元数据编辑',true); return; }
       const item=this.workItems.find(item=>item.id===ids[0]);
       this.workMatch={card:current?.card_key||this.workCard,id:ids[0],provider:'BANGUMI_OFFLINE',
-        query:current?.record.item_title||item?.title||'',items:[],preview:null,error:'',searched:false};
+        query:current?.record.item_title||item?.title||'',items:[],preview:null,error:'',searched:false,include_volumes:true,include_cover:true};
     },
     resetWorkMatch() { if(this.workMatch) {this.workMatch.items=[];this.workMatch.preview=null;this.workMatch.error='';this.workMatch.searched=false;} this.workMatchRequest++; },
     async searchWorkMatch() {
@@ -786,7 +811,7 @@ createApp({
       const form=this.workMatch;
       if(!form || this.workMatchBusy) return;
       this.workMatchBusy=true; form.error='';
-      try {form.preview=await this.api('/api/workbench/match/preview',{method:'POST',body:JSON.stringify({card:form.card,id:form.id,provider:form.provider,subject_id:item.id})});}
+      try {form.preview=await this.api('/api/workbench/match/preview',{method:'POST',body:JSON.stringify({card:form.card,id:form.id,provider:form.provider,subject_id:item.id,include_cover:form.include_cover,include_volumes:form.include_volumes})});}
       catch(error) {form.error=error.message;}
       finally {this.workMatchBusy=false;}
     },
@@ -795,7 +820,7 @@ createApp({
       if(!form?.preview || this.workMatchBusy) return;
       this.workMatchBusy=true; form.error='';
       try {
-        const result=await this.api('/api/workbench/match/apply',{method:'POST',body:JSON.stringify({token:form.preview.token})});
+        const result=await this.api('/api/workbench/match/apply',{method:'POST',body:JSON.stringify({token:form.preview.token,include_volumes:form.include_volumes,include_cover:form.include_cover})});
         if(this.recordComparison?.workbench) this.recordComparison=result;
         this.workMatch=null; await this.loadWorkItems(); this.notify(result.warning||'刮削匹配已写入 Komga',!!result.warning);
       } catch(error) {form.error=error.message;}
