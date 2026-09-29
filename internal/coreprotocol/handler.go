@@ -52,10 +52,12 @@ func execute(ctx context.Context, request Request) (any, error) {
 	if request.Action == "capabilities" {
 		return map[string]any{
 			"archive_schema": archive.SchemaVersion,
-			"actions":        []string{"archive.search", "archive.get", "archive.relations", "providers.catalog", "providers.match", "providers.get", "providers.books", "providers.book", "providers.associate"},
+			"actions":        []string{"archive.search", "archive.get", "archive.relations", "providers.catalog", "providers.search", "providers.match", "providers.get", "providers.books", "providers.book", "providers.associate"},
 		}, nil
 	}
 	switch request.Action {
+	case "providers.search":
+		return providers.Search(ctx, request.ProviderConfig, request.Provider, request.Query, request.Media)
 	case "providers.catalog":
 		return providers.Catalog(), nil
 	case "providers.match":

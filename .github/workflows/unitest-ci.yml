@@ -61,6 +61,9 @@ jobs:
       - name: Native Core And Archive Compatibility
         run: python -m unittest tests.test_native_core tests.test_archive_sqlite tests.test_komga_sse_api tests.test_provider_source tests.test_komf_matching tests.test_komf_bangumi_metadata tests.test_provider_books tests.test_tools_resort_search_results_list
 
+      - name: Workbench Matching And Poster Regression
+        run: python -m unittest tests.test_workbench_match tests.test_workbench tests.test_posters tests.test_record_comparison
+
       - name: Upload Test Results
         uses: actions/upload-artifact@v7
         with:

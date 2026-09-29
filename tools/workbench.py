@@ -42,6 +42,7 @@ def comparison(item, key):
         "before": metadata, "after": metadata, "current": metadata,
         "editable_fields": sorted(editable_fields("series")),
         "revision": hashlib.sha256(json.dumps(metadata, sort_keys=True).encode()).hexdigest(),
+        "poster_url": "/api/workbench/cover?" + urlencode({"card": key, "id": item["id"]}),
     }
 
 
@@ -75,7 +76,9 @@ def read_item(backend, key, item_id):
     scope = target(backend, key)
     client = backend._load_komga(scope["server_id"], require_server=True)
     try:
-        return comparison(checked_item(client, scope["library_id"], item_id), key)
+        result = comparison(checked_item(client, scope["library_id"], item_id), key)
+        result["poster_url"] = "/api/workbench/cover?" + urlencode({"card": key, "id": item_id})
+        return result
     finally:
         client.r.close()
 
@@ -91,13 +94,64 @@ def read_cover(backend, key, item_id):
         client.r.close()
 
 
-def save_item(backend, body):
+def save_poster(backend, body, provider=""):
+    from tools import posters
+    from tools.db import init_sqlite3, record_scrape_event
+    scope = target(backend, body.get("card", ""))
+    data = posters.decode_upload(body.get("image"))
+    with backend.RECORD_EDIT_LOCK:
+        client = backend._load_komga(scope["server_id"], require_server=True)
+        try:
+            item = checked_item(client, scope["library_id"], body.get("id"))
+            before = posters.try_capture(client, item["id"], "series")
+            if body.get("expected") != (before or {}).get("id"):
+                raise ValueError("海报已变化，请重新预览后上传")
+            old_lock = posters.protected(client, item, "series")
+            after = posters.upload(client, item["id"], "series", data)
+            # Explicit manual upload is protected locally; never change text locks.
+            posters.local_lock(client, item["id"], "series", True)
+            original = {**item["metadata"], "thumbnail": before, "thumbnailLock": old_lock}
+            saved = {**item["metadata"], "thumbnail": after, "thumbnailLock": True}
+            _, conn = init_sqlite3(backend.ROOT / "recordsRefreshed.db")
+            card = next(c for c in backend._read_state()["KOMGA_LIBRARY_LIST"]
+                        if str(c.get("LIBRARY")) == scope["library_id"] and str(c.get("SERVER_ID") or "") == scope["server_id"])
+            with closing(conn):
+                record_scrape_event(conn, "小说" if backend.media_type(card) == "book" else "漫画",
+                                    item.get("name", ""), scope["library_id"],
+                                    card.get("NAME") or scope["library_id"], ["thumbnail"],
+                                    source_title=item.get("name", ""), match_source="工作平台：手动更换海报",
+                                    event_kind="series", source_path=item_path(item),
+                                    komga_id=item["id"], server_id=scope["server_id"],
+                                    metadata_before=original, metadata_after=saved, metadata_provider=provider)
+            backend._write_activity("工作平台：更换海报", f"作品：{item.get('name', '')}\n分辨率：{after['width']} × {after['height']}")
+            result = comparison(item, body["card"])
+            result.update(before=original, after=saved, current=saved,
+                          poster_url="/api/posters/" + after["id"], poster_id=after["id"])
+            return result
+        finally:
+            client.r.close()
+
+
+def poster_baseline(backend, key, item_id):
+    from tools import posters
+    scope = target(backend, key)
+    client = backend._load_komga(scope["server_id"], require_server=True)
+    try:
+        checked_item(client, scope["library_id"], item_id)
+        return posters.try_capture(client, item_id, "series") or {"id": None}
+    finally:
+        client.r.close()
+
+
+def save_item(backend, body, provider="", source="工作平台：手动修订", subject_id=""):
     from tools.db import init_sqlite3, record_scrape_event
     scope = target(backend, body.get("card", ""))
     expected = body.get("expected")
     if not isinstance(expected, dict):
         raise ValueError("缺少编辑基准，请重新进入编辑")
-    changes = validate_changes(body.get("changes"), "series")
+    changes = validate_changes(body.get("changes"), "series") if body.get("changes") else {}
+    if not changes and not provider:
+        raise ValueError("请选择可编辑的元数据字段")
     with backend.RECORD_EDIT_LOCK:
         client = backend._load_komga(scope["server_id"], require_server=True)
         try:
@@ -108,9 +162,9 @@ def save_item(backend, body):
                                                for k in (field, field + "Lock", field + "Locked")):
                     raise ValueError("元数据或锁定状态已变化，请重新进入编辑")
             changes = {k: v for k, v in changes.items() if not same_value(k, original.get(k), v)}
-            if not changes:
+            if not changes and not provider:
                 return comparison(item, body["card"])
-            if not client.update_series_metadata(item["id"], changes):
+            if changes and not client.update_series_metadata(item["id"], changes):
                 raise ValueError("Komga 写入失败，未更新记录")
             try:
                 saved = checked_item(client, scope["library_id"], item["id"])
@@ -129,12 +183,15 @@ def save_item(backend, body):
                                         item.get("name", ""), scope["library_id"], card.get("NAME") or scope["library_id"],
                                         list(changes), source_title=item.get("name", ""),
                                         matched_title=saved["metadata"].get("title", ""),
-                                        match_source="工作平台：手动修订", event_kind="series", source_path=item_path(saved),
+                                        match_source=source, event_kind="series", source_path=item_path(saved),
                                         komga_id=item["id"], server_id=scope["server_id"],
-                                        metadata_before=original, metadata_after=saved["metadata"])
+                                        metadata_before=original, metadata_after=saved["metadata"], metadata_provider=provider)
+                    if subject_id:
+                        from tools.db import upsert_series_record
+                        upsert_series_record(conn, item["id"], subject_id, 1, item.get("name", ""), saved["metadata"].get("title", ""))
             except Exception:
                 raise ValueError("Komga 已更新，但本地记录保存失败，请检查存储空间后重新进入编辑") from None
-            backend._write_activity("工作平台：手动修订", f"作品：{item.get('name', '')}\n字段：{', '.join(changes)}")
+            backend._write_activity(source, f"作品：{item.get('name', '')}\n提供商：{provider or '手动'}\n字段：{', '.join(changes) or '无需更改'}")
             result = comparison(saved, body["card"])
             result["before"] = original
             return result

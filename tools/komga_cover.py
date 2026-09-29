@@ -6,7 +6,12 @@ MAX_COVER_BYTES = 16 * 1024 * 1024
 
 
 def read_series_cover(komga, series_id):
-    base = f"{komga.base_url}/series/{quote(str(series_id), safe='')}"
+    return read_item_cover(komga, series_id, "series")
+
+
+def read_item_cover(komga, item_id, kind):
+    collection = "series" if kind == "series" else "books"
+    base = f"{komga.base_url}/{collection}/{quote(str(item_id), safe='')}"
     headers = {"Accept": "image/avif,image/webp,image/jpeg,image/png,image/*"}
 
     def read_image(url):

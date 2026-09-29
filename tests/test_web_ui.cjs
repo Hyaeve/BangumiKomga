@@ -92,6 +92,9 @@ async function main() {
         workRequests.push(body); result={started:true,id:'workbench-fixture'};
         executionStatus.tasks['workbench-fixture']={state:'running'};
       }
+      else if (url.pathname === '/api/workbench/match/search') result={items:[{id:'matched-1',title:'候选漫画',summary:'提供商返回的简介'}]};
+      else if (url.pathname === '/api/workbench/match/preview') result={token:'match-token',title:'候选漫画',provider:body.provider,fields:{publisher:'新出版社'},notice:'按媒体卡片覆盖选项写入'};
+      else if (url.pathname === '/api/workbench/match/apply') result=workFixture();
       else if (url.pathname === '/api/proxy/test') result = {ok:true,message:'代理连接成功'};
       else if (url.pathname === '/api/ai/test') result = {message:'接口与中文翻译测试通过',translation:'年轻读者发现秘密图书馆。'};
       else if (url.pathname === '/api/ai') { Object.assign(state,body); result = {saved:true}; }
@@ -168,18 +171,19 @@ async function main() {
     const navIcon = await page.locator('.nav-icon').first().boundingBox();
     const logoutIcon = await page.locator('.sidebar-logout svg').boundingBox();
     assert(Math.abs(navIcon.x-logoutIcon.x) < 1, 'logout icon aligns with navigation icons');
+    await page.waitForTimeout(400);
     const mediaAddRect = await page.locator('.hero-actions button').boundingBox();
     await page.locator('.nav-item').filter({hasText:'工作平台'}).click();
     await page.locator('.work-book').first().waitFor();
     assert.equal(await page.locator('.nav-item').nth(1).innerText(),'工作平台');
     assert.equal(await page.locator('.work-book').count(),48);
     assert.equal(await page.locator('.work-tabs').count(),0);
-    await page.getByRole('button',{name:'媒体库',exact:true}).click();
-    await page.getByRole('dialog',{name:'媒体库候选项'}).getByRole('radio').nth(1).click();
-    assert.equal(await page.getByRole('dialog',{name:'媒体库候选项'}).count(),0);
+    await page.getByRole('button',{name:'切换媒体库',exact:true}).click();
+    await page.getByRole('listbox').getByRole('option').nth(1).click();
+    assert.equal(await page.getByRole('listbox').count(),0);
     await page.locator('.work-book').first().waitFor();
-    await page.getByRole('button',{name:'媒体库',exact:true}).click();
-    await page.getByRole('dialog',{name:'媒体库候选项'}).getByRole('radio').first().click();
+    await page.getByRole('button',{name:'切换媒体库',exact:true}).click();
+    await page.getByRole('listbox').getByRole('option').first().click();
     await page.locator('.work-book').first().waitFor();
     await page.waitForFunction(()=>[...document.querySelectorAll('.work-cover img')].slice(0,6).every(img=>img.complete && img.naturalWidth));
     await page.screenshot({path:path.join(output,'workbench-desktop.png')});
@@ -202,6 +206,16 @@ async function main() {
     assert.equal(await page.locator('.work-metadata-modal .comparison-side').count(),1);
     assert.equal(await page.locator('.work-metadata-modal .comparison-arrow').count(),0);
     assert.equal(await page.locator('.work-metadata-modal').getByText('修改前',{exact:true}).count(),0);
+    await page.locator('.work-editor-tools').getByRole('button',{name:'刮削匹配',exact:true}).click();
+    const matchDialog=page.getByRole('dialog',{name:'刮削匹配',exact:true});
+    assert.equal(await matchDialog.getByLabel('匹配来源',{exact:true}).inputValue(),'BANGUMI_OFFLINE');
+    await matchDialog.getByLabel('匹配来源',{exact:true}).selectOption('MANGADEX');
+    await matchDialog.getByRole('button',{name:'搜索',exact:true}).click();
+    await matchDialog.getByRole('button',{name:/候选漫画/}).click();
+    await matchDialog.getByRole('button',{name:'确认匹配并写入',exact:true}).waitFor();
+    await page.screenshot({path:path.join(output,'workbench-match-preview.png')});
+    await matchDialog.getByRole('button',{name:'确认匹配并写入',exact:true}).click();
+    await matchDialog.waitFor({state:'detached'});
     await page.locator('.record-comparison-modal').getByRole('button',{name:'编辑',exact:true}).click();
     await page.locator('.record-comparison-modal').getByRole('button',{name:'取消',exact:true}).click();
     assert.equal(await page.locator('.record-comparison-modal').count(),1);
@@ -225,10 +239,10 @@ async function main() {
     await page.waitForFunction(()=>document.querySelectorAll('.work-book').length===2);
     await page.getByRole('button',{name:'上一页',exact:true}).click();
     await page.waitForFunction(()=>document.querySelectorAll('.work-book').length===48);
-    await page.getByLabel('搜索漫画或小说',{exact:true}).fill('空');
+    await page.getByLabel('搜索当前媒体库',{exact:true}).fill('空');
     await page.locator('.work-search').getByRole('button',{name:'搜索',exact:true}).click();
     await page.getByText('没有找到作品',{exact:true}).waitFor();
-    await page.getByLabel('搜索漫画或小说',{exact:true}).fill('');
+    await page.getByLabel('搜索当前媒体库',{exact:true}).fill('');
     await page.locator('.work-search').getByRole('button',{name:'搜索',exact:true}).click();
     await page.locator('.work-book').first().waitFor();
     await page.setViewportSize({width:390,height:844});
@@ -321,8 +335,9 @@ async function main() {
     assert(Math.abs(taskCards[0].top - taskCards[1].top) < 2);
     assert(taskCards[1].left > taskCards[0].left);
     assert.match(await page.locator('.task-card').first().innerText(), /Cron 0 6 \* \* \*/);
+    await page.waitForTimeout(350);
     const taskAddRect = await page.locator('.hero-actions button').boundingBox();
-    assert(Math.abs(mediaAddRect.y-taskAddRect.y) < 1);
+    assert(Math.abs(mediaAddRect.y-taskAddRect.y) < 1, JSON.stringify({mediaAddRect,taskAddRect}));
     assert(Math.abs(mediaAddRect.x+mediaAddRect.width-taskAddRect.x-taskAddRect.width) < 1);
     assert.equal(mediaAddRect.height, taskAddRect.height);
     const firstTask = page.locator('.task-card').first();
@@ -433,13 +448,9 @@ async function main() {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('.nav-item').filter({hasText:'刮削记录'}).click();
     await page.locator('.record-item').first().waitFor();
-    await Promise.all([
-      page.waitForResponse(response => response.url().includes('/api/scrape-records?') && response.url().includes('offset=50')),
-      page.getByRole('navigation', { name: '刮削记录分页' }).getByRole('button', { name: '下一页', exact: true }).click()
-    ]);
-    assert.match(apiCalls.filter(call => call[1] === '/api/scrape-records').at(-1)[2], /limit=50&offset=50/);
-    await page.getByRole('navigation', { name: '刮削记录分页' }).getByRole('button', { name: '上一页', exact: true }).click();
-    assert.equal(await page.locator('.records-head > *').count(), 6);
+    assert.equal(await page.getByRole('navigation', { name: '刮削记录分页' }).count(),0);
+    assert.equal(await page.locator('.record-list').evaluate(el=>getComputedStyle(el).overflowY),'auto');
+    assert.equal(await page.locator('.records-head > *').count(), 7);
     assert.equal(await page.locator('.time-sort .sort-arrows i').count(), 2);
     const sortDecoration = await page.locator('.sort-arrows').evaluate(element => ({
       width: element.getBoundingClientRect().width,
@@ -539,7 +550,7 @@ async function main() {
     await page.setViewportSize({width:1440,height:1000});
     await page.screenshot({path:path.join(output,'sidebar-semantic-icons.png')});
     assert.equal(await page.locator('.record-volumes').count(), 1);
-    assert.equal(await page.locator('.record-volume-head > *').count(), 6);
+    assert.equal(await page.locator('.record-volume-head > *').count(), 7);
     assert.match(await page.locator('.record-path').innerText(), /第一卷\.cbz/);
     await page.locator('.record-fields').hover();
     await page.locator('.floating-tooltip:not([hidden])').waitFor();
@@ -575,33 +586,30 @@ async function main() {
     const shortLogHeight = await page.locator('.runtime-log-board').evaluate(el=>el.getBoundingClientRect().height);
     runtimeLogs.push(...Array.from({length:99},(_,index)=>({...runtimeLogs[0],id:index+2,detail:'操作详情\n执行完成'})));
     await page.getByRole('button',{name:'刷新运行日志',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelectorAll('.runtime-log-row').length===100);
+    await page.waitForFunction(()=>document.querySelectorAll('.runtime-log-row').length>1);
     const fullLogLayout = await page.locator('.runtime-log-board').evaluate(el=>({
       height:el.getBoundingClientRect().height,viewport:innerHeight,
       overflow:getComputedStyle(el).overflowY,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight
     }));
-    assert(fullLogLayout.height>fullLogLayout.viewport && fullLogLayout.height>shortLogHeight);
-    assert.equal(fullLogLayout.overflow,'visible');
-    assert(Math.abs(fullLogLayout.scrollHeight-fullLogLayout.clientHeight)<=1);
+    assert(fullLogLayout.height<fullLogLayout.viewport);
+    assert.equal(fullLogLayout.overflow,'auto');
+    assert(fullLogLayout.scrollHeight>fullLogLayout.clientHeight);
+    assert(await page.locator('.runtime-log-row').count()<40);
     await page.screenshot({path:path.join(output,'logs-natural-height.png')});
     runtimeLogs.splice(1);
     await page.getByRole('button',{name:'刷新运行日志',exact:true}).click();
     await page.waitForFunction(()=>document.querySelectorAll('.runtime-log-row').length===1);
     assert(Math.abs(await page.locator('.runtime-log-board').evaluate(el=>el.getBoundingClientRect().height)-shortLogHeight)<1);
-    assert.match(await page.locator('.log-hero-controls').innerText(), /成功/);
+    assert.doesNotMatch(await page.locator('.log-hero-controls').innerText(), /成功/);
     const logCount=page.locator('.log-hero-controls .record-stats strong').first();
     assert.equal(await logCount.innerText(),'23.5k');
     await logCount.hover();
     await page.getByRole('tooltip').filter({hasText:'23456'}).waitFor();
     await page.locator('.log-hero-controls .record-stats strong').nth(1).hover();
     assert.equal(await page.getByRole('tooltip').isVisible(),false);
-    assert.match(await page.locator('.log-hero-controls').innerText(), /失败/);
+    assert.doesNotMatch(await page.locator('.log-hero-controls').innerText(), /失败/);
     assert.equal(await page.locator('.stat-icon-success svg').count(), 1);
-    await Promise.all([
-      page.waitForResponse(response => response.url().includes('/api/runtime-logs?') && response.url().includes('offset=100')),
-      page.getByRole('navigation', { name: '运行日志分页' }).getByRole('button', { name: '下一页', exact: true }).click()
-    ]);
-    assert.match(apiCalls.filter(call => call[1] === '/api/runtime-logs').at(-1)[2], /limit=100&offset=100/);
+    assert.equal(await page.getByRole('navigation', { name: '运行日志分页' }).count(),0);
     await page.screenshot({ path: path.join(output, 'logs-paged.png') });
     assert.equal(await page.locator('.hero-head .log-hero-controls').count(), 1);
     assert.equal(await page.locator('.view-stack .log-toolbar').count(), 0);
@@ -705,7 +713,7 @@ async function main() {
     await page.getByRole('button', { name: '任务功能', exact: true }).click();
     assert.match(await page.getByRole('dialog', {name:'任务功能候选项'}).locator('.tag-picker-option').first().innerText(), /元数据修正/);
     await page.getByRole('dialog', { name: '任务功能候选项' }).getByLabel('元数据修正', { exact: true }).click();
-    assert.equal(await page.getByRole('switch').count(), 5);
+    assert.equal(await page.getByRole('switch').count(), 6);
     assert.equal(await page.getByRole('switch', {name:'包含分卷',exact:true}).getAttribute('aria-checked'), 'true');
     await page.getByRole('switch', {name:'包含分卷',exact:true}).click();
     const switchRows = await page.locator('.task-option-switches > button').evaluateAll(elements=>elements.map(element=>{
@@ -918,7 +926,7 @@ async function main() {
     assert.notEqual(driftStart, driftEnd);
     assert.deepEqual(errors, []);
     // Empty selections must remain empty when configuration is reloaded.
-    const context = { Vue: { createApp: options => ({ mount: () => { context.options = options; } }) }, TagPicker: {} };
+    const context = { Vue: { createApp: options => ({ mount: () => { context.options = options; } }) }, TagPicker: {}, VirtualList: {} };
     vm.runInNewContext(fs.readFileSync(path.join(web, 'config.js'), 'utf8'), context);
     const legacyFilters = context.options.methods.mixedFilterTask({filter_regex:true,filter_terms:'^VOL\\.\\d+\n[广告]'});
     assert.equal(legacyFilters.filter_regex,false);

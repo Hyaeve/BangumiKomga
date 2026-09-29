@@ -148,6 +148,28 @@ class IntegrationHTTPTests(unittest.TestCase):
                 self.assertEqual(result["record"]["source_path"], "/data/漫画/原书名")
                 self.assertFalse(result["after"]["summaryLock"])
 
+    def test_manual_provider_match_writes_real_komga_http_and_source(self):
+        from tools import workbench_match
+        hit = {"provider": "MANGADEX", "id": "fixture-match", "media_type": "comic",
+               "titles": [{"name": "Matched Comic"}], "fields": {"title": "Matched Comic", "summary": "Matched summary"}}
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(web_backend, "ROOT", Path(folder)), \
+             patch.object(web_backend, "_configured_library_context", return_value={
+                 "server::lib": {"server_id": "server", "library_id": "lib", "server_name": "服务"}}), \
+             patch.object(web_backend, "_load_komga", return_value=self.komga), \
+             patch.object(web_backend, "_read_state", return_value={"KOMGA_LIBRARY_LIST": [
+                 {"SERVER_ID": "server", "LIBRARY": "lib", "OVERWRITE_FIELDS": ["title", "summary"]}]}), \
+             patch.object(web_backend, "_write_activity"), \
+             patch.object(workbench_match, "core_request", return_value=hit):
+            preview = workbench_match.preview(web_backend, {
+                "card": "server::lib", "id": "s1", "provider": "MANGADEX", "subject_id": "fixture-match"})
+            result = workbench_match.apply(web_backend, {"token": preview["token"]})
+            self.assertEqual(result["after"]["title"], "Matched Comic")
+            self.assertEqual(self.metadata["summary"], "Matched summary")
+            self.assertFalse(self.metadata["summaryLock"])
+            with closing(__import__("sqlite3").connect(Path(folder) / "recordsRefreshed.db")) as conn:
+                self.assertEqual(conn.execute("SELECT metadata_provider FROM scrape_records").fetchone()[0], "MANGADEX")
+
     def test_ai_test_endpoint_calls_translation_and_audits_both_results(self):
         import requests
         server = ThreadingHTTPServer(("127.0.0.1", 0), web_backend.Handler)

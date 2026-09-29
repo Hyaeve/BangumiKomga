@@ -233,6 +233,43 @@ func Get(ctx context.Context, config Config, name, id string) (Metadata, error) 
 	return Metadata{}, fmt.Errorf("provider %s is disabled", name)
 }
 
+// Search exposes candidates for an explicit user choice, not automatic matching.
+func Search(ctx context.Context, config Config, name, query, media string) ([]Metadata, error) {
+	if media != "comic" && media != "book" && media != "mixed" {
+		return nil, fmt.Errorf("invalid media type")
+	}
+	query = strings.TrimSpace(query)
+	if query == "" || len([]rune(query)) > 200 {
+		return nil, fmt.Errorf("search query must contain 1 to 200 characters")
+	}
+	registry, err := config.registry()
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range registry {
+		if entry.provider.Name() != name {
+			continue
+		}
+		items, err := entry.provider.Search(ctx, query, media)
+		if err != nil {
+			return nil, err
+		}
+		result := []Metadata{}
+		for _, item := range items {
+			if !mediaAllowed(media, item.Media) {
+				continue
+			}
+			filterMetadata(&item, entry.options)
+			result = append(result, item)
+			if len(result) == 30 {
+				break
+			}
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("provider %s is unavailable", name)
+}
+
 func mediaAllowed(wanted, actual string) bool {
 	return (actual == "comic" || actual == "book") && (wanted == "mixed" || wanted == actual)
 }

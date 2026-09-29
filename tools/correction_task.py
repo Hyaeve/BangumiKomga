@@ -9,7 +9,7 @@ from tools.execution_outcomes import record_outcome
 from tools.task_lock_policy import locked
 
 FIELDS = {"title", "summary", "publisher", "authors"}
-OPERATIONS = {"simplify", "extract_title", "include_locked"}
+OPERATIONS = {"simplify", "extract_title", "replace_poster", "include_locked"}
 
 
 def correct_library(komga, library_id, settings, on_update, on_log, fields, operations, only_novel=False,
@@ -18,9 +18,9 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
     selected = list(dict.fromkeys(fields))
     options = set(operations)
     include_locked = include_locked or "include_locked" in options
-    if not selected or not set(selected) <= FIELDS:
+    if (not selected and "replace_poster" not in options) or not set(selected) <= FIELDS:
         raise ValueError("请选择有效的修正元数据")
-    if not options <= OPERATIONS or not options & {"simplify", "extract_title"}:
+    if not options <= OPERATIONS or not options & {"simplify", "extract_title", "replace_poster"}:
         raise ValueError("请选择繁转简或标题提取")
     if options & {"extract_title"} and "simplify" not in options and "title" not in selected:
         raise ValueError("标题提取需要选择标题元数据")
@@ -84,6 +84,8 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
         return result, completed
 
     def update(item, kind, series_name):
+        if not options & {"simplify", "extract_title"}:
+            return
         original = item.get("metadata") or {}
         payload = {}
         for field in selected:
@@ -130,6 +132,20 @@ def correct_library(komga, library_id, settings, on_update, on_log, fields, oper
     def process(item, kind, series_name):
         try:
             update(item, kind, series_name)
+            if "replace_poster" in options:
+                from tools.posters import replace_offline
+                latest = (komga.get_specific_series if kind == "series" else komga.get_specific_book)(item["id"])
+                snapshots, reason = replace_offline(komga, latest, kind, settings, include_locked, lock_completed)
+                if snapshots:
+                    before, after = snapshots
+                    counts["updated"] += 1
+                    record_outcome(kind, item["id"])
+                    on_update({**latest, "url": item_path(latest),
+                               "metadata_before": {**latest["metadata"], **before},
+                               "metadata_after": {**latest["metadata"], **after}}, kind, series_name, ["thumbnail"])
+                    on_log(f"{item.get('name', '')}：海报替换完成（更高分辨率原图）", "info")
+                else:
+                    on_log(f"{item.get('name', '')}：{reason}", "info")
         except Exception as exc:
             counts["failed"] += 1
             record_outcome(kind, item["id"], failed=True)

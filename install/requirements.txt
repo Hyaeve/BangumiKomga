@@ -4,3 +4,4 @@ thefuzz==0.22.1
 zhconv==1.4.3
 tqdm==4.68.3
 colorama==0.4.6
+Pillow==12.3.0

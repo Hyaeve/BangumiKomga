@@ -496,6 +496,7 @@ def refresh_metadata(series_list=None):
             # 使用 Bangumi 图片替换原封面
             # 确保没有上传过海报，避免重复上传
             thumbnail_updated = False
+            poster_before = poster_after = None
             if USE_BANGUMI_THUMBNAIL and (TASK_COMPLETION_FIELDS is None or "thumbnail" in TASK_COMPLETION_FIELDS) and (
                 "thumbnail" in overwrite_fields
                 or len(komga.get_series_thumbnails(series_id)) == 0
@@ -507,6 +508,8 @@ def refresh_metadata(series_list=None):
                         metadata, image_size=thumbnail_size)
                     if not thumbnail:
                         continue
+                    from tools.posters import try_capture
+                    poster_before = try_capture(komga, series_id, "series")
 
                     # 尝试更新封面
                     replace_thumbnail_result = komga.update_series_thumbnail(
@@ -515,6 +518,7 @@ def refresh_metadata(series_list=None):
                     if replace_thumbnail_result:
                         logger.debug("成功替换系列: %s 的海报", series_name)
                         thumbnail_updated = True
+                        poster_after = try_capture(komga, series_id, "series")
                         # 成功则跳出海报更新循环
                         break
                     else:
@@ -537,11 +541,12 @@ def refresh_metadata(series_list=None):
                     source_title=series_name,
                     matched_title=komga_metadata.title or matched_search_title or series_name,
                     match_source=match_source,
+                    metadata_provider=metadata.get("provider") or "BANGUMI_OFFLINE",
                     event_kind="series",
                     source_path=_record_path(series, "series"),
                     komga_id=series_id, server_id=_record_server_id(series.get("libraryId")),
-                    metadata_before=series.get("metadata") or {},
-                    metadata_after={**(series.get("metadata") or {}), **series_data},
+                    metadata_before={**(series.get("metadata") or {}), **({"thumbnail": poster_before} if poster_before else {})},
+                    metadata_after={**(series.get("metadata") or {}), **series_data, **({"thumbnail": poster_after} if poster_after else {})},
                 )
         else:
             _log_match_result(series, "匹配失败", "已找到匹配条目，但 Komga 元数据写入失败", subject_id=subject_id)
@@ -802,6 +807,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
         # 使用 Bangumi 图片替换原封面
         # 确保没有上传过海报，避免重复上传，排除 komga 生成的封面
         thumbnail_updated = False
+        poster_before = poster_after = None
         if USE_BANGUMI_THUMBNAIL_FOR_BOOK and (TASK_COMPLETION_FIELDS is None or "thumbnail" in TASK_COMPLETION_FIELDS) and (
             "thumbnail" in overwrite_fields
             or len(komga.get_book_thumbnails(book_id)) == 1
@@ -813,6 +819,8 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                     related_subject, image_size=thumbnail_size)
                 if not thumbnail:
                     continue
+                from tools.posters import try_capture
+                poster_before = try_capture(komga, book_id, "volume")
 
                 # 尝试更新封面
                 replace_thumbnail_result = komga.update_book_thumbnail(
@@ -821,6 +829,7 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 if replace_thumbnail_result:
                     logger.debug("替换书籍: %s 的海报 ", book_name)
                     thumbnail_updated = True
+                    poster_after = try_capture(komga, book_id, "volume")
                     # 成功则跳出海报更新循环
                     break
                 else:
@@ -843,11 +852,12 @@ def update_book_metadata(book_id, related_subject, book_name, number, library_id
                 source_title=source_title or book_name,
                 matched_title=book_metadata.title or book_name,
                 match_source=match_source or "卷匹配",
+                metadata_provider=related_subject.get("provider") or "BANGUMI_OFFLINE",
                 event_kind="volume",
                 source_path=source_path,
                 komga_id=book_id, server_id=_record_server_id(library_id),
-                metadata_before=current_metadata or {},
-                metadata_after={**(current_metadata or {}), **book_data},
+                metadata_before={**(current_metadata or {}), **({"thumbnail": poster_before} if poster_before else {})},
+                metadata_after={**(current_metadata or {}), **book_data, **({"thumbnail": poster_after} if poster_after else {})},
             )
     else:
         record_book_status(

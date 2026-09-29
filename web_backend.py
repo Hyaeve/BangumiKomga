@@ -256,10 +256,11 @@ def _read_state() -> dict:
                 for key in ("WEB_ADMIN_USERNAME", "WEB_ADMIN_PASSWORD_HASH"):
                     if config_values.get(key):
                         merged[key] = config_values[key]
+                merged["USE_BANGUMI_ARCHIVE"] = True
                 return merged
             except (OSError, ValueError):
                 pass
-        return {**DEFAULTS, **config_values}
+        return {**DEFAULTS, **config_values, "USE_BANGUMI_ARCHIVE": True}
 
 
 def _python_value(value):
@@ -280,6 +281,7 @@ def _write_config(data: dict):
 
 def save_state(data: dict) -> dict:
     merged = {**DEFAULTS, **data}
+    merged["USE_BANGUMI_ARCHIVE"] = True
     merged["METADATA_PROVIDERS"] = validate_providers(merged["METADATA_PROVIDERS"])
     from tools.proxy_settings import validate_proxy
     merged["OUTBOUND_PROXY_URL"] = validate_proxy(merged.get("OUTBOUND_PROXY_URL"))
@@ -741,6 +743,7 @@ def _read_scrape_rows(record_ids=None):
             kind_sql = ",event_kind" if "event_kind" in columns else ",'volume' AS event_kind"
             path_sql = ",source_path" if "source_path" in columns else ",'' AS source_path"
             identity_sql = (",komga_id" if "komga_id" in columns else ",''") + (",server_id" if "server_id" in columns else ",''")
+            identity_sql += ",metadata_provider" if "metadata_provider" in columns else ",''"
             selection = ""
             if record_ids is not None:
                 if not record_ids:
@@ -753,6 +756,7 @@ def _read_scrape_rows(record_ids=None):
             "server_id": row[14] or context.get(str(row[3]), {}).get("server_id", ""),
             "server_name": context.get(f"{row[14]}::{row[3]}" if row[14] else str(row[3]), {}).get("server_name", "默认 Komga 服务"),
             "komga_id": row[13] or "", "record_server_id": row[14] or "",
+            "metadata_provider": row[15] or ((row[10] or "").removeprefix("提供商：") if (row[10] or "").startswith("提供商：") else ""),
             "metadata_fields": [field for field in (row[5] or "").split(",") if field], "status": row[6], "recorded_at": row[7],
             "source_title": row[8] or row[2], "matched_title": row[9] or row[2], "match_source": row[10] or "", "event_kind": row[11] or "volume", "source_path": row[12] or "",
         } for row in rows if not row[14] or f"{row[14]}::{row[3]}" in context]
@@ -798,6 +802,7 @@ def _group_scrape_records(rows):
             "source_path": row.get("source_path") or "",
             "komga_id": row.get("komga_id") or "", "record_server_id": row.get("record_server_id") or "",
             "source_title": row.get("source_title") or "",
+            "metadata_provider": row.get("metadata_provider") or "",
         } for row in details]
         primary["source_path"] = primary.get("source_path") or next((row.get("source_path") for row in rows_for_book if row.get("source_path")), "")
         primary["volume_count"] = len(primary["volumes"])
@@ -979,6 +984,9 @@ def _save_record_edit(body):
             if any(saved.get(key) != current.get(key) for key in (field + "Lock", field + "Locked")):
                 raise ValueError("Komga 锁定状态在保存期间变化，记录尚未更新，请检查当前值")
         fields = list(dict.fromkeys([*record["metadata_fields"], *changes]))
+        # Komga metadata responses do not contain our immutable poster snapshots.
+        saved = {**saved, **{key: comparison["after"][key]
+                            for key in ("thumbnail", "thumbnailLock") if key in comparison["after"]}}
         match_source = record["match_source"]
         if "手动修订" not in match_source:
             match_source = (match_source + " · 手动修订").strip(" ·")
@@ -1312,6 +1320,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         size = int(self.headers.get("Content-Length", "0"))
+        if not 0 <= size <= 24 * 1024 * 1024:
+            raise ValueError("请求内容过大")
         return json.loads(self.rfile.read(size) or b"{}")
 
     def _session_token(self):
@@ -1357,6 +1367,19 @@ class Handler(BaseHTTPRequestHandler):
             self._json(401, {"error": "请先登录"})
         elif path == "/api/config":
             self._json(200, _read_state())
+        elif path.startswith("/api/posters/"):
+            try:
+                from tools.posters import read
+                content, mime = read(path.removeprefix("/api/posters/"))
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(content)))
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Cache-Control", "private, max-age=3600")
+                self.end_headers()
+                self.wfile.write(content)
+            except (ValueError, OSError):
+                self._json(404, {"error": "海报快照不可用"})
         elif path == "/api/providers":
             self._json(200, {"catalog": DEFAULT_PROVIDERS,
                              "configured": _read_state()["METADATA_PROVIDERS"],
@@ -1375,6 +1398,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(200, workbench.read_page(sys.modules[__name__], query))
                 elif path == "/api/workbench/item":
                     self._json(200, workbench.read_item(sys.modules[__name__], query.get("card", ""), query.get("id", "")))
+                elif path == "/api/workbench/poster":
+                    self._json(200, workbench.poster_baseline(sys.modules[__name__], query.get("card", ""), query.get("id", "")))
                 elif path == "/api/workbench/cover":
                     content, mime, _ = workbench.read_cover(sys.modules[__name__], query.get("card", ""), query.get("id", ""))
                     self.send_response(200)
@@ -1537,7 +1562,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         try:
-            if path == "/api/bangumi/archive":
+            if path == "/api/bangumi/token":
+                if not self._require_auth():
+                    return
+                token = self._body().get("token")
+                if not isinstance(token, str) or len(token) > 4096:
+                    raise ValueError("密钥格式无效")
+                with STATE_LOCK:
+                    state = _read_state()
+                    state.update(BANGUMI_ACCESS_TOKEN=token.strip(), USE_BANGUMI_ARCHIVE=True)
+                    save_state(state)
+                _write_activity("配置：保存 Bangumi 令牌", "访问密钥已更新")
+                self._json(200, {"saved": True})
+                return
+            elif path == "/api/bangumi/archive":
                 if not self._require_auth():
                     return
                 def update_archive_job():
@@ -1559,8 +1597,14 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._body()
                 if path == "/api/workbench/item":
                     self._json(200, workbench.save_item(sys.modules[__name__], body))
+                elif path == "/api/workbench/poster":
+                    self._json(200, workbench.save_poster(sys.modules[__name__], body))
                 elif path == "/api/workbench/run":
                     self._json(200, workbench.start_action(sys.modules[__name__], body))
+                elif path in ("/api/workbench/match/search", "/api/workbench/match/preview", "/api/workbench/match/apply"):
+                    from tools import workbench_match
+                    action = path.rsplit("/", 1)[-1]
+                    self._json(200, getattr(workbench_match, action)(sys.modules[__name__], body))
                 else:
                     self._json(404, {"error": "接口不存在"})
                 return
@@ -1706,7 +1750,8 @@ class Handler(BaseHTTPRequestHandler):
                             task["name"] = f"{base_name} 副本 {copy_index}"
                             copy_index += 1
                 task["fields"] = list(task.get("fields") or [])
-                if task["type"] != "card_collage_refresh" and not task["fields"]:
+                poster_only = task["type"] == "metadata_correction" and "replace_poster" in (task.get("operations") or [])
+                if task["type"] != "card_collage_refresh" and not task["fields"] and not poster_only:
                     self._json(400, {"error": "请至少选择一个元数据项"})
                     return
                 task["operations"] = list(task.get("operations") or [])
@@ -1722,15 +1767,15 @@ class Handler(BaseHTTPRequestHandler):
                 task.update(task_lock_options(task))
                 task["operations"] = [value for value in task["operations"] if value != "include_locked"]
                 if task["type"] in ("summary_translation", "metadata_correction"):
-                    if not task["fields"] or any(field not in ("title", "summary", "publisher", "authors") for field in task["fields"]):
+                    if (not task["fields"] and not poster_only) or any(field not in ("title", "summary", "publisher", "authors") for field in task["fields"]):
                         self._json(400, {"error": "请选择元数据：标题、简介、出版商或作者"})
                         return
                 if task["type"] == "metadata_correction":
                     ops = set(task["operations"])
-                    if not ops <= {"simplify", "extract_title", "include_locked"} or not ops & {"simplify", "extract_title"}:
+                    if not ops <= {"simplify", "extract_title", "replace_poster", "include_locked"} or not ops & {"simplify", "extract_title", "replace_poster"}:
                         self._json(400, {"error": "请选择繁转简或标题提取"})
                         return
-                    if "simplify" not in ops and "title" not in task["fields"]:
+                    if "extract_title" in ops and "simplify" not in ops and "title" not in task["fields"]:
                         self._json(400, {"error": "标题提取需要选择标题元数据"})
                         return
                 task["card_ids"] = list(task.get("card_ids") or [])

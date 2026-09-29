@@ -87,6 +87,29 @@ class WorkbenchTests(unittest.TestCase):
                                          "expected": self.item["metadata"], "changes": {"title": "新"}})
         self.assertFalse((self.root / "recordsRefreshed.db").exists())
 
+    def test_poster_upload_writes_snapshots_and_checks_conflict(self):
+        from tools import posters
+        before = {"id": "old", "width": 100, "height": 150}
+        after = {"id": "new", "width": 400, "height": 600}
+        with patch.object(posters, "decode_upload", return_value=b"image"), \
+             patch.object(posters, "try_capture", return_value=before), \
+             patch.object(posters, "protected", return_value=False), \
+             patch.object(posters, "local_lock") as lock, \
+             patch.object(posters, "upload", return_value=after) as upload:
+            body = {"card": "server::lib", "id": "one", "image": "encoded", "expected": "stale"}
+            with self.assertRaisesRegex(ValueError, "海报已变化"):
+                workbench.save_poster(backend, body)
+            upload.assert_not_called()
+            body["expected"] = "old"
+            result = workbench.save_poster(backend, body)
+            self.assertEqual(result["before"]["thumbnail"], before)
+            self.assertEqual(result["after"]["thumbnail"], after)
+            lock.assert_called_once_with(self.client, "one", "series", True)
+        with closing(sqlite3.connect(self.root / "recordsRefreshed.db")) as conn:
+            row = conn.execute("SELECT metadata_before,metadata_after FROM scrape_records").fetchone()
+            self.assertEqual(json.loads(row[0])["thumbnail"], before)
+            self.assertEqual(json.loads(row[1])["thumbnail"], after)
+
     def test_batch_uses_selected_ids_and_existing_library_queue(self):
         executor = Mock()
         with patch.object(backend, "TASK_EXECUTOR", executor), patch.object(backend, "_run_managed") as managed:

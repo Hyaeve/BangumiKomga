@@ -10,6 +10,7 @@ recordsRefreshed.db
 config/config.py
 config/web_config.json
 config/web_auth.json
+config/posters
 *.log
 bin
 AGENTS.md

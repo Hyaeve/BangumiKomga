@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const context = { Vue: { createApp: options => ({ mount: () => { context.options = options; } }) }, TagPicker: {} };
+const context = { Vue: { createApp: options => ({ mount: () => { context.options = options; } }) }, TagPicker: {}, VirtualList: {} };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../web/config.js'), 'utf8'), context);
 const restore = context.options.methods.checkSession;
 

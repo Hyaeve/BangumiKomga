@@ -1,6 +1,7 @@
 config.py
 recordsRefreshed.db
 config/web_sessions.db*
+config/posters/
 refreshMetadata.log
 __pycache__/
 .vscode

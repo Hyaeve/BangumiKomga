@@ -311,13 +311,15 @@ class KomgaApi:
             response = self.r.post(
                 f"{self.base_url}/series/{series_id}/thumbnails?selected=true",
                 files=thumbnail,
+                timeout=(5, 30),
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            if response.status_code == 413:
+            if getattr(e.response, "status_code", None) == 413:
                 logger.error("缩略图过大，无法上传")
             else:
                 logger.error(f"出现错误: {e}")
+            return False
         # return True if the status code indicates success, False otherwise
         return response.status_code == 200
 
@@ -348,10 +350,12 @@ class KomgaApi:
             response = self.r.post(
                 f"{self.base_url}/books/{book_id}/thumbnails?selected=true",
                 files=thumbnail,
+                timeout=(5, 30),
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             logger.error(f"出现错误: {e}")
+            return False
         # return True if the status code indicates success, False otherwise
         return response.status_code == 200
 
