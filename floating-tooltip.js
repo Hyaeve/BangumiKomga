@@ -14,7 +14,7 @@
   }
   function show(event) {
     const target = event.target.closest?.('[data-tooltip]');
-    if (!target?.dataset.tooltip) { hide(); return; }
+    if (!target?.dataset.tooltip || target.closest('button')) { hide(); return; }
     if (target.matches('.tooltip-cell, .tag-picker-chip')) {
       const clipped = [target, ...target.querySelectorAll('*')].some(node => {
         const style = getComputedStyle(node);
